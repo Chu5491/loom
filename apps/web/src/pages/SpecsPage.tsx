@@ -18,12 +18,11 @@ const EMPTY_SPEC: Pick<Spec, "name" | "content" | "agentId" | "tags"> = {
 
 export function SpecsPage() {
   const { t } = useI18n();
-  // Parent project's :id and our own :specId are distinct.
-  const { id: projectId, specId } = useParams<{ id?: string; specId?: string }>();
+  const { specId } = useParams<{ specId?: string }>();
   const navigate = useNavigate();
   const isNew = specId === "new";
   const selectedId = !specId || isNew ? null : specId;
-  const baseUrl = projectId ? `/projects/${projectId}/specs` : "/specs";
+  const baseUrl = "/specs";
 
   const list = useQuery({
     queryKey: ["specs"],

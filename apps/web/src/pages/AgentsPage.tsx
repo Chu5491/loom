@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type {
   AdapterField,
   AdapterManifest,
@@ -29,10 +29,8 @@ type FormMode = { mode: "create" } | { mode: "edit"; agent: Agent };
 export function AgentsPage() {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const params = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
-  // Parent route param wins; legacy ?projectId= still works for old bookmarks.
-  const projectId = params.id ?? searchParams.get("projectId") ?? undefined;
+  const projectId = searchParams.get("projectId") ?? undefined;
 
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
   const list = useQuery({
@@ -143,11 +141,7 @@ export function AgentsPage() {
                   {manifest ? <AdapterIcon manifest={manifest} size={32} /> : null}
                   <div className="min-w-0 flex-1">
                     <Link
-                      to={
-                        projectId
-                          ? `/projects/${projectId}/runs?agentId=${a.id}`
-                          : `/runs?agentId=${a.id}`
-                      }
+                      to={`/runs?agentId=${a.id}`}
                       className="font-medium hover:underline truncate block"
                     >
                       {a.name}

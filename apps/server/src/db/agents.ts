@@ -2,10 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { Agent, AdapterConfig, AdapterKind, AgentRole } from "@loom/core";
 import { listSkillIdsForAgent, setSkillIdsForAgent } from "./agent-skills.js";
 import { getDb } from "./client.js";
-import {
-  removeAgentSkillsDir,
-  syncAgentSkills,
-} from "../services/skill-sync.js";
 
 interface AgentRow {
   id: string;
@@ -103,8 +99,6 @@ export function createAgent(input: CreateAgentInput): Agent {
   if (input.skillIds && input.skillIds.length > 0) {
     setSkillIdsForAgent(id, input.skillIds);
   }
-  // Mirror assigned skills to disk under the agent's private skills folder.
-  syncAgentSkills(id);
   return getAgent(id)!;
 }
 
@@ -147,17 +141,10 @@ export function updateAgent(id: string, input: UpdateAgentInput): Agent | null {
     setSkillIdsForAgent(id, input.skillIds);
   }
 
-  // Re-mirror the agent's assigned skills regardless of which fields changed
-  // (agent rename / project change can affect the resolved cwd, and skillIds
-  // may have been replaced wholesale above).
-  syncAgentSkills(id);
   return getAgent(id);
 }
 
 export function deleteAgent(id: string): boolean {
-  // Drop the agent's skill folder *before* removing the row so we can still
-  // resolve the project path through the agent record.
-  removeAgentSkillsDir(id);
   const result = getDb().prepare("DELETE FROM agents WHERE id = ?").run(id);
   return result.changes > 0;
 }

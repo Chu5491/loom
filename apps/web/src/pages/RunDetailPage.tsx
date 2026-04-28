@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import type { Run, RunStatus } from "@loom/core";
+import type { RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
 import { Badge, Button, Card } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
@@ -43,11 +43,9 @@ function statusTone(s: RunStatus) {
 
 export function RunDetailPage() {
   const { t } = useI18n();
-  // Parent project's :id and our run's :runId are distinct.
-  const { id: projectId, runId } = useParams<{ id?: string; runId?: string }>();
+  const { runId } = useParams<{ runId?: string }>();
   const id = runId;
   const qc = useQueryClient();
-  const runsListPath = projectId ? `/projects/${projectId}/runs` : "/runs";
 
   const run = useQuery({
     queryKey: ["run", id],
@@ -186,7 +184,7 @@ export function RunDetailPage() {
     <div className="space-y-4">
       <div className="flex items-center gap-3 text-sm">
         <Link
-          to={runsListPath}
+          to="/runs"
           className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
         >
           {t("runDetail.back")}
@@ -194,13 +192,6 @@ export function RunDetailPage() {
         <span className="text-zinc-400 dark:text-zinc-600">/</span>
         <span className="mono text-zinc-500 truncate">{r.id}</span>
       </div>
-
-      {r.parentRunId ? (
-        <ParentRunBanner
-          parentRunId={r.parentRunId}
-          runsListPath={runsListPath}
-        />
-      ) : null}
 
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -247,9 +238,7 @@ export function RunDetailPage() {
               {attachedSpecs.map((s) => (
                 <Link
                   key={s.id}
-                  to={
-                    projectId ? `/projects/${projectId}/specs/${s.id}` : `/specs/${s.id}`
-                  }
+                  to={`/specs/${s.id}`}
                   className="inline-flex items-center rounded border px-2 py-0.5 text-xs bg-sky-100 text-sky-800 border-sky-300 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800 dark:hover:bg-sky-900/50"
                 >
                   {s.name}
@@ -303,8 +292,6 @@ export function RunDetailPage() {
           </div>
         ) : null}
       </Card>
-
-      <ChildrenPanel run={r} runsListPath={runsListPath} />
 
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium">{t("runDetail.section.logs")}</h2>
@@ -396,107 +383,6 @@ function Meta({
         {value}
       </dd>
     </div>
-  );
-}
-
-function ParentRunBanner({
-  parentRunId,
-  runsListPath,
-}: {
-  parentRunId: string;
-  runsListPath: string;
-}) {
-  const { t } = useI18n();
-  const parent = useQuery({
-    queryKey: ["run", parentRunId],
-    queryFn: () => api.getRun(parentRunId),
-  });
-  const parentAgent = useQuery({
-    queryKey: ["agent", parent.data?.run.agentId],
-    queryFn: () => api.getAgent(parent.data!.run.agentId),
-    enabled: !!parent.data?.run.agentId,
-  });
-  if (!parent.data) return null;
-
-  const p = parent.data.run;
-  const name = parentAgent.data?.agent.name ?? p.agentId.slice(0, 8);
-  return (
-    <Card className="border-sky-300 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/20">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-sky-700 dark:text-sky-300">
-            {t("runDetail.section.parentRun")}
-          </p>
-          <p className="mt-1 text-sm truncate">
-            <span className="font-medium">{name}</span>
-            <span className="ml-2 text-xs text-zinc-500 mono">
-              {p.prompt.slice(0, 80)}
-            </span>
-          </p>
-        </div>
-        <Link
-          to={`${runsListPath}/${p.id}`}
-          className="shrink-0 text-xs text-sky-700 hover:underline dark:text-sky-300"
-        >
-          {t("runDetail.parentRun.viewParent")}
-        </Link>
-      </div>
-    </Card>
-  );
-}
-
-function ChildrenPanel({
-  run,
-  runsListPath,
-}: {
-  run: Run;
-  runsListPath: string;
-}) {
-  const { t } = useI18n();
-  const children = useQuery({
-    queryKey: ["runs", { parentRunId: run.id }],
-    queryFn: () => api.listRuns({ parentRunId: run.id, limit: 50 }),
-    refetchInterval: (q) => {
-      const data = q.state.data;
-      if (!data) return false;
-      const hasActive = data.runs.some(
-        (r) => r.status === "queued" || r.status === "running",
-      );
-      return hasActive ? 1500 : false;
-    },
-  });
-
-  const list = children.data?.runs ?? [];
-  if (list.length === 0) return null;
-
-  return (
-    <Card className="space-y-2">
-      <div>
-        <p className="text-xs uppercase tracking-wide text-zinc-500">
-          {t("runDetail.section.children")}
-        </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          {t("runDetail.children.hint")}
-        </p>
-      </div>
-      <div className="space-y-1.5">
-        {list.map((c) => (
-          <Link
-            key={c.id}
-            to={`${runsListPath}/${c.id}`}
-            className="flex items-center gap-3 rounded-md border px-3 py-2 transition-colors border-zinc-200 bg-zinc-50/50 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900/50 dark:hover:border-zinc-700"
-          >
-            <Badge tone={statusTone(c.status)}>{t(`status.${c.status}`)}</Badge>
-            <span className="text-sm truncate flex-1 text-zinc-700 dark:text-zinc-300">
-              {c.prompt.slice(0, 100)}
-            </span>
-            <span className="text-xs text-zinc-500 mono shrink-0">
-              {new Date(c.createdAt).toLocaleString()}
-            </span>
-          </Link>
-        ))}
-      </div>
-    </Card>
   );
 }
 

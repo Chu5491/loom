@@ -94,6 +94,9 @@ export function Layout() {
           </div>
           <nav className="flex items-center gap-1 ml-4">
             <NavItem to="/projects">{t("nav.projects")}</NavItem>
+            <NavItem to="/agents">{t("nav.agents")}</NavItem>
+            <NavItem to="/specs">{t("nav.specs")}</NavItem>
+            <NavItem to="/runs">{t("nav.runs")}</NavItem>
           </nav>
           <div className="ml-auto flex items-center gap-2 text-xs">
             <LangToggle />

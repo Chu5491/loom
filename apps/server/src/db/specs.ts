@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Spec } from "@loom/core";
 import { getDb } from "./client.js";
-import {
-  affectedAgentsForSkill,
-  syncAgentSkills,
-} from "../services/skill-sync.js";
 
 interface SpecRow {
   id: string;
@@ -126,20 +122,10 @@ export function updateSpec(id: string, input: UpdateSpecInput): Spec | null {
       merged.updatedAt,
       id,
     );
-  // Propagate content/name changes to every agent's mirrored skill folder.
-  for (const agentId of affectedAgentsForSkill(id)) {
-    syncAgentSkills(agentId);
-  }
   return merged;
 }
 
 export function deleteSpec(id: string): boolean {
-  // Capture affected agents *before* the cascade clears agent_skills rows,
-  // then re-sync each so their disk folders no longer carry the stale file.
-  const agentsToResync = affectedAgentsForSkill(id);
   const result = getDb().prepare("DELETE FROM specs WHERE id = ?").run(id);
-  if (result.changes > 0) {
-    for (const agentId of agentsToResync) syncAgentSkills(agentId);
-  }
   return result.changes > 0;
 }

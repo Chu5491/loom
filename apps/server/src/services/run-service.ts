@@ -1,4 +1,4 @@
-import type { Agent, Project, Run, Spec } from "@loom/core";
+import type { Run, Spec } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { getAgent } from "../db/agents.js";
 import { getProject } from "../db/projects.js";
@@ -11,63 +11,35 @@ import {
 } from "../db/runs.js";
 import { getSpecsByIds } from "../db/specs.js";
 import { appendChunk, finishLog, startLog } from "./log-store.js";
-import {
-  buildManifestEntries,
-  syncAgentSkills,
-} from "./skill-sync.js";
 
 /**
  * Compose the final prompt that reaches the CLI.
  *
  *   [agentPrompt — system / role instructions]
- *   [Skill manifest — file paths + summaries, NOT the bodies]
+ *   [Skill blocks — agent's assigned skills + per-run attached]
  *   [userPrompt — the task]
  *
- * The skill *bodies* live on disk under the agent's private skills folder,
- * mirrored from the DB. This keeps the prompt small (manifest is dozens of
- * bytes per skill, not kilobytes) and lets the LLM read each skill on demand
- * with its standard file-read tool.
+ * Any of the three sections is optional; only non-empty sections are included.
+ *
+ * Skill bodies are inlined here as a deliberate baseline. Smarter delivery
+ * (per-agent disk folder, lazy file-read, etc.) is a v0.x design discussion
+ * we haven't decided on yet — keeping it dumb until we agree.
  */
-export function composePrompt(args: {
-  userPrompt: string;
-  skills: Spec[];
-  agentPrompt?: string;
-  /** When provided, manifest lists actual on-disk paths the LLM can Read. */
-  project?: Project | null;
-  agent?: Agent | null;
-}): string {
+export function composePrompt(
+  userPrompt: string,
+  skills: Spec[],
+  agentPrompt: string = "",
+): string {
   const sections: string[] = [];
-  const trimmedAgent = (args.agentPrompt ?? "").trim();
+  const trimmedAgent = agentPrompt.trim();
   if (trimmedAgent) {
-    sections.push(
-      `=== Agent Instructions ===\n${trimmedAgent}\n=== End Instructions ===`,
-    );
+    sections.push(`=== Agent Instructions ===\n${trimmedAgent}\n=== End Instructions ===`);
   }
-
-  if (args.skills.length > 0 && args.project && args.agent) {
-    const entries = buildManifestEntries(args.project, args.agent, args.skills);
-    const lines: string[] = [];
-    lines.push("=== Available Skills (read on demand) ===");
-    lines.push(
-      "These reference docs are mirrored from the loom database to disk.",
-    );
-    lines.push("Open them with your file-read tool only when relevant.");
-    lines.push("");
-    for (const e of entries) {
-      lines.push(`  ${e.fullPath}  (${formatBytes(e.size)})`);
-      if (e.summary) lines.push(`    ${e.summary}`);
-    }
-    lines.push("=== End Skills ===");
-    sections.push(lines.join("\n"));
+  for (const s of skills) {
+    sections.push(`=== Skill: ${s.name} ===\n${s.content}\n=== End Skill ===`);
   }
-
-  sections.push(args.userPrompt);
+  sections.push(userPrompt);
   return sections.join("\n\n");
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n}B`;
-  return `${(n / 1024).toFixed(1)}KB`;
 }
 
 interface ActiveRun {
@@ -101,11 +73,8 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     };
   }
 
-  // Per-run attached skills must (a) exist and (b) already be assigned to
-  // the agent. Skills only reach the CLI through the agent's mirrored disk
-  // folder, so a spec that isn't part of agent.skillIds has no on-disk file
-  // and would produce a manifest pointing at nothing. We surface that as a
-  // clear error rather than silently dropping it.
+  // Per-run attached skills must exist; agent-assigned skills are loaded
+  // separately and merged in after de-duplication.
   const perRunSkillIds = input.attachedSpecIds ?? [];
   const perRunSkills = getSpecsByIds(perRunSkillIds);
   if (perRunSkills.length !== perRunSkillIds.length) {
@@ -117,39 +86,18 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
       error: `spec_not_found: ${missing.join(",")}`,
     };
   }
-  const assignedIds = new Set(agent.skillIds);
-  const notAssigned = perRunSkillIds.filter((id) => !assignedIds.has(id));
-  if (notAssigned.length > 0) {
-    return {
-      ok: false,
-      status: 400,
-      error: `spec_not_assigned_to_agent: ${notAssigned.join(",")}`,
-    };
-  }
 
-  // Use the order of input.attachedSpecIds when supplied, otherwise the
-  // agent's full assigned set in its stored order.
-  const orderedIds =
-    perRunSkillIds.length > 0 ? perRunSkillIds : agent.skillIds;
-  const allSkills = getSpecsByIds(orderedIds);
+  const agentSkills = getSpecsByIds(agent.skillIds);
+  const skillsById = new Map<string, Spec>();
+  for (const s of agentSkills) skillsById.set(s.id, s);
+  for (const s of perRunSkills) skillsById.set(s.id, s);
+  const allSkills = [...skillsById.values()];
 
   // cwd resolution: explicit input > agent's override > project's path > server cwd.
   const project = getProject(agent.projectId);
   const cwd =
     input.cwd ?? agent.defaultCwd ?? project?.path ?? process.cwd();
-
-  // Defensive: ensure the on-disk skill folder reflects current assignments
-  // before the CLI starts reading it. CRUD hooks already do this on every
-  // edit, but this guards against folders deleted out-of-band.
-  syncAgentSkills(agent.id);
-
-  const composedPrompt = composePrompt({
-    userPrompt: input.prompt,
-    skills: allSkills,
-    agentPrompt: agent.prompt,
-    project,
-    agent,
-  });
+  const composedPrompt = composePrompt(input.prompt, allSkills, agent.prompt);
 
   const pendingRun = createRun({
     agentId: agent.id,
