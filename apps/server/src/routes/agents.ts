@@ -1,0 +1,87 @@
+import { Hono } from "hono";
+import { z } from "zod";
+import {
+  createAgent,
+  deleteAgent,
+  getAgent,
+  listAgents,
+  updateAgent,
+} from "../db/agents.js";
+import { getProject } from "../db/projects.js";
+
+const adapterConfigSchema = z.record(z.string(), z.unknown());
+
+const roleSchema = z
+  .enum(["engineer", "researcher", "reviewer", "writer", "other"])
+  .nullable();
+
+const createSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1),
+  prompt: z.string().optional(),
+  skillIds: z.array(z.string()).optional(),
+  role: roleSchema.optional(),
+  adapterKind: z.string().min(1),
+  adapterConfig: adapterConfigSchema.optional(),
+  defaultCwd: z.string().nullable().optional(),
+});
+
+const updateSchema = z.object({
+  projectId: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  prompt: z.string().optional(),
+  skillIds: z.array(z.string()).optional(),
+  role: roleSchema.optional(),
+  adapterKind: z.string().min(1).optional(),
+  adapterConfig: adapterConfigSchema.optional(),
+  defaultCwd: z.string().nullable().optional(),
+});
+
+export const agentsRoute = new Hono();
+
+agentsRoute.get("/", (c) => {
+  const projectId = c.req.query("projectId") || undefined;
+  return c.json({ agents: listAgents({ projectId }) });
+});
+
+agentsRoute.post("/", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
+  }
+  if (!getProject(parsed.data.projectId)) {
+    return c.json({ error: "project_not_found" }, 404);
+  }
+  const agent = createAgent(parsed.data);
+  return c.json({ agent }, 201);
+});
+
+agentsRoute.get("/:id", (c) => {
+  const agent = getAgent(c.req.param("id"));
+  if (!agent) return c.json({ error: "not_found" }, 404);
+  return c.json({ agent });
+});
+
+agentsRoute.patch("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const parsed = updateSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
+  }
+  const existing = getAgent(id);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+  if (parsed.data.projectId && !getProject(parsed.data.projectId)) {
+    return c.json({ error: "project_not_found" }, 404);
+  }
+  const agent = updateAgent(id, parsed.data);
+  if (!agent) return c.json({ error: "not_found" }, 404);
+  return c.json({ agent });
+});
+
+agentsRoute.delete("/:id", (c) => {
+  const ok = deleteAgent(c.req.param("id"));
+  if (!ok) return c.json({ error: "not_found" }, 404);
+  return c.body(null, 204);
+});

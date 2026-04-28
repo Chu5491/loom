@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+/* Class-based dark variant: html.dark gates all dark:* utilities. */
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: rgb(255 255 255);
+  color: rgb(24 24 27);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html.dark body {
+  background: rgb(9 9 11); /* zinc-950 */
+  color: rgb(244 244 245); /* zinc-100 */
+}
+
+/* tiny utility for monospace pre */
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Markdown preview styling — both themes via dark: scoping. */
+.prose-loom {
+  color: rgb(39 39 42); /* zinc-800 */
+  font-size: 0.875rem;
+  line-height: 1.6;
+  overflow-y: auto;
+}
+html.dark .prose-loom {
+  color: rgb(228 228 231); /* zinc-200 */
+}
+.prose-loom h1,
+.prose-loom h2,
+.prose-loom h3,
+.prose-loom h4 {
+  font-weight: 600;
+  margin: 1.2em 0 0.5em;
+  line-height: 1.25;
+}
+.prose-loom h1 { font-size: 1.5rem; }
+.prose-loom h2 { font-size: 1.25rem; }
+.prose-loom h3 { font-size: 1.1rem; }
+.prose-loom h4 { font-size: 1rem; }
+.prose-loom h1:first-child,
+.prose-loom h2:first-child,
+.prose-loom h3:first-child {
+  margin-top: 0;
+}
+.prose-loom p { margin: 0.75em 0; }
+.prose-loom ul,
+.prose-loom ol {
+  margin: 0.75em 0;
+  padding-left: 1.5em;
+}
+.prose-loom ul { list-style: disc; }
+.prose-loom ol { list-style: decimal; }
+.prose-loom li { margin: 0.25em 0; }
+.prose-loom code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgb(244 244 245); /* zinc-100 */
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+html.dark .prose-loom code {
+  background: rgb(39 39 42); /* zinc-800 */
+}
+.prose-loom pre {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background: rgb(250 250 250); /* zinc-50 */
+  border: 1px solid rgb(228 228 231); /* zinc-200 */
+  padding: 0.75em 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+html.dark .prose-loom pre {
+  background: rgb(24 24 27); /* zinc-900 */
+  border-color: rgb(39 39 42); /* zinc-800 */
+}
+.prose-loom pre code {
+  background: transparent;
+  padding: 0;
+}
+.prose-loom blockquote {
+  border-left: 3px solid rgb(212 212 216); /* zinc-300 */
+  padding-left: 1em;
+  color: rgb(82 82 91); /* zinc-600 */
+  margin: 0.75em 0;
+}
+html.dark .prose-loom blockquote {
+  border-left-color: rgb(63 63 70);
+  color: rgb(161 161 170);
+}
+.prose-loom a {
+  color: rgb(2 132 199); /* sky-600 */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+html.dark .prose-loom a {
+  color: rgb(125 211 252); /* sky-300 */
+}
+.prose-loom hr {
+  border: none;
+  border-top: 1px solid rgb(228 228 231);
+  margin: 1em 0;
+}
+html.dark .prose-loom hr {
+  border-top-color: rgb(39 39 42);
+}
+.prose-loom table {
+  border-collapse: collapse;
+  margin: 0.75em 0;
+}
+.prose-loom th,
+.prose-loom td {
+  border: 1px solid rgb(228 228 231);
+  padding: 0.4em 0.75em;
+}
+html.dark .prose-loom th,
+html.dark .prose-loom td {
+  border-color: rgb(39 39 42);
+}
+.prose-loom th {
+  background: rgb(250 250 250);
+  font-weight: 600;
+}
+html.dark .prose-loom th {
+  background: rgb(24 24 27);
+}
+.prose-loom strong {
+  font-weight: 600;
+  color: rgb(9 9 11);
+}
+html.dark .prose-loom strong {
+  color: rgb(244 244 245);
+}
+.prose-loom em { font-style: italic; }
