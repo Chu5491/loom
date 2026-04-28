@@ -98,7 +98,7 @@ function ProjectCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <Link
-            to={`/agents?projectId=${project.id}`}
+            to={`/projects/${project.id}`}
             className="font-medium hover:underline truncate block"
           >
             {project.name}
@@ -118,7 +118,7 @@ function ProjectCard({
       ) : null}
       <div className="flex items-center gap-3 text-xs text-zinc-500">
         <Link
-          to={`/agents?projectId=${project.id}`}
+          to={`/projects/${project.id}`}
           className="hover:underline"
         >
           {t("projects.agentsLink", { count: agentCount })}
