@@ -47,6 +47,38 @@ runsRoute.get("/:id", (c) => {
   return c.json({ run });
 });
 
+/**
+ * The last `type: result` text from the run's stdout — what the CLI
+ * declared as its final answer. Used for "Forward to another agent" so
+ * the user can route an agent's output without manually copying it.
+ */
+runsRoute.get("/:id/result", async (c) => {
+  const run = getRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not_found" }, 404);
+  if (!run.logPath) return c.json({ resultText: null });
+  const events = await readLogFile(run.logPath).catch(() => []);
+  let buffer = "";
+  let resultText: string | null = null;
+  for (const ev of events) {
+    if (ev.kind !== "chunk" || ev.chunk.stream !== "stdout") continue;
+    buffer += ev.chunk.data;
+    const parts = buffer.split("\n");
+    buffer = parts.pop() ?? "";
+    for (const line of parts) {
+      if (!line) continue;
+      try {
+        const j = JSON.parse(line) as { type?: string; result?: string };
+        if (j.type === "result" && typeof j.result === "string") {
+          resultText = j.result;
+        }
+      } catch {
+        // skip non-JSON lines
+      }
+    }
+  }
+  return c.json({ resultText });
+});
+
 runsRoute.post("/:id/cancel", (c) => {
   const result = cancelRun(c.req.param("id"));
   if (!result.ok) return c.json({ error: result.error }, result.status);

@@ -4,7 +4,16 @@ import { Link, useParams } from "react-router-dom";
 import type { Agent, Run } from "@loom/core";
 import { api } from "../api/client.js";
 import { Card } from "../components/ui.js";
-import { Composer, MessagePair } from "../components/Chat.js";
+import {
+  AgentMessage,
+  Composer,
+  MemberBar,
+  UserMessage,
+  WorkingIndicator,
+  buildForwardQuote,
+  buildReplyQuote,
+  useRoomDerived,
+} from "../components/Chat.js";
 import { useI18n } from "../context/I18nContext.js";
 
 export function ProjectChatPage() {
@@ -26,14 +35,11 @@ export function ProjectChatPage() {
     queryFn: api.listAdapters,
   });
 
-  // Project-scoped runs come from listing all recent runs and filtering by
-  // the agent set. /api/runs has no projectId filter — it'd be cheap to add
-  // but for v0.1 the client-side filter is fine since limit caps the load.
   const projectAgentIds = useMemo(
     () => new Set((agents.data?.agents ?? []).map((a) => a.id)),
     [agents.data],
   );
-  const runs = useQuery({
+  const runsQuery = useQuery({
     queryKey: ["runs", { projectId }],
     queryFn: () => api.listRuns({ limit: 100 }),
     refetchInterval: (q) => {
@@ -46,28 +52,27 @@ export function ProjectChatPage() {
     },
     enabled: !!projectId,
   });
-  const projectRuns = useMemo(() => {
-    const list = (runs.data?.runs ?? []).filter((r) =>
-      projectAgentIds.has(r.agentId),
-    );
-    // Show oldest first so the chat reads top-to-bottom like a conversation.
-    return [...list].reverse();
-  }, [runs.data, projectAgentIds]);
+  const projectRuns = useMemo(
+    () =>
+      (runsQuery.data?.runs ?? []).filter((r) => projectAgentIds.has(r.agentId)),
+    [runsQuery.data, projectAgentIds],
+  );
 
-  // Composer state — agent target + draft. Lifted up so the Reply button on
-  // a past message can pre-fill both at once.
-  const [targetAgentId, setTargetAgentId] = useState<string | undefined>();
+  const agentList = agents.data?.agents ?? [];
+  const manifests = adapters.data?.adapters ?? [];
+
+  const { feed, working, workingIds } = useRoomDerived(projectRuns, agentList);
+
+  // Composer state lifted up so MemberBar / Reply / Forward can drive it.
+  const [agentId, setAgentId] = useState<string>("");
   const [draft, setDraft] = useState<string | undefined>();
   const [draftKey, setDraftKey] = useState(0);
 
-  // Auto-pick the first agent when the project loads.
   useEffect(() => {
-    if (!targetAgentId && agents.data?.agents.length) {
-      setTargetAgentId(agents.data.agents[0]!.id);
-    }
-  }, [agents.data, targetAgentId]);
+    if (!agentId && agentList.length) setAgentId(agentList[0]!.id);
+  }, [agentList, agentId]);
 
-  // Auto-scroll to bottom on new runs unless the user scrolled up.
+  // Auto-scroll: stick to bottom unless the user scrolled away.
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickyBottomRef = useRef(true);
   useEffect(() => {
@@ -82,13 +87,18 @@ export function ProjectChatPage() {
   }, []);
   useEffect(() => {
     const el = bodyRef.current;
-    if (!el) return;
-    if (stickyBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [projectRuns.length]);
+    if (el && stickyBottomRef.current) el.scrollTop = el.scrollHeight;
+  }, [feed.length, working.length]);
 
   const handleReply = (run: Run, agent: Agent | undefined) => {
-    setTargetAgentId(agent?.id ?? targetAgentId);
-    setDraft(buildQuote(run, agent, t));
+    if (agent) setAgentId(agent.id);
+    setDraft(buildReplyQuote(run, agent, t));
+    setDraftKey((k) => k + 1);
+  };
+  const handleForward = async (run: Run, agent: Agent | undefined) => {
+    // Forward = send to *another* agent. We don't auto-pick the target;
+    // the user picks via the chip picker so the routing is explicit.
+    setDraft(await buildForwardQuote(run, agent, t));
     setDraftKey((k) => k + 1);
   };
 
@@ -104,62 +114,83 @@ export function ProjectChatPage() {
   }
 
   const p = project.data.project;
-  const agentList = agents.data?.agents ?? [];
-  const manifests = adapters.data?.adapters ?? [];
 
   return (
     <div
-      className="flex flex-col rounded-lg border border-zinc-200 bg-white overflow-hidden dark:border-zinc-800 dark:bg-zinc-950"
+      className="flex flex-col rounded-xl border border-zinc-200 bg-white overflow-hidden dark:border-zinc-800 dark:bg-zinc-950 shadow-sm"
       style={{ height: "calc(100vh - 180px)" }}
     >
       <Header project={p} />
 
+      {agentList.length > 0 ? (
+        <MemberBar
+          agents={agentList}
+          manifests={manifests}
+          workingIds={workingIds}
+          selectedAgentId={agentId}
+          onPick={(id) => setAgentId(id)}
+        />
+      ) : null}
+
       <div
         ref={bodyRef}
-        className="flex-1 overflow-y-auto px-4 py-5 space-y-4 bg-zinc-50/40 dark:bg-zinc-900/40"
+        className="flex-1 overflow-y-auto px-5 py-5 space-y-5 bg-zinc-50/40 dark:bg-zinc-900/40"
       >
         {agentList.length === 0 ? (
           <Empty>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="text-2xl">👥</p>
+            <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
               {t("chat.empty.noAgents")}
             </p>
             <Link
               to={`/agents?projectId=${p.id}`}
-              className="mt-2 inline-block text-sm text-sky-600 hover:underline dark:text-sky-300"
+              className="mt-3 inline-block text-sm text-sky-600 hover:underline dark:text-sky-300"
             >
               {t("chat.manageAgents")} →
             </Link>
           </Empty>
-        ) : projectRuns.length === 0 ? (
+        ) : feed.length === 0 ? (
           <Empty>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="text-2xl">💬</p>
+            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
               {t("chat.empty.firstMessage")}
             </p>
           </Empty>
         ) : (
-          projectRuns.map((run) => {
-            const agent = agentList.find((a) => a.id === run.agentId);
-            const manifest = agent
-              ? manifests.find((m) => m.kind === agent.adapterKind)
-              : undefined;
+          feed.map((item) => {
+            const a = agentList.find((x) => x.id === item.run.agentId);
+            const m = a ? manifests.find((mm) => mm.kind === a.adapterKind) : undefined;
+            if (item.kind === "user") {
+              return (
+                <UserMessage
+                  key={`${item.run.id}-u`}
+                  run={item.run}
+                  target={a}
+                />
+              );
+            }
             return (
-              <MessagePair
-                key={run.id}
-                run={run}
-                agent={agent}
-                manifest={manifest}
+              <AgentMessage
+                key={`${item.run.id}-a`}
+                run={item.run}
+                agent={a}
+                manifest={m}
                 onReply={handleReply}
+                onForward={handleForward}
               />
             );
           })
         )}
       </div>
 
+      <WorkingIndicator workingAgents={working} />
+
       {agentList.length > 0 ? (
         <Composer
           agents={agentList}
           manifests={manifests}
-          initialAgentId={targetAgentId}
+          agentId={agentId}
+          onAgentChange={setAgentId}
           initialDraft={draft}
           draftKey={draftKey}
           onSent={() => {
@@ -179,34 +210,34 @@ function Header({
 }) {
   const { t } = useI18n();
   return (
-    <div className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <Link
-            to="/projects"
-            className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            {t("chat.back")}
-          </Link>
-          <h1 className="font-semibold text-base truncate">{project.name}</h1>
-          <p className="text-[11px] text-zinc-500 mono truncate" title={project.path}>
-            {project.path}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 text-xs shrink-0">
-          <Link
-            to={`/agents?projectId=${project.id}`}
-            className="text-sky-600 hover:underline dark:text-sky-300"
-          >
-            {t("chat.manageAgents")}
-          </Link>
-          <Link
-            to="/specs"
-            className="text-sky-600 hover:underline dark:text-sky-300"
-          >
-            {t("chat.manageSkills")}
-          </Link>
-        </div>
+    <div className="border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 flex items-center justify-between gap-4">
+      <div className="min-w-0">
+        <Link
+          to="/projects"
+          className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        >
+          {t("chat.back")}
+        </Link>
+        <h1 className="font-semibold text-base truncate leading-tight">
+          # {project.name}
+        </h1>
+        <p className="text-[11px] text-zinc-500 mono truncate" title={project.path}>
+          {project.path}
+        </p>
+      </div>
+      <div className="flex items-center gap-3 text-xs shrink-0">
+        <Link
+          to={`/agents?projectId=${project.id}`}
+          className="text-zinc-600 hover:text-sky-600 hover:underline dark:text-zinc-400 dark:hover:text-sky-300"
+        >
+          {t("chat.manageAgents")}
+        </Link>
+        <Link
+          to="/specs"
+          className="text-zinc-600 hover:text-sky-600 hover:underline dark:text-zinc-400 dark:hover:text-sky-300"
+        >
+          {t("chat.manageSkills")}
+        </Link>
       </div>
     </div>
   );
@@ -214,22 +245,8 @@ function Header({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <Card className="text-center py-8 border-dashed bg-transparent dark:bg-transparent">
+    <Card className="text-center py-10 border-dashed bg-transparent dark:bg-transparent">
       {children}
     </Card>
   );
-}
-
-function buildQuote(
-  run: Run,
-  agent: Agent | undefined,
-  t: (key: string, vars?: Record<string, string | number>) => string,
-): string {
-  const name = agent?.name ?? run.agentId.slice(0, 8);
-  const heading = t("chat.message.quoteHeading", { agent: name });
-  // We quote the user's original prompt — the agent's output isn't on the
-  // run record (lives in the log file). Users who want to quote agent text
-  // can copy from the bubble directly. Keeps the prompt small + auditable.
-  const lines = run.prompt.split("\n").map((l) => `> ${l}`);
-  return `${heading}\n${lines.join("\n")}\n\n`;
 }

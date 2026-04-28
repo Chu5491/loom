@@ -165,6 +165,8 @@ export const api = {
     return request<{ runs: Run[] }>(`/api/runs${suffix}`);
   },
   getRun: (id: string) => request<{ run: Run }>(`/api/runs/${id}`),
+  getRunResult: (id: string) =>
+    request<{ resultText: string | null }>(`/api/runs/${id}/result`),
   createRun: (body: CreateRunBody) =>
     request<{ run: Run }>("/api/runs", {
       method: "POST",
