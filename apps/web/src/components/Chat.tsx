@@ -14,7 +14,6 @@ import {
 import type { AdapterManifest, Agent, Run, RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "./AdapterIcon.js";
-import { Avatar, AvatarFallback } from "./ui/avatar.js";
 import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
 import {
@@ -134,23 +133,22 @@ export function AgentAvatar({
 }) {
   const cls = classesFor(agentColorFor(agent.id));
   const dim = size === "sm" ? "size-6" : size === "lg" ? "size-10" : "size-9";
-  const inner = size === "sm" ? 16 : size === "lg" ? 26 : 24;
+  // The lobehub icons already carry brand color, so the avatar wrapper
+  // is intentionally bare — no tinted disc, no ring. Working state is a
+  // small color dot at the bottom-right for presence convention.
+  const inner = size === "sm" ? 20 : size === "lg" ? 36 : 32;
 
   return (
-    <span className="relative inline-block shrink-0">
-      <Avatar className={dim}>
-        <AvatarFallback className={cn("p-0", cls.bgSoft)}>
-          {manifest ? (
-            <AdapterIcon manifest={manifest} size={inner} />
-          ) : (
-            <span className={cn("text-xs font-semibold", cls.text)}>?</span>
-          )}
-        </AvatarFallback>
-      </Avatar>
+    <span className={cn("relative inline-flex shrink-0 items-center justify-center", dim)}>
+      {manifest ? (
+        <AdapterIcon manifest={manifest} size={inner} />
+      ) : (
+        <span className={cn("text-xs font-semibold", cls.text)}>?</span>
+      )}
       {working ? (
         <span
           className={cn(
-            "absolute bottom-0 right-0 size-2.5 rounded-full ring-2 ring-background",
+            "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-background",
             cls.dot,
           )}
         />
@@ -160,13 +158,11 @@ export function AgentAvatar({
 }
 
 function UserAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const dim = size === "sm" ? "size-6 text-[10px]" : size === "lg" ? "size-10 text-sm" : "size-9 text-xs";
+  const dim = size === "sm" ? "size-6 text-[11px]" : size === "lg" ? "size-10 text-base" : "size-9 text-sm";
   return (
-    <Avatar className={dim}>
-      <AvatarFallback className="bg-foreground text-background font-semibold">
-        나
-      </AvatarFallback>
-    </Avatar>
+    <span className={cn("inline-flex shrink-0 items-center justify-center font-semibold text-foreground", dim)}>
+      나
+    </span>
   );
 }
 
@@ -572,9 +568,9 @@ export function AgentMessage({
         agent ? (
           <AgentAvatar agent={agent} manifest={manifest} working={isActive} />
         ) : (
-          <Avatar className="size-9">
-            <AvatarFallback>?</AvatarFallback>
-          </Avatar>
+          <span className="size-9 inline-flex items-center justify-center text-xs text-muted-foreground">
+            ?
+          </span>
         )
       }
       name={name}
