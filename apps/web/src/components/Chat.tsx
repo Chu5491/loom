@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { marked } from "marked";
 import {
   ArrowRight,
   Forward,
-  Hash,
   MessageSquareReply,
   MoreHorizontal,
   Plus,
@@ -27,6 +27,27 @@ import { TooltipProvider } from "./ui/tooltip.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 import { agentColorFor, classesFor } from "./agentColor.js";
+
+marked.setOptions({ breaks: true, gfm: true });
+
+/**
+ * Render an agent's markdown reply. The text comes from the CLI which is
+ * effectively LLM output — we render it as markdown for code blocks /
+ * lists / headings, and ride the existing `prose-loom` typography rules
+ * (already used by the spec preview).
+ *
+ * For commercial / hosted use we'd add DOMPurify here; for the current
+ * single-user local tool we trust the local CLI output.
+ */
+function MarkdownView({ text }: { text: string }) {
+  const html = useMemo(() => marked.parse(text) as string, [text]);
+  return (
+    <div
+      className="prose-loom max-w-none"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
 
 /**
  * Slack/Discord-style chat for a project room.
@@ -163,52 +184,6 @@ function UserAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
     <span className={cn("inline-flex shrink-0 items-center justify-center font-semibold text-foreground", dim)}>
       나
     </span>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Channel header
-// ────────────────────────────────────────────────────────────────────────────
-
-export function ChannelHeader({
-  project,
-  agentCount,
-  workingCount,
-  onToggleMembers,
-}: {
-  project: { id: string; name: string; path: string };
-  agentCount: number;
-  workingCount: number;
-  onToggleMembers: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="flex items-center gap-3 border-b bg-background px-5 h-14 shrink-0">
-      <Hash className="size-4 text-muted-foreground" />
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-2">
-          <h1 className="text-sm font-semibold truncate">{project.name}</h1>
-          {workingCount > 0 ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-sky-600 dark:text-sky-400">
-              <span className="size-1.5 rounded-full bg-sky-500 animate-pulse" />
-              {workingCount} working
-            </span>
-          ) : null}
-        </div>
-        <p className="text-[11px] text-muted-foreground mono truncate" title={project.path}>
-          {project.path}
-        </p>
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="ml-auto h-8 text-xs gap-1.5"
-        onClick={onToggleMembers}
-      >
-        <span className="size-1.5 rounded-full bg-emerald-500" />
-        {agentCount} {t("chat.members.title")}
-      </Button>
-    </div>
   );
 }
 
@@ -620,30 +595,34 @@ export function AgentMessage({
           {isActive ? t("chat.tail.waiting") : "—"}
         </p>
       ) : (
-        <div className="space-y-1">
-          {events.map((evt, i) => (
-            <p key={i} className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-              {evt.kind === "tool" ? (
-                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground mono">
+        <div className="space-y-1.5">
+          {events.map((evt, i) => {
+            if (evt.kind === "tool") {
+              return (
+                <p
+                  key={i}
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground mono"
+                >
                   <span aria-hidden>🛠</span>
                   <span>{evt.text}</span>
-                </span>
-              ) : evt.kind === "system" ? (
-                <span className="text-xs text-muted-foreground">· {evt.text}</span>
-              ) : (
-                <span>{evt.text}</span>
-              )}
-            </p>
-          ))}
+                </p>
+              );
+            }
+            if (evt.kind === "system") {
+              return (
+                <p key={i} className="text-xs text-muted-foreground">
+                  · {evt.text}
+                </p>
+              );
+            }
+            return <MarkdownView key={i} text={evt.text} />;
+          })}
           {finalText ? (
-            <p
-              className={cn(
-                "text-sm whitespace-pre-wrap break-words leading-relaxed",
-                events.length > 0 && "border-t pt-1.5 mt-1",
-              )}
+            <div
+              className={cn(events.length > 0 && "border-t pt-2 mt-1")}
             >
-              {finalText}
-            </p>
+              <MarkdownView text={finalText} />
+            </div>
           ) : null}
         </div>
       )}

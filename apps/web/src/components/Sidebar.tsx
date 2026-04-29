@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "react-router-dom";
-import { Hash, Plus, Sparkles, Users, FileText, Activity } from "lucide-react";
+import { Hash, Plus, Sparkles } from "lucide-react";
 import { api } from "../api/client.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useTheme, type ThemeMode } from "../context/ThemeContext.js";
@@ -33,7 +33,7 @@ export function Sidebar() {
       <Brand />
       <Separator />
 
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5">
+      <nav className="flex-1 overflow-y-auto py-3 px-2">
         <Section title={t("sidebar.projects")} action={<NewProjectButton />}>
           {list.length === 0 ? (
             <p className="px-2 text-xs text-muted-foreground/70">
@@ -50,18 +50,6 @@ export function Sidebar() {
               </SidebarLink>
             ))
           )}
-        </Section>
-
-        <Section title={t("sidebar.manage")}>
-          <SidebarLink to="/agents" icon={<Users className="size-3.5" />}>
-            {t("nav.agents")}
-          </SidebarLink>
-          <SidebarLink to="/specs" icon={<FileText className="size-3.5" />}>
-            {t("nav.specs")}
-          </SidebarLink>
-          <SidebarLink to="/runs" icon={<Activity className="size-3.5" />}>
-            {t("nav.runs")}
-          </SidebarLink>
         </Section>
       </nav>
 

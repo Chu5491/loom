@@ -7,7 +7,6 @@ import { api } from "../api/client.js";
 import { Button } from "../components/ui/button.js";
 import {
   AgentMessage,
-  ChannelHeader,
   Composer,
   DaySeparator,
   MemberRail,
@@ -104,8 +103,6 @@ export function ProjectChatPage() {
     setDraftKey((k) => k + 1);
   };
 
-  const [showMembers, setShowMembers] = useState(true);
-
   if (project.isLoading || agents.isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
@@ -127,13 +124,6 @@ export function ProjectChatPage() {
     <TooltipProvider delayDuration={200}>
       <div className="flex h-full min-w-0">
         <div className="flex-1 min-w-0 flex flex-col">
-          <ChannelHeader
-            project={p}
-            agentCount={agentList.length}
-            workingCount={working.length}
-            onToggleMembers={() => setShowMembers((s) => !s)}
-          />
-
           <div ref={bodyRef} className="flex-1 overflow-y-auto py-3 bg-background">
             {agentList.length === 0 ? (
               <Empty
@@ -205,16 +195,14 @@ export function ProjectChatPage() {
           ) : null}
         </div>
 
-        {showMembers ? (
-          <MemberRail
-            agents={agentList}
-            manifests={manifests}
-            workingIds={workingIds}
-            selectedAgentId={agentId}
-            onPick={(id) => setAgentId(id)}
-            projectId={p.id}
-          />
-        ) : null}
+        <MemberRail
+          agents={agentList}
+          manifests={manifests}
+          workingIds={workingIds}
+          selectedAgentId={agentId}
+          onPick={(id) => setAgentId(id)}
+          projectId={p.id}
+        />
       </div>
     </TooltipProvider>
   );

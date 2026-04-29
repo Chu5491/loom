@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Run, RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
 import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js";
@@ -32,17 +32,25 @@ function statusTone(s: RunStatus) {
 
 export function RunsPage() {
   const { t } = useI18n();
+  const { id: projectId } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const agentId = searchParams.get("agentId") ?? undefined;
   const status = (searchParams.get("status") as RunStatus | null) ?? undefined;
 
   const agents = useQuery({
-    queryKey: ["agents"],
-    queryFn: () => api.listAgents(),
+    queryKey: ["agents", { projectId }],
+    queryFn: () => api.listAgents({ projectId }),
+    enabled: !!projectId,
   });
+  // Filter runs to this project's agents — server doesn't have a
+  // projectId param yet, so we pull recent runs and trim client-side.
+  const projectAgentIds = useMemo(
+    () => new Set((agents.data?.agents ?? []).map((a) => a.id)),
+    [agents.data],
+  );
   const runs = useQuery({
-    queryKey: ["runs", { agentId, status }],
+    queryKey: ["runs", { projectId, agentId, status }],
     queryFn: () => api.listRuns({ agentId, status, limit: 100 }),
     refetchInterval: (q) => {
       const data = q.state.data;
@@ -111,30 +119,47 @@ export function RunsPage() {
           agentId={agentId}
           onCreated={(run) => {
             setShowForm(false);
-            navigate(`/runs/${run.id}`);
+            navigate(`/projects/${projectId}/runs/${run.id}`);
           }}
         />
       ) : null}
 
-      {runs.isLoading ? (
-        <p className="text-zinc-500 text-sm">{t("common.loading")}</p>
-      ) : runs.isError ? (
-        <p className="text-red-500 dark:text-red-400 text-sm">
-          {runs.error.message}
-        </p>
-      ) : (runs.data?.runs ?? []).length === 0 ? (
-        <Card>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            {t("runs.empty")}
-          </p>
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {(runs.data?.runs ?? []).map((r) => (
-            <RunRow key={r.id} run={r} agents={agents.data?.agents ?? []} />
-          ))}
-        </div>
-      )}
+      {(() => {
+        const visible = (runs.data?.runs ?? []).filter((r) =>
+          projectAgentIds.has(r.agentId),
+        );
+        if (runs.isLoading) {
+          return <p className="text-zinc-500 text-sm">{t("common.loading")}</p>;
+        }
+        if (runs.isError) {
+          return (
+            <p className="text-red-500 dark:text-red-400 text-sm">
+              {runs.error.message}
+            </p>
+          );
+        }
+        if (visible.length === 0) {
+          return (
+            <Card>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                {t("runs.empty")}
+              </p>
+            </Card>
+          );
+        }
+        return (
+          <div className="space-y-2">
+            {visible.map((r) => (
+              <RunRow
+                key={r.id}
+                run={r}
+                agents={agents.data?.agents ?? []}
+                projectId={projectId!}
+              />
+            ))}
+          </div>
+        );
+      })()}
     </PageScroll>
   );
 }
@@ -142,9 +167,11 @@ export function RunsPage() {
 function RunRow({
   run,
   agents,
+  projectId,
 }: {
   run: Run;
   agents: { id: string; name: string }[];
+  projectId: string;
 }) {
   const { t } = useI18n();
   const agent = agents.find((a) => a.id === run.agentId);
@@ -157,7 +184,7 @@ function RunRow({
 
   return (
     <Link
-      to={`/runs/${run.id}`}
+      to={`/projects/${projectId}/runs/${run.id}`}
       className="block rounded-md border px-4 py-2.5 transition-colors border-zinc-200 bg-zinc-50/50 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900/50 dark:hover:border-zinc-700"
     >
       <div className="flex items-center gap-3">

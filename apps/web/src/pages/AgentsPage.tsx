@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import type {
   AdapterField,
   AdapterManifest,
@@ -30,8 +30,10 @@ type FormMode = { mode: "create" } | { mode: "edit"; agent: Agent };
 export function AgentsPage() {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const [searchParams] = useSearchParams();
-  const projectId = searchParams.get("projectId") ?? undefined;
+  // Always nested under /projects/:id — the parent route provides the
+  // project scope. There is no flat "all agents" listing in the new
+  // navigation model.
+  const { id: projectId } = useParams<{ id: string }>();
 
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
   const list = useQuery({

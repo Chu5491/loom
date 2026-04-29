@@ -44,8 +44,10 @@ function statusTone(s: RunStatus) {
 
 export function RunDetailPage() {
   const { t } = useI18n();
-  const { runId } = useParams<{ runId?: string }>();
+  // Nested under /projects/:id/runs/:runId — pull both.
+  const { id: projectId, runId } = useParams<{ id?: string; runId?: string }>();
   const id = runId;
+  const runsListPath = projectId ? `/projects/${projectId}/runs` : "/runs";
   const qc = useQueryClient();
 
   const run = useQuery({
@@ -185,7 +187,7 @@ export function RunDetailPage() {
     <PageScroll className="space-y-4">
       <div className="flex items-center gap-3 text-sm">
         <Link
-          to="/runs"
+          to={runsListPath}
           className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
         >
           {t("runDetail.back")}
@@ -239,7 +241,7 @@ export function RunDetailPage() {
               {attachedSpecs.map((s) => (
                 <Link
                   key={s.id}
-                  to={`/specs/${s.id}`}
+                  to={projectId ? `/projects/${projectId}/skills/${s.id}` : `#`}
                   className="inline-flex items-center rounded border px-2 py-0.5 text-xs bg-sky-100 text-sky-800 border-sky-300 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800 dark:hover:bg-sky-900/50"
                 >
                   {s.name}
