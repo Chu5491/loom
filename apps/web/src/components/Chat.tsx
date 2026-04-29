@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Plus,
   Send,
+  User,
   X,
 } from "lucide-react";
 import type { AdapterManifest, Agent, Run, RunStatus } from "@loom/core";
@@ -181,10 +182,14 @@ export function AgentAvatar({
 }
 
 function UserAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const dim = size === "sm" ? "size-6 text-[11px]" : size === "lg" ? "size-10 text-base" : "size-9 text-sm";
+  const dim = size === "sm" ? "size-6" : size === "lg" ? "size-10" : "size-9";
+  const inner = size === "sm" ? "size-3.5" : size === "lg" ? "size-5" : "size-4";
+  // The avatar can't be the literal character "나" — it would visually
+  // duplicate the message header name (also "나"), reading as a glitch.
+  // A muted person glyph keeps the position clear without doubling text.
   return (
-    <span className={cn("inline-flex shrink-0 items-center justify-center font-semibold text-foreground", dim)}>
-      나
+    <span className={cn("inline-flex shrink-0 items-center justify-center text-muted-foreground", dim)}>
+      <User className={inner} />
     </span>
   );
 }
