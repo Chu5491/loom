@@ -10,12 +10,14 @@ import {
   Composer,
   DaySeparator,
   MemberRail,
+  ThreadFrame,
   TooltipProvider,
   UserMessage,
   WorkingIndicator,
   buildForwardQuote,
   buildReplyQuote,
   dayKey,
+  findParentAgent,
   isContinuation,
   useRoomDerived,
 } from "../components/Chat.js";
@@ -66,7 +68,7 @@ export function ProjectChatPage() {
   const agentList = agents.data?.agents ?? [];
   const manifests = adapters.data?.adapters ?? [];
 
-  const { feed, working, workingIds } = useRoomDerived(projectRuns, agentList);
+  const { threads, working, workingIds } = useRoomDerived(projectRuns, agentList);
 
   const [agentId, setAgentId] = useState<string>("");
   const [draft, setDraft] = useState<string | undefined>();
@@ -91,7 +93,7 @@ export function ProjectChatPage() {
   useEffect(() => {
     const el = bodyRef.current;
     if (el && stickyBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [feed.length, working.length]);
+  }, [threads.length, working.length]);
 
   const handleReply = (run: Run, agent: Agent | undefined) => {
     if (agent) setAgentId(agent.id);
@@ -137,40 +139,61 @@ export function ProjectChatPage() {
                   </Button>
                 }
               />
-            ) : feed.length === 0 ? (
+            ) : threads.length === 0 ? (
               <Empty
                 icon={<MessageCircle className="size-10 text-muted-foreground" />}
                 title={t("chat.empty.firstMessage")}
               />
             ) : (
-              feed.map((item, i) => {
-                const prev = feed[i - 1];
+              threads.map((thread, ti) => {
+                const prevThread = threads[ti - 1];
                 const showDay =
-                  !prev || dayKey(prev.ts) !== dayKey(item.ts);
-                const continuation = isContinuation(item, prev);
-                const a = agentList.find((x) => x.id === item.run.agentId);
-                const m = a
-                  ? manifests.find((mm) => mm.kind === a.adapterKind)
-                  : undefined;
+                  !prevThread ||
+                  dayKey(prevThread.lastTs) !== dayKey(thread.lastTs);
                 return (
-                  <div key={`${item.run.id}-${item.kind}`}>
-                    {showDay ? <DaySeparator ts={item.ts} /> : null}
-                    {item.kind === "user" ? (
-                      <UserMessage
-                        run={item.run}
-                        target={a}
-                        isContinuation={continuation}
-                      />
-                    ) : (
-                      <AgentMessage
-                        run={item.run}
-                        agent={a}
-                        manifest={m}
-                        isContinuation={continuation}
-                        onReply={handleReply}
-                        onForward={handleForward}
-                      />
-                    )}
+                  <div key={thread.rootId}>
+                    {showDay ? <DaySeparator ts={thread.lastTs} /> : null}
+                    <ThreadFrame thread={thread}>
+                      {thread.items.map((item, i) => {
+                        const prev = thread.items[i - 1];
+                        const continuation = isContinuation(item, prev);
+                        const a = agentList.find(
+                          (x) => x.id === item.run.agentId,
+                        );
+                        const m = a
+                          ? manifests.find((mm) => mm.kind === a.adapterKind)
+                          : undefined;
+                        if (item.kind === "user") {
+                          // For continuations within a thread, surface the
+                          // prior agent so the hand-off is explicit.
+                          const parentAgent = findParentAgent(
+                            item.run,
+                            thread,
+                            agentList,
+                          );
+                          return (
+                            <UserMessage
+                              key={`${item.run.id}-u`}
+                              run={item.run}
+                              target={a}
+                              parentAgent={parentAgent}
+                              isContinuation={continuation}
+                            />
+                          );
+                        }
+                        return (
+                          <AgentMessage
+                            key={`${item.run.id}-a`}
+                            run={item.run}
+                            agent={a}
+                            manifest={m}
+                            isContinuation={continuation}
+                            onReply={handleReply}
+                            onForward={handleForward}
+                          />
+                        );
+                      })}
+                    </ThreadFrame>
                   </div>
                 );
               })

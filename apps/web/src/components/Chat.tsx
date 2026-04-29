@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { marked } from "marked";
 import {
   ArrowRight,
+  CornerDownLeft,
   Forward,
   MessageSquareReply,
   MoreHorizontal,
@@ -450,14 +451,22 @@ function HoverButton({
 export function UserMessage({
   run,
   target,
+  parentAgent,
   isContinuation,
 }: {
   run: Run;
   target: Agent | undefined;
+  /** When the run continues from a previous run in the same thread, the
+   *  agent that produced that parent's output. We surface a small
+   *  "↳ from @prev" line above the prompt so the hand-off is explicit. */
+  parentAgent?: Agent;
   isContinuation: boolean;
 }) {
   const { t } = useI18n();
   const cls = target ? classesFor(agentColorFor(target.id)) : null;
+  const parentCls = parentAgent
+    ? classesFor(agentColorFor(parentAgent.id))
+    : null;
   return (
     <MessageRow
       avatar={<UserAvatar />}
@@ -473,6 +482,15 @@ export function UserMessage({
         ) : undefined
       }
     >
+      {parentAgent ? (
+        <p className="text-[11px] text-muted-foreground mb-1 inline-flex items-center gap-1">
+          <CornerDownLeft className="size-3 -scale-x-100" />
+          {t("chat.thread.fromAgent", { agent: "" })}
+          <span className={cn("font-medium", parentCls?.text)}>
+            @{parentAgent.name}
+          </span>
+        </p>
+      ) : null}
       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
         {run.prompt}
       </p>
@@ -862,33 +880,84 @@ export interface FeedItem {
   senderId: string;
 }
 
-function buildFeed(runs: Run[]): FeedItem[] {
-  const items: FeedItem[] = [];
+/**
+ * A thread is a chain of related runs — root + every run that descends
+ * from it via parentRunId. We render each thread as a visual unit so
+ * a multi-step "ask → answer → forward → answer → forward …" sequence
+ * reads as one collaboration rather than scattered messages.
+ */
+export interface ThreadGroup {
+  rootId: string;
+  runs: Run[];
+  items: FeedItem[];
+  firstTs: string;
+  lastTs: string;
+}
+
+function rootRunId(run: Run, byId: Map<string, Run>): string {
+  let cur = run;
+  let depth = 0;
+  while (cur.parentRunId && depth < 50) {
+    const parent = byId.get(cur.parentRunId);
+    if (!parent) break;
+    cur = parent;
+    depth++;
+  }
+  return cur.id;
+}
+
+function buildThreadGroups(runs: Run[]): ThreadGroup[] {
+  const byId = new Map(runs.map((r) => [r.id, r]));
+  const groups = new Map<string, Run[]>();
   for (const r of runs) {
-    items.push({ kind: "user", run: r, ts: r.createdAt, senderId: "user" });
-    items.push({
-      kind: "agent",
-      run: r,
-      ts: r.startedAt ?? r.createdAt,
-      senderId: r.agentId,
+    const root = rootRunId(r, byId);
+    const arr = groups.get(root) ?? [];
+    arr.push(r);
+    groups.set(root, arr);
+  }
+  const threads: ThreadGroup[] = [];
+  for (const [rootId, ofThread] of groups) {
+    const sorted = [...ofThread].sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt),
+    );
+    const items: FeedItem[] = [];
+    for (const r of sorted) {
+      items.push({ kind: "user", run: r, ts: r.createdAt, senderId: "user" });
+      items.push({
+        kind: "agent",
+        run: r,
+        ts: r.startedAt ?? r.createdAt,
+        senderId: r.agentId,
+      });
+    }
+    items.sort((a, b) => a.ts.localeCompare(b.ts));
+    threads.push({
+      rootId,
+      runs: sorted,
+      items,
+      firstTs: items[0]!.ts,
+      // Use the *latest* event in the thread, not just createdAt — an
+      // active run that's still streaming should keep the thread "fresh".
+      lastTs: items[items.length - 1]!.ts,
     });
   }
-  items.sort((a, b) => a.ts.localeCompare(b.ts));
-  return items;
+  // Oldest activity first → newest at the bottom (chat convention).
+  threads.sort((a, b) => a.lastTs.localeCompare(b.lastTs));
+  return threads;
 }
 
 export function useRoomDerived(
   runs: Run[],
   agents: Agent[],
 ): {
-  feed: FeedItem[];
+  threads: ThreadGroup[];
   working: Agent[];
   workingIds: Set<string>;
 } {
   return useMemo(() => {
     const workingIds = workingAgentIdsFromRuns(runs);
     return {
-      feed: buildFeed(runs),
+      threads: buildThreadGroups(runs),
       working: agents.filter((a) => workingIds.has(a.id)),
       workingIds,
     };
@@ -896,8 +965,9 @@ export function useRoomDerived(
 }
 
 /**
- * Decide if this feed item should fold into the previous one (no avatar
- * + name repeat). Same sender + ≤5 minutes apart and same calendar day.
+ * Within a thread, fold consecutive same-sender messages (≤5 min apart)
+ * so we don't repeat avatar+name on every line. Continuation grouping is
+ * always thread-local — across threads the same agent always re-introduces.
  */
 export function isContinuation(curr: FeedItem, prev: FeedItem | undefined): boolean {
   if (!prev) return false;
@@ -905,6 +975,42 @@ export function isContinuation(curr: FeedItem, prev: FeedItem | undefined): bool
   if (dayKey(prev.ts) !== dayKey(curr.ts)) return false;
   const delta = new Date(curr.ts).getTime() - new Date(prev.ts).getTime();
   return delta < CONTINUATION_WINDOW_MS;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Thread frame
+// ────────────────────────────────────────────────────────────────────────────
+
+export function ThreadFrame({
+  thread,
+  children,
+}: {
+  thread: ThreadGroup;
+  children: React.ReactNode;
+}) {
+  const isMulti = thread.runs.length > 1;
+  return (
+    <div
+      className={cn(
+        "py-1",
+        isMulti && "relative pl-3 ml-3 border-l-2 border-foreground/[0.08] my-2",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Returns the agent that produced the parent run, if any. */
+export function findParentAgent(
+  run: Run,
+  thread: ThreadGroup,
+  agents: Agent[],
+): Agent | undefined {
+  if (!run.parentRunId) return undefined;
+  const parent = thread.runs.find((r) => r.id === run.parentRunId);
+  if (!parent) return undefined;
+  return agents.find((a) => a.id === parent.agentId);
 }
 
 export { dayKey, DaySeparator, TooltipProvider };
