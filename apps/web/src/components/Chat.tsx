@@ -745,9 +745,23 @@ export function Composer({
     },
   });
 
+  // Ref-based latch on top of `create.isPending` — React Query's pending
+  // state is async, so two send() calls in the same event tick can both
+  // pass the isPending check. The ref flips synchronously before mutate
+  // is even called, so a second call inside the same tick bails out.
+  const sendingRef = useRef(false);
+
   const send = () => {
-    if (!agentId || !text.trim() || create.isPending) return;
-    create.mutate({ agentId, prompt: text });
+    if (sendingRef.current || !agentId || !text.trim() || create.isPending) return;
+    sendingRef.current = true;
+    create.mutate(
+      { agentId, prompt: text },
+      {
+        onSettled: () => {
+          sendingRef.current = false;
+        },
+      },
+    );
   };
 
   const target = agents.find((a) => a.id === agentId);
@@ -772,7 +786,16 @@ export function Composer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            // During Korean (or any IME) composition, Enter is "commit
+            // the candidate" — NOT submit. Without the isComposing guard
+            // the same physical Enter press would fire keydown twice
+            // (once mid-composition, once after) and double-send.
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing &&
+              e.nativeEvent.keyCode !== 229
+            ) {
               e.preventDefault();
               send();
             }
