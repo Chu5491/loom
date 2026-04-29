@@ -1,7 +1,8 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout.js";
 import { ProjectShell } from "./components/ProjectShell.js";
 import { AgentsPage } from "./pages/AgentsPage.js";
+import { HomePage } from "./pages/HomePage.js";
 import { ProjectChatPage } from "./pages/ProjectChatPage.js";
 import { ProjectsPage } from "./pages/ProjectsPage.js";
 import { RunDetailPage } from "./pages/RunDetailPage.js";
@@ -9,16 +10,16 @@ import { RunsPage } from "./pages/RunsPage.js";
 import { SpecsPage } from "./pages/SpecsPage.js";
 
 /**
- * Project-scoped routing. Top level is just the project picker; once
- * you enter a project everything (agents, skills, runs) is nested
- * underneath /projects/:id. There are no flat /agents or /specs
- * top-level pages — managing agents always happens inside a project.
+ * Project-scoped routing. The home page is a workspace dashboard;
+ * everything else lives under /projects/:id. There are no flat
+ * /agents or /specs top-level pages — managing agents always happens
+ * inside a project.
  */
 export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<Navigate to="/projects" replace />} />
+        <Route path="/" element={<HomePage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:id" element={<ProjectShell />}>
           <Route index element={<ProjectChatPage />} />

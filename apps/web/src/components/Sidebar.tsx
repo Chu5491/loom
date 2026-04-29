@@ -64,7 +64,16 @@ export function Sidebar() {
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2 px-4 py-3 h-14">
+    <NavLink
+      to="/"
+      end
+      className={({ isActive }) =>
+        cn(
+          "flex items-center gap-2 px-4 py-3 h-14 transition-colors",
+          isActive ? "bg-muted/40" : "hover:bg-muted/30",
+        )
+      }
+    >
       <span className="flex size-7 items-center justify-center rounded-md bg-foreground text-background">
         <Sparkles className="size-3.5" />
       </span>
@@ -74,7 +83,7 @@ function Brand() {
           v0.1.0
         </div>
       </div>
-    </div>
+    </NavLink>
   );
 }
 

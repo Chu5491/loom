@@ -1,0 +1,386 @@
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import {
+  ArrowRight,
+  Hash,
+  Plus,
+  Sparkles,
+} from "lucide-react";
+import type { Run } from "@loom/core";
+import { api } from "../api/client.js";
+import { AdapterIcon } from "../components/AdapterIcon.js";
+import { Badge } from "../components/ui/badge.js";
+import { Button } from "../components/ui/button.js";
+import { PageScroll } from "../components/PageScroll.js";
+import { useI18n } from "../context/I18nContext.js";
+import { cn } from "../lib/utils.js";
+
+/**
+ * Workspace landing page. Lives at `/`. Gives a quick read on the
+ * day's activity and shortcuts into projects so the user doesn't have
+ * to scroll the sidebar to remember what's where.
+ */
+export function HomePage() {
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: api.listProjects,
+  });
+  const agents = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.listAgents(),
+  });
+  const adapters = useQuery({
+    queryKey: ["adapters"],
+    queryFn: api.listAdapters,
+  });
+  const runs = useQuery({
+    queryKey: ["runs", { home: true }],
+    queryFn: () => api.listRuns({ limit: 30 }),
+    refetchInterval: (q) => {
+      const data = q.state.data;
+      if (!data) return false;
+      const hasActive = data.runs.some(
+        (r) => r.status === "queued" || r.status === "running",
+      );
+      return hasActive ? 2500 : false;
+    },
+  });
+
+  const projectList = projects.data?.projects ?? [];
+  const agentList = agents.data?.agents ?? [];
+  const manifests = adapters.data?.adapters ?? [];
+  const runList = runs.data?.runs ?? [];
+
+  const todayCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return runList.filter((r) => new Date(r.createdAt) >= today).length;
+  }, [runList]);
+
+  const workingCount = useMemo(
+    () =>
+      runList.filter((r) => r.status === "queued" || r.status === "running")
+        .length,
+    [runList],
+  );
+
+  const recentRuns = runList.slice(0, 6);
+
+  return (
+    <PageScroll className="space-y-8 max-w-5xl">
+      <Hero />
+
+      <Stats
+        projects={projectList.length}
+        agents={agentList.length}
+        runsToday={todayCount}
+        working={workingCount}
+      />
+
+      <RecentActivity
+        runs={recentRuns}
+        agents={agentList}
+        manifests={manifests}
+        projects={projectList}
+      />
+
+      <ProjectsGrid
+        projects={projectList}
+        agents={agentList}
+      />
+    </PageScroll>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
+function Hero() {
+  const { t } = useI18n();
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12
+      ? t("home.greeting.morning")
+      : hour < 18
+        ? t("home.greeting.afternoon")
+        : t("home.greeting.evening");
+  return (
+    <div>
+      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+        <Sparkles className="size-3" />
+        loom
+      </div>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+        {greeting}.
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("home.subtitle")}</p>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
+function Stats({
+  projects,
+  agents,
+  runsToday,
+  working,
+}: {
+  projects: number;
+  agents: number;
+  runsToday: number;
+  working: number;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard label={t("home.stat.projects")} value={projects} />
+      <StatCard label={t("home.stat.agents")} value={agents} />
+      <StatCard label={t("home.stat.runsToday")} value={runsToday} />
+      <StatCard
+        label={t("home.stat.working")}
+        value={working}
+        accent={working > 0}
+      />
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border bg-card px-4 py-3">
+      <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-1 text-2xl font-semibold tabular-nums",
+          accent && "text-sky-600 dark:text-sky-400",
+        )}
+      >
+        {value}
+        {accent ? (
+          <span className="ml-2 inline-block size-1.5 rounded-full bg-sky-500 animate-pulse align-middle" />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
+function RecentActivity({
+  runs,
+  agents,
+  manifests,
+  projects,
+}: {
+  runs: Run[];
+  agents: { id: string; name: string; projectId: string; adapterKind: string }[];
+  manifests: { kind: string }[];
+  projects: { id: string; name: string }[];
+}) {
+  const { t } = useI18n();
+  return (
+    <section>
+      <SectionHeader title={t("home.recent.title")}>
+        <Button asChild variant="ghost" size="sm" className="text-xs h-7">
+          <Link to="/projects">{t("home.recent.viewAll")}</Link>
+        </Button>
+      </SectionHeader>
+      {runs.length === 0 ? (
+        <div className="rounded-lg border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+          {t("home.recent.empty")}
+        </div>
+      ) : (
+        <ul className="rounded-lg border bg-card divide-y">
+          {runs.map((r) => {
+            const agent = agents.find((a) => a.id === r.agentId);
+            const project = agent
+              ? projects.find((p) => p.id === agent.projectId)
+              : undefined;
+            const manifest = agent
+              ? manifests.find((m) => m.kind === agent.adapterKind)
+              : undefined;
+            return (
+              <li key={r.id}>
+                <Link
+                  to={
+                    project
+                      ? `/projects/${project.id}/runs/${r.id}`
+                      : `#`
+                  }
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors"
+                >
+                  {manifest ? (
+                    <AdapterIcon manifest={manifest as never} size={20} />
+                  ) : (
+                    <span className="size-5 shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">
+                        {agent?.name ?? "—"}
+                      </span>
+                      {project ? (
+                        <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                          <Hash className="size-2.5" />
+                          {project.name}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {r.prompt.slice(0, 100)}
+                    </p>
+                  </div>
+                  <Badge variant={statusVariant(r.status)} className="h-5 px-1.5 text-[10px]">
+                    {r.status}
+                  </Badge>
+                  <span className="text-[10px] text-muted-foreground/70 mono shrink-0 hidden sm:inline">
+                    {timeAgo(r.createdAt)}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function statusVariant(s: string): "info" | "success" | "destructive" | "warning" | "secondary" {
+  switch (s) {
+    case "succeeded":
+      return "success";
+    case "failed":
+      return "destructive";
+    case "cancelled":
+      return "warning";
+    case "running":
+    case "queued":
+      return "info";
+    default:
+      return "secondary";
+  }
+}
+
+/** Quick relative-time formatter — good enough for the homepage. */
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
+function ProjectsGrid({
+  projects,
+  agents,
+}: {
+  projects: { id: string; name: string; path: string }[];
+  agents: { projectId: string }[];
+}) {
+  const { t } = useI18n();
+  if (projects.length === 0) {
+    return (
+      <section>
+        <SectionHeader title={t("home.projects.title")} />
+        <div className="rounded-lg border border-dashed bg-card/50 px-6 py-10 text-center">
+          <Sparkles className="size-8 mx-auto text-muted-foreground/60" />
+          <p className="mt-3 text-sm font-medium">
+            {t("home.projects.empty.title")}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("home.projects.empty.desc")}
+          </p>
+          <Button asChild className="mt-4" size="sm">
+            <Link to="/projects">
+              <Plus />
+              {t("home.projects.new")}
+            </Link>
+          </Button>
+        </div>
+      </section>
+    );
+  }
+  return (
+    <section>
+      <SectionHeader title={t("home.projects.title")}>
+        <Button asChild variant="ghost" size="sm" className="text-xs h-7">
+          <Link to="/projects">{t("home.projects.viewAll")}</Link>
+        </Button>
+      </SectionHeader>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {projects.slice(0, 6).map((p) => {
+          const count = agents.filter((a) => a.projectId === p.id).length;
+          return (
+            <Link
+              key={p.id}
+              to={`/projects/${p.id}`}
+              className="group rounded-lg border bg-card hover:border-foreground/40 transition-colors p-4"
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex size-9 items-center justify-center rounded-md bg-foreground text-background text-sm font-bold shrink-0">
+                  {p.name.trim()[0]?.toUpperCase() ?? "?"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1 font-medium truncate">
+                    <Hash className="size-3 shrink-0 text-muted-foreground" />
+                    {p.name}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mono truncate" title={p.path}>
+                    {p.path}
+                  </p>
+                </div>
+                <ArrowRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              </div>
+              <div className="mt-3 text-[11px] text-muted-foreground">
+                {t("home.projects.agents", { count })}
+              </div>
+            </Link>
+          );
+        })}
+        <Link
+          to="/projects"
+          className="rounded-lg border border-dashed bg-card/30 hover:bg-card hover:border-foreground/40 transition-colors p-4 flex flex-col items-center justify-center text-center min-h-[110px]"
+        >
+          <Plus className="size-5 text-muted-foreground" />
+          <span className="mt-1.5 text-xs font-medium text-muted-foreground">
+            {t("home.projects.new")}
+          </span>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
+function SectionHeader({
+  title,
+  children,
+}: {
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between mb-3">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      {children}
+    </div>
+  );
+}
