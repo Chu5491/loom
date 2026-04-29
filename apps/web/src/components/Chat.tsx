@@ -68,7 +68,7 @@ const CONTINUATION_WINDOW_MS = 5 * 60 * 1000;
 // ────────────────────────────────────────────────────────────────────────────
 
 interface TailEvent {
-  kind: "text" | "tool" | "system";
+  kind: "text" | "tool";
   text: string;
 }
 
@@ -118,9 +118,10 @@ function useRunTail(
             }
           } else if (j.type === "result" && typeof j.result === "string") {
             pickedResult = j.result;
-          } else if (j.type === "system" && j.subtype) {
-            next.push({ kind: "system", text: j.subtype });
           }
+          // System events (init, hook_started, hook_response, compact_boundary,
+          // …) are CLI lifecycle metadata — useful in the full log page but
+          // pure noise in the conversation view, so we skip them here.
         } catch {
           // skip non-JSON lines
         }
@@ -614,6 +615,13 @@ export function AgentMessage({
         </p>
       ) : (
         <div className="space-y-1.5">
+          {/*
+           * Tool calls + system events are metadata about how the agent
+           * worked — always shown, in compact mono form. Streaming text
+           * is only shown while finalText is missing; once the run's
+           * result.result lands it replaces the partial text so we don't
+           * render the same answer twice.
+           */}
           {events.map((evt, i) => {
             if (evt.kind === "tool") {
               return (
@@ -626,22 +634,12 @@ export function AgentMessage({
                 </p>
               );
             }
-            if (evt.kind === "system") {
-              return (
-                <p key={i} className="text-xs text-muted-foreground">
-                  · {evt.text}
-                </p>
-              );
-            }
+            // text — only while we're still streaming. Once result lands,
+            // finalText is the canonical answer and we drop the partials.
+            if (finalText !== null) return null;
             return <MarkdownView key={i} text={evt.text} />;
           })}
-          {finalText ? (
-            <div
-              className={cn(events.length > 0 && "border-t pt-2 mt-1")}
-            >
-              <MarkdownView text={finalText} />
-            </div>
-          ) : null}
+          {finalText ? <MarkdownView text={finalText} /> : null}
         </div>
       )}
     </MessageRow>
