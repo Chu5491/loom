@@ -1,11 +1,82 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /* Class-based dark variant: html.dark gates all dark:* utilities. */
 @variant dark (&:where(.dark, .dark *));
 
-@theme {
+/* shadcn/ui design tokens — bound to Tailwind v4's @theme so we can use
+ * `bg-background`, `text-foreground`, `border-border`, etc. as utilities.
+ * The HSL triplets live on :root / .dark and are wrapped in hsl() here. */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 3.9%;
+  --primary: 240 5.9% 10%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 240 4.8% 95.9%;
+  --accent-foreground: 240 5.9% 10%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --ring: 240 5.9% 10%;
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: 240 10% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 240 10% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --popover: 240 10% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 240 5.9% 10%;
+  --secondary: 240 3.7% 15.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;
+  --muted-foreground: 240 5% 64.9%;
+  --accent: 240 3.7% 15.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;
+  --input: 240 3.7% 15.9%;
+  --ring: 240 4.9% 83.9%;
 }
 
 html,
@@ -16,31 +87,26 @@ body,
 
 body {
   font-family: var(--font-sans);
-  background: rgb(255 255 255);
-  color: rgb(24 24 27);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-html.dark body {
-  background: rgb(9 9 11); /* zinc-950 */
-  color: rgb(244 244 245); /* zinc-100 */
+* {
+  border-color: hsl(var(--border));
 }
 
-/* tiny utility for monospace pre */
 .mono {
   font-family: var(--font-mono);
 }
 
-/* Markdown preview styling — both themes via dark: scoping. */
+/* Markdown preview — uses shadcn tokens for theme integration. */
 .prose-loom {
-  color: rgb(39 39 42); /* zinc-800 */
+  color: hsl(var(--foreground));
   font-size: 0.875rem;
   line-height: 1.6;
   overflow-y: auto;
-}
-html.dark .prose-loom {
-  color: rgb(228 228 231); /* zinc-200 */
 }
 .prose-loom h1,
 .prose-loom h2,
@@ -71,56 +137,39 @@ html.dark .prose-loom {
 .prose-loom code {
   font-family: var(--font-mono);
   font-size: 0.85em;
-  background: rgb(244 244 245); /* zinc-100 */
+  background: hsl(var(--muted));
   padding: 0.1em 0.35em;
-  border-radius: 4px;
-}
-html.dark .prose-loom code {
-  background: rgb(39 39 42); /* zinc-800 */
+  border-radius: var(--radius-sm);
 }
 .prose-loom pre {
   font-family: var(--font-mono);
   font-size: 0.8125rem;
-  background: rgb(250 250 250); /* zinc-50 */
-  border: 1px solid rgb(228 228 231); /* zinc-200 */
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
   padding: 0.75em 1em;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow-x: auto;
   margin: 0.75em 0;
-}
-html.dark .prose-loom pre {
-  background: rgb(24 24 27); /* zinc-900 */
-  border-color: rgb(39 39 42); /* zinc-800 */
 }
 .prose-loom pre code {
   background: transparent;
   padding: 0;
 }
 .prose-loom blockquote {
-  border-left: 3px solid rgb(212 212 216); /* zinc-300 */
+  border-left: 3px solid hsl(var(--border));
   padding-left: 1em;
-  color: rgb(82 82 91); /* zinc-600 */
+  color: hsl(var(--muted-foreground));
   margin: 0.75em 0;
 }
-html.dark .prose-loom blockquote {
-  border-left-color: rgb(63 63 70);
-  color: rgb(161 161 170);
-}
 .prose-loom a {
-  color: rgb(2 132 199); /* sky-600 */
+  color: hsl(var(--primary));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-html.dark .prose-loom a {
-  color: rgb(125 211 252); /* sky-300 */
-}
 .prose-loom hr {
   border: none;
-  border-top: 1px solid rgb(228 228 231);
+  border-top: 1px solid hsl(var(--border));
   margin: 1em 0;
-}
-html.dark .prose-loom hr {
-  border-top-color: rgb(39 39 42);
 }
 .prose-loom table {
   border-collapse: collapse;
@@ -128,46 +177,15 @@ html.dark .prose-loom hr {
 }
 .prose-loom th,
 .prose-loom td {
-  border: 1px solid rgb(228 228 231);
+  border: 1px solid hsl(var(--border));
   padding: 0.4em 0.75em;
 }
-html.dark .prose-loom th,
-html.dark .prose-loom td {
-  border-color: rgb(39 39 42);
-}
 .prose-loom th {
-  background: rgb(250 250 250);
+  background: hsl(var(--muted));
   font-weight: 600;
-}
-html.dark .prose-loom th {
-  background: rgb(24 24 27);
 }
 .prose-loom strong {
   font-weight: 600;
-  color: rgb(9 9 11);
-}
-html.dark .prose-loom strong {
-  color: rgb(244 244 245);
+  color: hsl(var(--foreground));
 }
 .prose-loom em { font-style: italic; }
-
-/* Chat micro-animations: new messages slide in from below + fade. Used by
- * Chat.tsx via the .msg-in class. Kept here (not Tailwind utility) so the
- * keyframe is defined once for both themes. */
-@keyframes msg-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.msg-in {
-  animation: msg-in 240ms ease-out both;
-}
-
-/* Slow breathing pulse for the "working" presence dot — softer than
- * Tailwind's default animate-pulse so it doesn't feel anxious. */
-@keyframes breath {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.55; transform: scale(0.85); }
-}
-.breath {
-  animation: breath 1.6s ease-in-out infinite;
-}

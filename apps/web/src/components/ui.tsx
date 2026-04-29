@@ -1,110 +1,98 @@
-import { forwardRef } from "react";
-import type {
-  ButtonHTMLAttributes,
-  HTMLAttributes,
-  InputHTMLAttributes,
-  LabelHTMLAttributes,
-  TextareaHTMLAttributes,
-} from "react";
+/**
+ * Compatibility shim for our pre-shadcn primitives.
+ *
+ * The whole project is migrating to shadcn/ui (new component files live in
+ * components/ui/*). This file preserves the older import surface that
+ * AgentsPage / SpecsPage / RunsPage / etc. still use, mapping the legacy
+ * prop names (`variant: "primary"|"danger"`, `tone: "neutral"|"warn"`)
+ * onto the shadcn variants underneath. Once every page is migrated this
+ * file can be deleted.
+ */
 
-function cn(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
+import * as React from "react";
+import { Button as ShadcnButton, type ButtonProps as ShadcnButtonProps } from "./ui/button.js";
+import { Input as ShadcnInput } from "./ui/input.js";
+import { Textarea as ShadcnTextarea } from "./ui/textarea.js";
+import { Label as ShadcnLabel } from "./ui/label.js";
+import { Card as ShadcnCard } from "./ui/card.js";
+import { Badge as ShadcnBadge } from "./ui/badge.js";
+import { cn } from "../lib/utils.js";
 
-export const Button = forwardRef<
+// ─── Button ────────────────────────────────────────────────────────────────
+type LegacyButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type LegacyButtonSize = "sm" | "md";
+
+const VARIANT_MAP: Record<LegacyButtonVariant, ShadcnButtonProps["variant"]> = {
+  primary: "default",
+  secondary: "outline",
+  ghost: "ghost",
+  danger: "destructive",
+};
+
+const SIZE_MAP: Record<LegacyButtonSize, ShadcnButtonProps["size"]> = {
+  sm: "sm",
+  md: "default",
+};
+
+export const Button = React.forwardRef<
   HTMLButtonElement,
-  ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: "primary" | "secondary" | "ghost" | "danger";
-    size?: "sm" | "md";
+  Omit<ShadcnButtonProps, "variant" | "size"> & {
+    variant?: LegacyButtonVariant;
+    size?: LegacyButtonSize;
   }
->(({ className, variant = "primary", size = "md", ...rest }, ref) => {
-  const base =
-    "inline-flex items-center justify-center rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-zinc-950 focus:ring-zinc-400";
-  const variants = {
-    primary:
-      "bg-zinc-900 text-zinc-50 hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white",
-    secondary:
-      "bg-white text-zinc-700 hover:bg-zinc-50 border border-zinc-300 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 dark:border-zinc-700",
-    ghost:
-      "bg-transparent text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800",
-    danger: "bg-red-600 text-white hover:bg-red-500",
-  } as const;
-  const sizes = {
-    sm: "h-7 px-2.5 text-xs",
-    md: "h-9 px-3.5 text-sm",
-  } as const;
-  return (
-    <button
-      ref={ref}
-      className={cn(base, variants[variant], sizes[size], className)}
-      {...rest}
-    />
-  );
-});
-Button.displayName = "Button";
-
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...rest }, ref) => (
-    <input
-      ref={ref}
-      className={cn(
-        "h-9 w-full rounded-md border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500",
-        "border-zinc-300 bg-white text-zinc-900 placeholder-zinc-400",
-        "dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500",
-        className,
-      )}
-      {...rest}
-    />
-  ),
-);
-Input.displayName = "Input";
-
-export const Textarea = forwardRef<
-  HTMLTextAreaElement,
-  TextareaHTMLAttributes<HTMLTextAreaElement>
->(({ className, ...rest }, ref) => (
-  <textarea
+>(({ variant = "primary", size = "md", ...props }, ref) => (
+  <ShadcnButton
     ref={ref}
-    className={cn(
-      "min-h-[100px] w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500 mono",
-      "border-zinc-300 bg-white text-zinc-900 placeholder-zinc-400",
-      "dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500",
-      className,
-    )}
-    {...rest}
+    variant={VARIANT_MAP[variant]}
+    size={SIZE_MAP[size]}
+    {...props}
   />
 ));
-Textarea.displayName = "Textarea";
+Button.displayName = "Button";
 
+// ─── Form primitives (pass-through) ────────────────────────────────────────
+export const Input = ShadcnInput;
+export const Textarea = ShadcnTextarea;
+
+// ─── Label (loom uses tiny uppercase labels above inputs) ─────────────────
 export function Label({
   className,
   ...rest
-}: LabelHTMLAttributes<HTMLLabelElement>) {
+}: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (
-    <label
-      className={cn(
-        "block text-xs uppercase tracking-wide",
-        "text-zinc-500 dark:text-zinc-400",
-        className,
-      )}
+    <ShadcnLabel
+      className={cn("text-xs uppercase tracking-wide text-muted-foreground", className)}
       {...rest}
     />
   );
 }
 
-export function Card({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
+// ─── Card (legacy: padded by default; opt out with `noPad`) ───────────────
+export function Card({
+  className,
+  noPad,
+  ...rest
+}: React.HTMLAttributes<HTMLDivElement> & { noPad?: boolean }) {
   return (
-    <div
-      className={cn(
-        "rounded-lg border p-4",
-        "border-zinc-200 bg-zinc-50/50",
-        "dark:border-zinc-800 dark:bg-zinc-900/50",
-        className,
-      )}
+    <ShadcnCard
+      className={cn(noPad ? "" : "p-4", className)}
       {...rest}
     />
   );
 }
+
+// ─── Badge (legacy `tone` → shadcn `variant`) ─────────────────────────────
+type LegacyBadgeTone = "neutral" | "success" | "danger" | "warn" | "info";
+const TONE_MAP: Record<
+  LegacyBadgeTone,
+  "secondary" | "success" | "destructive" | "warning" | "info"
+> = {
+  neutral: "secondary",
+  success: "success",
+  danger: "destructive",
+  warn: "warning",
+  info: "info",
+};
 
 export function Badge({
   children,
@@ -112,32 +100,17 @@ export function Badge({
   className,
 }: {
   children: React.ReactNode;
-  tone?: "neutral" | "success" | "danger" | "warn" | "info";
+  tone?: LegacyBadgeTone;
   className?: string;
 }) {
-  const tones = {
-    neutral:
-      "bg-zinc-100 text-zinc-700 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700",
-    success:
-      "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
-    danger:
-      "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
-    warn: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800",
-    info: "bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800",
-  } as const;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded border px-2 py-0.5 text-xs font-medium",
-        tones[tone],
-        className,
-      )}
-    >
+    <ShadcnBadge variant={TONE_MAP[tone]} className={className}>
       {children}
-    </span>
+    </ShadcnBadge>
   );
 }
 
+// ─── Field (label + control + hint) ────────────────────────────────────────
 export function Field({
   label,
   hint,
@@ -151,9 +124,7 @@ export function Field({
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      {hint ? (
-        <p className="text-xs text-zinc-500 dark:text-zinc-500">{hint}</p>
-      ) : null}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

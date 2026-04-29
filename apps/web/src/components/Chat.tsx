@@ -1,46 +1,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import {
+  CornerDownLeft,
+  Forward,
+  MessageSquareReply,
+  Send,
+  X,
+} from "lucide-react";
 import type { AdapterManifest, Agent, Run, RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
-import { Button } from "./ui.js";
 import { AdapterIcon } from "./AdapterIcon.js";
-import { useI18n } from "../context/I18nContext.js";
+import { Avatar, AvatarFallback } from "./ui/avatar.js";
+import { Badge } from "./ui/badge.js";
+import { Button } from "./ui/button.js";
 import {
-  agentColorFor,
-  classesFor,
-  initialFor,
-  type ColorClasses,
-} from "./agentColor.js";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select.js";
+import { TooltipProvider } from "./ui/tooltip.js";
+import { useI18n } from "../context/I18nContext.js";
+import { cn } from "../lib/utils.js";
+import { agentColorFor, classesFor, initialFor } from "./agentColor.js";
 
 /**
- * Group-chat view of a project.
+ * Group-chat view of a project, built on shadcn primitives.
  *
- * Each agent has a deterministic signature color (id-hashed), so even if
- * three agents share the same adapter you can tell them apart at a glance.
- * Messages share a single chronological column (Slack/Discord style); the
- * left rail of an agent message wears the agent's color so ownership is
- * visible without reading names.
- *
- * No agent-to-agent autonomy — the user routes every message. Forwarding
- * an agent's result to another agent is the routing primitive that makes
- * the room feel like a team workspace.
+ * Restrained palette — neutral background with one tinted accent per
+ * agent (used only on the avatar fill + a hairline left rail). Status,
+ * spacing, typography come from shadcn tokens so the room reads like a
+ * proper workspace rather than a multi-color demo.
  */
-
-function statusTone(s: RunStatus): "emerald" | "red" | "amber" | "sky" | "zinc" {
-  switch (s) {
-    case "succeeded":
-      return "emerald";
-    case "failed":
-      return "red";
-    case "cancelled":
-      return "amber";
-    case "running":
-      return "sky";
-    default:
-      return "zinc";
-  }
-}
 
 interface TailEvent {
   kind: "text" | "tool" | "system";
@@ -121,69 +114,55 @@ export function AgentAvatar({
   agent,
   manifest,
   working,
-  size = 36,
+  size = "md",
 }: {
   agent: Agent;
   manifest: AdapterManifest | undefined;
-  working: boolean;
-  size?: number;
+  working?: boolean;
+  size?: "sm" | "md" | "lg";
 }) {
-  const color = agentColorFor(agent.id);
-  const cls = classesFor(color);
-  const initial = initialFor(agent.name);
+  const cls = classesFor(agentColorFor(agent.id));
+  const dim =
+    size === "sm" ? "h-7 w-7 text-[11px]" : size === "lg" ? "h-10 w-10 text-sm" : "h-8 w-8 text-xs";
+  const badgeSize = size === "sm" ? 11 : size === "lg" ? 16 : 13;
 
   return (
-    <span className="relative inline-block shrink-0" style={{ width: size, height: size }}>
-      <span
-        className={
-          "flex items-center justify-center rounded-full font-semibold ring-2 " +
-          cls.bgSoft +
-          " " +
-          cls.text +
-          " " +
-          cls.ring
-        }
-        style={{
-          width: size,
-          height: size,
-          fontSize: Math.round(size * 0.42),
-        }}
-      >
-        {initial}
-      </span>
+    <span className="relative inline-block shrink-0">
+      <Avatar className={dim}>
+        <AvatarFallback className={cn("font-semibold", cls.bgSoft, cls.text)}>
+          {initialFor(agent.name)}
+        </AvatarFallback>
+      </Avatar>
       {manifest ? (
-        <span
-          className="absolute -bottom-0.5 -right-0.5 rounded-full bg-white dark:bg-zinc-950 p-0.5 ring-1 ring-zinc-200 dark:ring-zinc-800"
-          title={manifest.displayName}
-        >
-          <AdapterIcon manifest={manifest} size={Math.round(size * 0.36)} />
+        <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-background ring-1 ring-border p-px">
+          <AdapterIcon manifest={manifest} size={badgeSize} />
         </span>
       ) : null}
       {working ? (
         <span
-          className={
-            "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-zinc-950 breath " +
-            cls.dot
-          }
+          className={cn(
+            "absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ring-2 ring-background",
+            cls.dot,
+          )}
         />
       ) : null}
     </span>
   );
 }
 
-function UserAvatar({ size = 36 }: { size?: number }) {
+function UserAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  const dim = size === "sm" ? "h-7 w-7 text-[11px]" : size === "lg" ? "h-10 w-10 text-sm" : "h-8 w-8 text-xs";
   return (
-    <span
-      className="inline-flex items-center justify-center rounded-full bg-zinc-900 text-white font-semibold ring-2 ring-zinc-200 shrink-0 dark:bg-zinc-100 dark:text-zinc-900 dark:ring-zinc-800"
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
-    >
-      나
-    </span>
+    <Avatar className={dim}>
+      <AvatarFallback className="bg-foreground text-background font-semibold">
+        나
+      </AvatarFallback>
+    </Avatar>
   );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Member panel — top of the room
+// Member panel
 // ────────────────────────────────────────────────────────────────────────────
 
 export function MemberPanel({
@@ -201,53 +180,38 @@ export function MemberPanel({
 }) {
   const { t } = useI18n();
   return (
-    <div className="border-b border-zinc-200 dark:border-zinc-800 bg-gradient-to-b from-white to-zinc-50/50 dark:from-zinc-950 dark:to-zinc-900/40">
-      <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+    <div className="border-b bg-muted/30 px-4 py-2.5">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           {t("chat.members.title")}
         </span>
-        <span className="text-[10px] text-zinc-400 dark:text-zinc-600">
-          · {agents.length}
-        </span>
+        <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+          {agents.length}
+        </Badge>
       </div>
-      <div className="px-3 pb-3 flex items-center gap-2 overflow-x-auto">
+      <div className="flex items-center gap-1.5 overflow-x-auto">
         {agents.map((a) => {
           const manifest = manifests.find((m) => m.kind === a.adapterKind);
           const working = workingIds.has(a.id);
           const selected = selectedAgentId === a.id;
-          const cls = classesFor(agentColorFor(a.id));
           return (
             <button
               key={a.id}
               onClick={() => onPick(a.id)}
-              className={
-                "flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 transition-all border shrink-0 " +
-                (selected
-                  ? "border-zinc-900 bg-white shadow-sm dark:border-zinc-100 dark:bg-zinc-900"
-                  : "border-zinc-200 bg-white/60 hover:border-zinc-300 hover:bg-white dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-700 dark:hover:bg-zinc-900")
-              }
+              className={cn(
+                "flex items-center gap-2 rounded-full pl-1 pr-3 py-1 text-xs font-medium transition-colors border shrink-0",
+                selected
+                  ? "border-foreground bg-background text-foreground shadow-sm"
+                  : "border-border bg-background/60 text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+              )}
             >
-              <AgentAvatar
-                agent={a}
-                manifest={manifest}
-                working={working}
-                size={32}
-              />
-              <div className="text-left">
-                <div className={"text-xs font-medium " + cls.text}>
-                  @{a.name}
-                </div>
-                <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                  {working ? (
-                    <span className="inline-flex items-center gap-1">
-                      <span className={"w-1 h-1 rounded-full breath " + cls.dot} />
-                      {t("chat.members.working")}
-                    </span>
-                  ) : (
-                    t("chat.members.idle")
-                  )}
-                </div>
-              </div>
+              <AgentAvatar agent={a} manifest={manifest} working={working} size="sm" />
+              <span>@{a.name}</span>
+              {working ? (
+                <span className="text-[10px] font-normal text-sky-600 dark:text-sky-400">
+                  · {t("chat.members.working")}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -263,13 +227,12 @@ export function MemberPanel({
 export function UserMessage({
   run,
   target,
-  manifest,
 }: {
   run: Run;
   target: Agent | undefined;
-  manifest: AdapterManifest | undefined;
 }) {
   const { t } = useI18n();
+  const cls = target ? classesFor(agentColorFor(target.id)) : null;
   return (
     <Row
       avatar={<UserAvatar />}
@@ -277,21 +240,34 @@ export function UserMessage({
       timestamp={run.createdAt}
       tag={
         target ? (
-          <span className="text-[11px] text-zinc-500 inline-flex items-center gap-1">
-            →{" "}
-            <span className={"font-medium " + classesFor(agentColorFor(target.id)).text}>
-              @{target.name}
-            </span>
-            {manifest ? <AdapterIcon manifest={manifest} size={12} /> : null}
+          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+            <CornerDownLeft className="size-3 -scale-x-100" />
+            <span className={cn("font-medium", cls?.text)}>@{target.name}</span>
           </span>
         ) : undefined
       }
     >
-      <div className="rounded-xl bg-white border border-zinc-200 px-3.5 py-2 text-sm text-zinc-900 whitespace-pre-wrap break-words shadow-sm dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-100">
+      <div className="rounded-lg bg-card border px-3 py-2 text-sm whitespace-pre-wrap break-words shadow-sm">
         {run.prompt}
       </div>
     </Row>
   );
+}
+
+function statusVariant(s: RunStatus): "info" | "success" | "destructive" | "warning" | "secondary" {
+  switch (s) {
+    case "succeeded":
+      return "success";
+    case "failed":
+      return "destructive";
+    case "cancelled":
+      return "warning";
+    case "running":
+    case "queued":
+      return "info";
+    default:
+      return "secondary";
+  }
 }
 
 export function AgentMessage({
@@ -318,9 +294,8 @@ export function AgentMessage({
   });
 
   const name = agent?.name ?? run.agentId.slice(0, 8);
-  const tone = statusTone(run.status);
+  const cls = agent ? classesFor(agentColorFor(agent.id)) : null;
   const hasContent = events.length > 0 || resultText !== null;
-  const cls: ColorClasses | null = agent ? classesFor(agentColorFor(agent.id)) : null;
 
   return (
     <Row
@@ -328,63 +303,50 @@ export function AgentMessage({
         agent ? (
           <AgentAvatar agent={agent} manifest={manifest} working={isActive} />
         ) : (
-          <span className="w-9 h-9 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
+          <Avatar>
+            <AvatarFallback>?</AvatarFallback>
+          </Avatar>
         )
       }
       name={name}
-      nameColor={cls?.text}
+      nameClassName={cls?.text}
       timestamp={run.createdAt}
       tag={
-        <span className={"flex items-center gap-1.5 text-xs " + toneText(tone)}>
-          <span
-            className={
-              "w-1.5 h-1.5 rounded-full " +
-              toneDot(tone) +
-              (isActive ? " breath" : "")
-            }
-          />
+        <Badge variant={statusVariant(run.status)} className="h-5 px-1.5 text-[10px] gap-1">
+          {isActive ? <span className="size-1.5 rounded-full bg-current animate-pulse" /> : null}
           {t(`status.${run.status}`)}
-        </span>
+        </Badge>
       }
       leftRailClass={cls?.border}
     >
       <div
-        className={
-          "rounded-xl border px-3.5 py-2 text-sm shadow-sm transition-colors " +
-          (isActive
-            ? (cls?.bgSoft ?? "bg-sky-50") +
-              " " +
-              (cls?.border ?? "border-sky-300")
-            : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900")
-        }
+        className={cn(
+          "rounded-lg border px-3 py-2 text-sm transition-colors",
+          isActive ? "bg-muted/40 border-foreground/15" : "bg-card",
+        )}
       >
         {!hasContent ? (
-          <p className="text-xs italic text-zinc-400 dark:text-zinc-500">
+          <p className="text-xs italic text-muted-foreground">
             {isActive ? t("chat.tail.waiting") : "—"}
           </p>
         ) : (
           <div className="space-y-1.5">
             {events.map((evt, i) => (
-              <p
-                key={i}
-                className="whitespace-pre-wrap break-words text-zinc-800 dark:text-zinc-200"
-              >
+              <p key={i} className="whitespace-pre-wrap break-words leading-relaxed">
                 {evt.kind === "tool" ? (
-                  <>
-                    <span className="text-amber-600 dark:text-amber-400">🛠</span>{" "}
-                    <span className="mono text-zinc-600 dark:text-zinc-400 text-xs">
-                      {evt.text}
-                    </span>
-                  </>
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground mono">
+                    <span aria-hidden>🛠</span>
+                    <span>{evt.text}</span>
+                  </span>
                 ) : evt.kind === "system" ? (
-                  <span className="text-xs text-zinc-500">· {evt.text}</span>
+                  <span className="text-xs text-muted-foreground">· {evt.text}</span>
                 ) : (
                   <span>{evt.text}</span>
                 )}
               </p>
             ))}
             {resultText ? (
-              <p className="whitespace-pre-wrap break-words text-zinc-900 dark:text-zinc-100 border-t border-zinc-200/60 dark:border-zinc-800/60 pt-1.5">
+              <p className="border-t pt-1.5 whitespace-pre-wrap break-words font-medium">
                 {resultText}
               </p>
             ) : null}
@@ -392,39 +354,45 @@ export function AgentMessage({
         )}
       </div>
 
-      <div className="flex items-center gap-3 text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
-        <Link
-          to={`/runs/${run.id}`}
-          className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200"
-        >
-          {t("chat.message.openLog")}
-        </Link>
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
+          <Link to={`/runs/${run.id}`}>{t("chat.message.openLog")}</Link>
+        </Button>
         {!isActive ? (
           <>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
               onClick={() => onReply(run, agent)}
-              className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200"
             >
+              <MessageSquareReply />
               {t("chat.message.reply")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
               onClick={() => onForward(run, agent)}
-              className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200"
             >
-              {t("chat.message.forward")} →
-            </button>
+              <Forward />
+              {t("chat.message.forward")}
+            </Button>
           </>
         ) : null}
         {isActive ? (
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+            disabled={cancel.isPending}
             onClick={() => {
               if (confirm(t("chat.message.cancelConfirm"))) cancel.mutate();
             }}
-            disabled={cancel.isPending}
-            className="hover:text-red-600 hover:underline dark:hover:text-red-400"
           >
+            <X />
             {t("chat.message.cancel")}
-          </button>
+          </Button>
         ) : null}
       </div>
     </Row>
@@ -434,7 +402,7 @@ export function AgentMessage({
 function Row({
   avatar,
   name,
-  nameColor,
+  nameClassName,
   timestamp,
   tag,
   leftRailClass,
@@ -442,7 +410,7 @@ function Row({
 }: {
   avatar: React.ReactNode;
   name: string;
-  nameColor?: string;
+  nameClassName?: string;
   timestamp: string;
   tag?: React.ReactNode;
   leftRailClass?: string;
@@ -453,60 +421,18 @@ function Row({
       <div className="shrink-0 mt-0.5">{avatar}</div>
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-baseline gap-2">
-          <span
-            className={
-              "font-semibold text-sm " +
-              (nameColor ?? "text-zinc-900 dark:text-zinc-100")
-            }
-          >
-            {name}
-          </span>
-          {tag ? <span className="text-[11px]">{tag}</span> : null}
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-600 mono ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className={cn("text-sm font-semibold", nameClassName)}>{name}</span>
+          {tag}
+          <span className="ml-auto text-[10px] text-muted-foreground/60 mono opacity-0 group-hover:opacity-100 transition-opacity">
             {new Date(timestamp).toLocaleTimeString()}
           </span>
         </div>
-        <div
-          className={
-            leftRailClass
-              ? "border-l-2 pl-3 -ml-3 " + leftRailClass
-              : ""
-          }
-        >
+        <div className={cn(leftRailClass && "border-l-2 -ml-3 pl-3", leftRailClass)}>
           {children}
         </div>
       </div>
     </div>
   );
-}
-
-function toneText(tone: string): string {
-  switch (tone) {
-    case "emerald":
-      return "text-emerald-700 dark:text-emerald-400";
-    case "red":
-      return "text-red-600 dark:text-red-400";
-    case "amber":
-      return "text-amber-700 dark:text-amber-400";
-    case "sky":
-      return "text-sky-600 dark:text-sky-400";
-    default:
-      return "text-zinc-500";
-  }
-}
-function toneDot(tone: string): string {
-  switch (tone) {
-    case "emerald":
-      return "bg-emerald-500";
-    case "red":
-      return "bg-red-500";
-    case "amber":
-      return "bg-amber-500";
-    case "sky":
-      return "bg-sky-500";
-    default:
-      return "bg-zinc-400";
-  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -528,16 +454,10 @@ export function WorkingIndicator({
       : t("chat.working.plural", { count: workingAgents.length });
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-gradient-to-r from-sky-50 via-white to-sky-50 dark:from-sky-950/30 dark:via-zinc-950 dark:to-sky-950/30 border-t border-sky-100 dark:border-sky-900/50">
-      <AvatarStack
-        agents={workingAgents}
-        manifests={manifests}
-        max={4}
-      />
-      <span className="text-xs text-sky-700 dark:text-sky-300 font-medium">
-        {label}
-      </span>
-      <span className="flex gap-0.5 ml-auto">
+    <div className="flex items-center gap-3 border-t bg-muted/40 px-4 py-2">
+      <AvatarStack agents={workingAgents} manifests={manifests} max={4} />
+      <span className="text-xs font-medium text-foreground">{label}</span>
+      <span className="ml-auto flex gap-1">
         <Dot delay={0} />
         <Dot delay={150} />
         <Dot delay={300} />
@@ -558,23 +478,18 @@ function AvatarStack({
   const visible = agents.slice(0, max);
   const overflow = agents.length - visible.length;
   return (
-    <div className="flex -space-x-2">
+    <div className="flex -space-x-1.5">
       {visible.map((a) => (
-        <span
-          key={a.id}
-          className="ring-2 ring-white dark:ring-zinc-950 rounded-full"
-          title={a.name}
-        >
+        <span key={a.id} className="ring-2 ring-background rounded-full">
           <AgentAvatar
             agent={a}
             manifest={manifests.find((m) => m.kind === a.adapterKind)}
-            working={false}
-            size={24}
+            size="sm"
           />
         </span>
       ))}
       {overflow > 0 ? (
-        <span className="w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-800 ring-2 ring-white dark:ring-zinc-950 flex items-center justify-center text-[10px] font-medium text-zinc-600 dark:text-zinc-400">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted ring-2 ring-background text-[10px] font-medium text-muted-foreground">
           +{overflow}
         </span>
       ) : null}
@@ -585,7 +500,7 @@ function AvatarStack({
 function Dot({ delay }: { delay: number }) {
   return (
     <span
-      className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-bounce"
+      className="size-1.5 rounded-full bg-foreground/60 animate-bounce"
       style={{ animationDelay: `${delay}ms`, animationDuration: "1.1s" }}
     />
   );
@@ -656,52 +571,49 @@ export function Composer({
     : t("chat.composer.placeholderNoAgent");
 
   return (
-    <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 pt-2.5 pb-3">
+    <div className="border-t bg-card px-3 py-3">
       {create.error ? (
-        <p className="mb-2 text-xs text-red-500 dark:text-red-400 px-1">
-          {create.error.message}
-        </p>
+        <p className="mb-2 text-xs text-destructive px-1">{create.error.message}</p>
       ) : null}
-      <div
-        className={
-          "rounded-2xl border bg-zinc-50 dark:bg-zinc-900 transition-all " +
-          (target
-            ? "border-zinc-300 dark:border-zinc-700 focus-within:border-zinc-500 focus-within:ring-2 focus-within:ring-zinc-200 dark:focus-within:border-zinc-400 dark:focus-within:ring-zinc-800"
-            : "border-zinc-300 dark:border-zinc-800")
-        }
-      >
-        <div className="flex items-center gap-2 px-2.5 pt-1.5">
-          {target ? (
-            <span className="flex items-center gap-1.5">
-              <AgentAvatar
-                agent={target}
-                manifest={targetManifest}
-                working={false}
-                size={20}
-              />
-              <span
-                className={
-                  "text-xs font-semibold " + (targetCls?.text ?? "text-zinc-700")
-                }
-              >
-                @{target.name}
-              </span>
-            </span>
-          ) : null}
-          <select
-            value={agentId}
-            onChange={(e) => onAgentChange(e.target.value)}
-            className="appearance-none bg-transparent text-[10px] text-zinc-400 hover:text-zinc-600 cursor-pointer focus:outline-none dark:text-zinc-500 dark:hover:text-zinc-300"
-            title="Change target"
-          >
-            {agents.length === 0 ? <option value="">—</option> : null}
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                @{a.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-600 ml-auto">
+      <div className="rounded-xl border bg-background focus-within:ring-1 focus-within:ring-ring transition-all">
+        <div className="flex items-center justify-between gap-2 px-2 pt-2">
+          <Select value={agentId} onValueChange={onAgentChange}>
+            <SelectTrigger className="h-7 w-auto gap-2 border-0 bg-muted/60 hover:bg-muted px-2 shadow-none focus:ring-0 [&>svg]:opacity-100">
+              <SelectValue>
+                {target ? (
+                  <span className="flex items-center gap-1.5">
+                    <AgentAvatar
+                      agent={target}
+                      manifest={targetManifest}
+                      size="sm"
+                    />
+                    <span className={cn("text-xs font-semibold", targetCls?.text)}>
+                      @{target.name}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">—</span>
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              {agents.map((a) => {
+                const m = manifests.find((mm) => mm.kind === a.adapterKind);
+                const c = classesFor(agentColorFor(a.id));
+                return (
+                  <SelectItem key={a.id} value={a.id} className="pl-8">
+                    <span className="flex items-center gap-2">
+                      <AgentAvatar agent={a} manifest={m} size="sm" />
+                      <span className={cn("text-sm font-medium", c.text)}>
+                        @{a.name}
+                      </span>
+                    </span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <span className="text-[10px] text-muted-foreground/70">
             {t("chat.composer.hint")}
           </span>
         </div>
@@ -718,15 +630,21 @@ export function Composer({
           }}
           placeholder={placeholder}
           disabled={!agentId}
-          className="w-full resize-none bg-transparent px-3 pb-2 text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none dark:text-zinc-100 dark:placeholder-zinc-500 disabled:opacity-50"
+          className="w-full resize-none bg-transparent px-3 pb-2 pt-1 text-sm placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
         />
-        <div className="flex justify-end px-2 pb-1.5">
+        <div className="flex justify-end px-2 pb-2">
           <Button
             size="sm"
             disabled={!agentId || !text.trim() || create.isPending}
             onClick={send}
           >
-            {create.isPending ? t("chat.composer.sending") : t("chat.composer.send")}
+            {create.isPending ? (
+              t("chat.composer.sending")
+            ) : (
+              <>
+                <Send /> {t("chat.composer.send")}
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -735,7 +653,7 @@ export function Composer({
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Quote helpers + room derivations
+// Helpers
 // ────────────────────────────────────────────────────────────────────────────
 
 export function buildReplyQuote(
@@ -808,3 +726,6 @@ export function useRoomDerived(
     };
   }, [runs, agents]);
 }
+
+/** Wrap consumers in TooltipProvider once at the top of the chat root. */
+export { TooltipProvider };

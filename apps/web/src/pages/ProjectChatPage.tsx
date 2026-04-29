@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, MessageCircle, Users } from "lucide-react";
 import type { Agent, Run } from "@loom/core";
 import { api } from "../api/client.js";
+import { Button } from "../components/ui/button.js";
+import { Separator } from "../components/ui/separator.js";
 import {
   AgentMessage,
   Composer,
   MemberPanel,
+  TooltipProvider,
   UserMessage,
   WorkingIndicator,
   buildForwardQuote,
@@ -70,7 +74,6 @@ export function ProjectChatPage() {
     if (!agentId && agentList.length) setAgentId(agentList[0]!.id);
   }, [agentList, agentId]);
 
-  // Auto-scroll: stick to bottom unless the user scrolled away.
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickyBottomRef = useRef(true);
   useEffect(() => {
@@ -99,11 +102,11 @@ export function ProjectChatPage() {
   };
 
   if (project.isLoading || agents.isLoading) {
-    return <p className="text-zinc-500 text-sm">{t("common.loading")}</p>;
+    return <p className="text-sm text-muted-foreground">{t("common.loading")}</p>;
   }
   if (project.isError || !project.data) {
     return (
-      <p className="text-red-500 dark:text-red-400 text-sm">
+      <p className="text-sm text-destructive">
         {project.error?.message ?? t("common.notFound")}
       </p>
     );
@@ -112,96 +115,96 @@ export function ProjectChatPage() {
   const p = project.data.project;
 
   return (
-    <div
-      className="flex flex-col rounded-xl border border-zinc-200 bg-white overflow-hidden dark:border-zinc-800 dark:bg-zinc-950 shadow-sm"
-      style={{ height: "calc(100vh - 180px)" }}
-    >
-      <Header
-        project={p}
-        agentCount={agentList.length}
-        runCount={projectRuns.length}
-        workingCount={working.length}
-      />
-
-      {agentList.length > 0 ? (
-        <MemberPanel
-          agents={agentList}
-          manifests={manifests}
-          workingIds={workingIds}
-          selectedAgentId={agentId}
-          onPick={(id) => setAgentId(id)}
-        />
-      ) : null}
-
+    <TooltipProvider delayDuration={200}>
       <div
-        ref={bodyRef}
-        className="flex-1 overflow-y-auto px-5 py-6 space-y-5 bg-gradient-to-b from-zinc-50/40 to-white dark:from-zinc-900/40 dark:to-zinc-950"
+        className="flex flex-col rounded-xl border bg-card overflow-hidden shadow-sm"
+        style={{ height: "calc(100vh - 180px)" }}
       >
-        {agentList.length === 0 ? (
-          <Empty>
-            <p className="text-3xl">👥</p>
-            <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-              {t("chat.empty.noAgents")}
-            </p>
-            <Link
-              to={`/agents?projectId=${p.id}`}
-              className="mt-3 inline-block text-sm font-medium text-sky-600 hover:underline dark:text-sky-300"
-            >
-              {t("chat.manageAgents")} →
-            </Link>
-          </Empty>
-        ) : feed.length === 0 ? (
-          <Empty>
-            <p className="text-3xl">💬</p>
-            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
-              {t("chat.empty.firstMessage")}
-            </p>
-          </Empty>
-        ) : (
-          feed.map((item) => {
-            const a = agentList.find((x) => x.id === item.run.agentId);
-            const m = a ? manifests.find((mm) => mm.kind === a.adapterKind) : undefined;
-            if (item.kind === "user") {
+        <Header
+          project={p}
+          agentCount={agentList.length}
+          runCount={projectRuns.length}
+          workingCount={working.length}
+        />
+
+        {agentList.length > 0 ? (
+          <MemberPanel
+            agents={agentList}
+            manifests={manifests}
+            workingIds={workingIds}
+            selectedAgentId={agentId}
+            onPick={(id) => setAgentId(id)}
+          />
+        ) : null}
+
+        <div
+          ref={bodyRef}
+          className="flex-1 overflow-y-auto px-6 py-6 space-y-5 bg-background"
+        >
+          {agentList.length === 0 ? (
+            <Empty
+              icon={<Users className="size-10 text-muted-foreground" />}
+              title={t("chat.empty.noAgents")}
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link to={`/agents?projectId=${p.id}`}>
+                    {t("chat.manageAgents")}
+                  </Link>
+                </Button>
+              }
+            />
+          ) : feed.length === 0 ? (
+            <Empty
+              icon={<MessageCircle className="size-10 text-muted-foreground" />}
+              title={t("chat.empty.firstMessage")}
+            />
+          ) : (
+            feed.map((item) => {
+              const a = agentList.find((x) => x.id === item.run.agentId);
+              const m = a
+                ? manifests.find((mm) => mm.kind === a.adapterKind)
+                : undefined;
+              if (item.kind === "user") {
+                return (
+                  <UserMessage
+                    key={`${item.run.id}-u`}
+                    run={item.run}
+                    target={a}
+                  />
+                );
+              }
               return (
-                <UserMessage
-                  key={`${item.run.id}-u`}
+                <AgentMessage
+                  key={`${item.run.id}-a`}
                   run={item.run}
-                  target={a}
+                  agent={a}
                   manifest={m}
+                  onReply={handleReply}
+                  onForward={handleForward}
                 />
               );
-            }
-            return (
-              <AgentMessage
-                key={`${item.run.id}-a`}
-                run={item.run}
-                agent={a}
-                manifest={m}
-                onReply={handleReply}
-                onForward={handleForward}
-              />
-            );
-          })
-        )}
+            })
+          )}
+        </div>
+
+        <WorkingIndicator workingAgents={working} manifests={manifests} />
+
+        {agentList.length > 0 ? (
+          <Composer
+            agents={agentList}
+            manifests={manifests}
+            agentId={agentId}
+            onAgentChange={setAgentId}
+            initialDraft={draft}
+            draftKey={draftKey}
+            onSent={() => {
+              setDraft(undefined);
+              stickyBottomRef.current = true;
+            }}
+          />
+        ) : null}
       </div>
-
-      <WorkingIndicator workingAgents={working} manifests={manifests} />
-
-      {agentList.length > 0 ? (
-        <Composer
-          agents={agentList}
-          manifests={manifests}
-          agentId={agentId}
-          onAgentChange={setAgentId}
-          initialDraft={draft}
-          draftKey={draftKey}
-          onSent={() => {
-            setDraft(undefined);
-            stickyBottomRef.current = true;
-          }}
-        />
-      ) : null}
-    </div>
+    </TooltipProvider>
   );
 }
 
@@ -219,36 +222,37 @@ function Header({
   const { t } = useI18n();
   const initial = project.name.trim()[0]?.toUpperCase() ?? "?";
   return (
-    <div className="border-b border-zinc-200 dark:border-zinc-800 bg-gradient-to-r from-white via-zinc-50/40 to-white dark:from-zinc-950 dark:via-zinc-900/30 dark:to-zinc-950 px-5 py-3.5">
-      <Link
-        to="/projects"
-        className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      >
-        {t("chat.back")}
-      </Link>
-      <div className="mt-1 flex items-start justify-between gap-4">
+    <div className="border-b px-5 py-4">
+      <Button asChild variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs text-muted-foreground">
+        <Link to="/projects">
+          <ArrowLeft />
+          {t("chat.back")}
+        </Link>
+      </Button>
+      <div className="mt-2 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="w-11 h-11 rounded-xl bg-gradient-to-br from-zinc-900 to-zinc-700 text-white flex items-center justify-center text-lg font-bold shrink-0 dark:from-zinc-100 dark:to-zinc-300 dark:text-zinc-900 shadow-sm">
+          <div className="flex size-11 items-center justify-center rounded-lg bg-foreground text-background text-base font-bold shrink-0">
             {initial}
-          </span>
+          </div>
           <div className="min-w-0">
-            <h1 className="font-semibold text-base truncate leading-tight text-zinc-900 dark:text-zinc-100">
+            <h1 className="text-base font-semibold truncate leading-tight">
               {project.name}
             </h1>
             <p
-              className="text-[11px] text-zinc-500 mono truncate"
+              className="text-[11px] text-muted-foreground mono truncate"
               title={project.path}
             >
               {project.path}
             </p>
-            <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400">
-              <Stat label="agents" value={agentCount} />
-              <span>·</span>
-              <Stat label="messages" value={runCount} />
+            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+              <Stat n={agentCount} label="agents" />
+              <Separator orientation="vertical" className="h-3" />
+              <Stat n={runCount} label="messages" />
               {workingCount > 0 ? (
                 <>
-                  <span>·</span>
-                  <span className="text-sky-600 dark:text-sky-400 font-medium">
+                  <Separator orientation="vertical" className="h-3" />
+                  <span className="font-medium text-sky-600 dark:text-sky-400 inline-flex items-center gap-1">
+                    <span className="size-1.5 rounded-full bg-sky-500 animate-pulse" />
                     {workingCount} working
                   </span>
                 </>
@@ -256,40 +260,44 @@ function Header({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-xs shrink-0">
-          <Link
-            to={`/agents?projectId=${project.id}`}
-            className="text-zinc-600 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            {t("chat.manageAgents")}
-          </Link>
-          <Link
-            to="/specs"
-            className="text-zinc-600 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            {t("chat.manageSkills")}
-          </Link>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button asChild variant="ghost" size="sm" className="h-8 text-xs">
+            <Link to={`/agents?projectId=${project.id}`}>
+              {t("chat.manageAgents")}
+            </Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm" className="h-8 text-xs">
+            <Link to="/specs">{t("chat.manageSkills")}</Link>
+          </Button>
         </div>
       </div>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ n, label }: { n: number; label: string }) {
   return (
-    <span>
-      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-        {value}
-      </span>{" "}
+    <span className="inline-flex items-center gap-1">
+      <span className="font-semibold text-foreground">{n}</span>
       <span className="uppercase tracking-wide">{label}</span>
     </span>
   );
 }
 
-function Empty({ children }: { children: React.ReactNode }) {
+function Empty({
+  icon,
+  title,
+  action,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  action?: React.ReactNode;
+}) {
   return (
-    <div className="text-center py-12 px-6 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700">
-      {children}
+    <div className="flex flex-col items-center justify-center text-center py-16 px-6">
+      {icon}
+      <p className="mt-3 text-sm text-muted-foreground">{title}</p>
+      {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );
 }
