@@ -1,10 +1,18 @@
 import type { AdapterManifest } from "@loom/core";
 import { GEMINI_PRESET_MODELS } from "./preset-models.js";
 
-// 4-point sparkle mark — recognizable shape used across Google AI products.
+// Google Gemini sparkle — concave-sided 4-point star painted with the
+// signature blue→purple→red→amber gradient used across Google AI brand.
 const ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path fill="#4285f4" d="M12 1.5 C12 7 12.5 7.5 18 7.5 C12.5 7.5 12 8 12 13 C12 8 11.5 7.5 6 7.5 C11.5 7.5 12 7 12 1.5 Z"/>
-  <path fill="#9b72cb" d="M12 11 C12 16.5 12.5 17 18 17 C12.5 17 12 17.5 12 22.5 C12 17.5 11.5 17 6 17 C11.5 17 12 16.5 12 11 Z"/>
+  <defs>
+    <linearGradient id="loom-gemini-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1C7CFF"/>
+      <stop offset="40%" stop-color="#9168C0"/>
+      <stop offset="80%" stop-color="#D96570"/>
+      <stop offset="100%" stop-color="#F4B400"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#loom-gemini-grad)" d="M12 2 C12.6 7.6 16.4 11.4 22 12 C16.4 12.6 12.6 16.4 12 22 C11.4 16.4 7.6 12.6 2 12 C7.6 11.4 11.4 7.6 12 2 Z"/>
 </svg>`;
 
 export const geminiManifest: AdapterManifest = {

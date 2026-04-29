@@ -1,8 +1,10 @@
 import type { AdapterManifest } from "@loom/core";
 import { CLAUDE_CODE_PRESET_MODELS } from "./preset-models.js";
 
+// Anthropic's Claude "spark" mark — 4-pointed terra-cotta asterisk with
+// smooth concave curves where the rays meet.
 const ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path fill="#cc785c" d="M12 2 L13.4 9.2 L20.6 7.8 L15.4 12 L20.6 16.2 L13.4 14.8 L12 22 L10.6 14.8 L3.4 16.2 L8.6 12 L3.4 7.8 L10.6 9.2 Z"/>
+  <path fill="#D97757" d="M12 1.5 L13.5 8.5 C13.7 9.5 14.5 10.3 15.5 10.5 L22.5 12 L15.5 13.5 C14.5 13.7 13.7 14.5 13.5 15.5 L12 22.5 L10.5 15.5 C10.3 14.5 9.5 13.7 8.5 13.5 L1.5 12 L8.5 10.5 C9.5 10.3 10.3 9.5 10.5 8.5 L12 1.5 Z"/>
 </svg>`;
 
 export const claudeCodeManifest: AdapterManifest = {

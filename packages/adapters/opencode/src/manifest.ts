@@ -1,11 +1,12 @@
 import type { AdapterManifest } from "@loom/core";
 
-// Bracket / terminal mark — open source, multi-provider feel.
+// SST OpenCode mark — orange tile with stylized angle brackets, evoking
+// the project's "</>" CLI vibe.
 const ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <rect x="2.5" y="4" width="19" height="16" rx="2.5" fill="none" stroke="#fb923c" stroke-width="1.8"/>
-  <path d="M7 10 L4.5 12 L7 14" fill="none" stroke="#fb923c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M17 10 L19.5 12 L17 14" fill="none" stroke="#fb923c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M10.5 15.5 L13.5 8.5" stroke="#fb923c" stroke-width="1.8" stroke-linecap="round"/>
+  <rect x="2" y="2" width="20" height="20" rx="4.5" fill="#FB923C"/>
+  <path d="M8.5 9 L5.5 12 L8.5 15" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M15.5 9 L18.5 12 L15.5 15" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M13.2 7.8 L10.8 16.2" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
 </svg>`;
 
 export const opencodeManifest: AdapterManifest = {

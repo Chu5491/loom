@@ -1,16 +1,11 @@
 import type { AdapterManifest } from "@loom/core";
 import { CODEX_PRESET_MODELS } from "./preset-models.js";
 
-// Hex-petal rosette evoking a coding-agent mark.
+// OpenAI's six-fold knot/blossom — the brand mark used across OpenAI
+// products including Codex. Black on light, white on dark via currentColor
+// where the host element sets text color. Filled in the canonical black.
 const ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <g fill="#10a37f" fill-opacity="0.85">
-    <ellipse cx="12" cy="6" rx="3.2" ry="5"/>
-    <ellipse cx="17.2" cy="9" rx="3.2" ry="5" transform="rotate(60 17.2 9)"/>
-    <ellipse cx="17.2" cy="15" rx="3.2" ry="5" transform="rotate(120 17.2 15)"/>
-    <ellipse cx="12" cy="18" rx="3.2" ry="5"/>
-    <ellipse cx="6.8" cy="15" rx="3.2" ry="5" transform="rotate(60 6.8 15)"/>
-    <ellipse cx="6.8" cy="9" rx="3.2" ry="5" transform="rotate(120 6.8 9)"/>
-  </g>
+  <path fill="currentColor" d="M21.55 10.04a5.45 5.45 0 0 0-.47-4.48 5.52 5.52 0 0 0-5.95-2.65A5.5 5.5 0 0 0 6.83 4.6a5.45 5.45 0 0 0-3.65 2.65 5.52 5.52 0 0 0 .68 6.47 5.45 5.45 0 0 0 .47 4.48 5.52 5.52 0 0 0 5.95 2.65 5.45 5.45 0 0 0 4.1 1.83 5.52 5.52 0 0 0 5.26-3.83 5.45 5.45 0 0 0 3.65-2.65 5.52 5.52 0 0 0-.68-6.47zM13.4 21.07a4.07 4.07 0 0 1-2.61-.95l.13-.07 4.34-2.51a.71.71 0 0 0 .36-.62v-6.13l1.83 1.06v5.07a4.1 4.1 0 0 1-4.05 4.15zm-8.7-3.72a4.05 4.05 0 0 1-.49-2.74l.13.08 4.34 2.51c.22.13.5.13.71 0l5.3-3.06v2.11a.06.06 0 0 1-.03.06l-4.4 2.54a4.1 4.1 0 0 1-5.56-1.5zM3.36 8.53a4.07 4.07 0 0 1 2.13-1.79V11.9a.7.7 0 0 0 .35.61l5.27 3.04-1.83 1.06-4.39-2.54A4.1 4.1 0 0 1 3.36 8.53zm15.07 3.51l-5.3-3.07L14.96 7.9l4.39 2.53a4.09 4.09 0 0 1-.62 7.4v-5.16a.7.7 0 0 0-.3-.62zM20.25 9.6l-.13-.08-4.33-2.52a.71.71 0 0 0-.71 0L9.79 10.07V7.96a.06.06 0 0 1 .02-.06l4.4-2.54a4.1 4.1 0 0 1 6.05 4.24zM8.79 13.06l-1.83-1.06V6.93a4.1 4.1 0 0 1 6.71-3.16l-.12.07L9.21 6.36a.71.71 0 0 0-.36.62zm.99-2.13l2.36-1.36 2.36 1.36v2.72l-2.36 1.36-2.36-1.36z"/>
 </svg>`;
 
 export const codexManifest: AdapterManifest = {

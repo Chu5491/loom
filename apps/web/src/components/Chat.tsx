@@ -122,30 +122,30 @@ export function AgentAvatar({
   size?: "sm" | "md" | "lg";
 }) {
   const cls = classesFor(agentColorFor(agent.id));
-  // Sizes are tighter than shadcn defaults — chat avatars are dense and
-  // shouldn't dominate. Only md/lg show the adapter badge in the corner;
-  // at sm the chip already names the agent so the badge is just noise.
-  const dim =
-    size === "sm" ? "size-6 text-[10px]" : size === "lg" ? "size-10 text-sm" : "size-8 text-xs";
-  const showBadge = size !== "sm" && manifest;
-  const badgeSize = size === "lg" ? 14 : 11;
+  // The avatar IS the brand mark — the adapter's logo painted on a
+  // tinted disc. The agent-color tint preserves per-agent identity
+  // (two Claude agents in the same room are still distinguishable by
+  // their disc hue) while the logo carries the brand.
+  const dim = size === "sm" ? "size-6" : size === "lg" ? "size-10" : "size-8";
+  const inner = size === "sm" ? 16 : size === "lg" ? 24 : 20;
 
   return (
     <span className="relative inline-block shrink-0">
       <Avatar className={dim}>
-        <AvatarFallback className={cn("font-semibold", cls.bgSoft, cls.text)}>
-          {initialFor(agent.name)}
+        <AvatarFallback className={cn("p-0", cls.bgSoft)}>
+          {manifest ? (
+            <AdapterIcon manifest={manifest} size={inner} />
+          ) : (
+            <span className={cn("text-xs font-semibold", cls.text)}>
+              {initialFor(agent.name)}
+            </span>
+          )}
         </AvatarFallback>
       </Avatar>
-      {showBadge ? (
-        <span className="absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full bg-background shadow-sm">
-          <AdapterIcon manifest={manifest!} size={badgeSize} />
-        </span>
-      ) : null}
       {working ? (
         <span
           className={cn(
-            "absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2 ring-background",
+            "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-background",
             cls.dot,
           )}
         />
