@@ -3,11 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import type { Agent, Run } from "@loom/core";
 import { api } from "../api/client.js";
-import { Card } from "../components/ui.js";
 import {
   AgentMessage,
   Composer,
-  MemberBar,
+  MemberPanel,
   UserMessage,
   WorkingIndicator,
   buildForwardQuote,
@@ -63,7 +62,6 @@ export function ProjectChatPage() {
 
   const { feed, working, workingIds } = useRoomDerived(projectRuns, agentList);
 
-  // Composer state lifted up so MemberBar / Reply / Forward can drive it.
   const [agentId, setAgentId] = useState<string>("");
   const [draft, setDraft] = useState<string | undefined>();
   const [draftKey, setDraftKey] = useState(0);
@@ -96,8 +94,6 @@ export function ProjectChatPage() {
     setDraftKey((k) => k + 1);
   };
   const handleForward = async (run: Run, agent: Agent | undefined) => {
-    // Forward = send to *another* agent. We don't auto-pick the target;
-    // the user picks via the chip picker so the routing is explicit.
     setDraft(await buildForwardQuote(run, agent, t));
     setDraftKey((k) => k + 1);
   };
@@ -120,10 +116,15 @@ export function ProjectChatPage() {
       className="flex flex-col rounded-xl border border-zinc-200 bg-white overflow-hidden dark:border-zinc-800 dark:bg-zinc-950 shadow-sm"
       style={{ height: "calc(100vh - 180px)" }}
     >
-      <Header project={p} />
+      <Header
+        project={p}
+        agentCount={agentList.length}
+        runCount={projectRuns.length}
+        workingCount={working.length}
+      />
 
       {agentList.length > 0 ? (
-        <MemberBar
+        <MemberPanel
           agents={agentList}
           manifests={manifests}
           workingIds={workingIds}
@@ -134,24 +135,24 @@ export function ProjectChatPage() {
 
       <div
         ref={bodyRef}
-        className="flex-1 overflow-y-auto px-5 py-5 space-y-5 bg-zinc-50/40 dark:bg-zinc-900/40"
+        className="flex-1 overflow-y-auto px-5 py-6 space-y-5 bg-gradient-to-b from-zinc-50/40 to-white dark:from-zinc-900/40 dark:to-zinc-950"
       >
         {agentList.length === 0 ? (
           <Empty>
-            <p className="text-2xl">👥</p>
+            <p className="text-3xl">👥</p>
             <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
               {t("chat.empty.noAgents")}
             </p>
             <Link
               to={`/agents?projectId=${p.id}`}
-              className="mt-3 inline-block text-sm text-sky-600 hover:underline dark:text-sky-300"
+              className="mt-3 inline-block text-sm font-medium text-sky-600 hover:underline dark:text-sky-300"
             >
               {t("chat.manageAgents")} →
             </Link>
           </Empty>
         ) : feed.length === 0 ? (
           <Empty>
-            <p className="text-2xl">💬</p>
+            <p className="text-3xl">💬</p>
             <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
               {t("chat.empty.firstMessage")}
             </p>
@@ -166,6 +167,7 @@ export function ProjectChatPage() {
                   key={`${item.run.id}-u`}
                   run={item.run}
                   target={a}
+                  manifest={m}
                 />
               );
             }
@@ -183,7 +185,7 @@ export function ProjectChatPage() {
         )}
       </div>
 
-      <WorkingIndicator workingAgents={working} />
+      <WorkingIndicator workingAgents={working} manifests={manifests} />
 
       {agentList.length > 0 ? (
         <Composer
@@ -205,48 +207,89 @@ export function ProjectChatPage() {
 
 function Header({
   project,
+  agentCount,
+  runCount,
+  workingCount,
 }: {
-  project: { id: string; name: string; path: string };
+  project: { id: string; name: string; path: string; description: string | null };
+  agentCount: number;
+  runCount: number;
+  workingCount: number;
 }) {
   const { t } = useI18n();
+  const initial = project.name.trim()[0]?.toUpperCase() ?? "?";
   return (
-    <div className="border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 flex items-center justify-between gap-4">
-      <div className="min-w-0">
-        <Link
-          to="/projects"
-          className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-        >
-          {t("chat.back")}
-        </Link>
-        <h1 className="font-semibold text-base truncate leading-tight">
-          # {project.name}
-        </h1>
-        <p className="text-[11px] text-zinc-500 mono truncate" title={project.path}>
-          {project.path}
-        </p>
-      </div>
-      <div className="flex items-center gap-3 text-xs shrink-0">
-        <Link
-          to={`/agents?projectId=${project.id}`}
-          className="text-zinc-600 hover:text-sky-600 hover:underline dark:text-zinc-400 dark:hover:text-sky-300"
-        >
-          {t("chat.manageAgents")}
-        </Link>
-        <Link
-          to="/specs"
-          className="text-zinc-600 hover:text-sky-600 hover:underline dark:text-zinc-400 dark:hover:text-sky-300"
-        >
-          {t("chat.manageSkills")}
-        </Link>
+    <div className="border-b border-zinc-200 dark:border-zinc-800 bg-gradient-to-r from-white via-zinc-50/40 to-white dark:from-zinc-950 dark:via-zinc-900/30 dark:to-zinc-950 px-5 py-3.5">
+      <Link
+        to="/projects"
+        className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        {t("chat.back")}
+      </Link>
+      <div className="mt-1 flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="w-11 h-11 rounded-xl bg-gradient-to-br from-zinc-900 to-zinc-700 text-white flex items-center justify-center text-lg font-bold shrink-0 dark:from-zinc-100 dark:to-zinc-300 dark:text-zinc-900 shadow-sm">
+            {initial}
+          </span>
+          <div className="min-w-0">
+            <h1 className="font-semibold text-base truncate leading-tight text-zinc-900 dark:text-zinc-100">
+              {project.name}
+            </h1>
+            <p
+              className="text-[11px] text-zinc-500 mono truncate"
+              title={project.path}
+            >
+              {project.path}
+            </p>
+            <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+              <Stat label="agents" value={agentCount} />
+              <span>·</span>
+              <Stat label="messages" value={runCount} />
+              {workingCount > 0 ? (
+                <>
+                  <span>·</span>
+                  <span className="text-sky-600 dark:text-sky-400 font-medium">
+                    {workingCount} working
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-xs shrink-0">
+          <Link
+            to={`/agents?projectId=${project.id}`}
+            className="text-zinc-600 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            {t("chat.manageAgents")}
+          </Link>
+          <Link
+            to="/specs"
+            className="text-zinc-600 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            {t("chat.manageSkills")}
+          </Link>
+        </div>
       </div>
     </div>
   );
 }
 
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <span>
+      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+        {value}
+      </span>{" "}
+      <span className="uppercase tracking-wide">{label}</span>
+    </span>
+  );
+}
+
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <Card className="text-center py-10 border-dashed bg-transparent dark:bg-transparent">
+    <div className="text-center py-12 px-6 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700">
       {children}
-    </Card>
+    </div>
   );
 }

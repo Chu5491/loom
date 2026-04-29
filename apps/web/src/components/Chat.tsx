@@ -6,21 +6,28 @@ import { api } from "../api/client.js";
 import { Button } from "./ui.js";
 import { AdapterIcon } from "./AdapterIcon.js";
 import { useI18n } from "../context/I18nContext.js";
+import {
+  agentColorFor,
+  classesFor,
+  initialFor,
+  type ColorClasses,
+} from "./agentColor.js";
 
 /**
  * Group-chat view of a project.
  *
- * Every entity in the room — the user and each agent — appears as a peer:
- * left-aligned avatar + name + bubble, ordered chronologically. The user's
- * prompt and the agent's reply are *separate* messages in the timeline,
- * which is what makes it feel like Slack/Discord rather than a 1:1 chat.
+ * Each agent has a deterministic signature color (id-hashed), so even if
+ * three agents share the same adapter you can tell them apart at a glance.
+ * Messages share a single chronological column (Slack/Discord style); the
+ * left rail of an agent message wears the agent's color so ownership is
+ * visible without reading names.
  *
- * No agent-to-agent autonomy: the user picks each target. Forwarding an
- * agent's result to another agent is the routing primitive that makes the
- * "team room" feel real.
+ * No agent-to-agent autonomy — the user routes every message. Forwarding
+ * an agent's result to another agent is the routing primitive that makes
+ * the room feel like a team workspace.
  */
 
-function statusTone(s: RunStatus) {
+function statusTone(s: RunStatus): "emerald" | "red" | "amber" | "sky" | "zinc" {
   switch (s) {
     case "succeeded":
       return "emerald";
@@ -107,10 +114,79 @@ function useRunTail(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Member bar — top of the room
+// Avatars
 // ────────────────────────────────────────────────────────────────────────────
 
-export function MemberBar({
+export function AgentAvatar({
+  agent,
+  manifest,
+  working,
+  size = 36,
+}: {
+  agent: Agent;
+  manifest: AdapterManifest | undefined;
+  working: boolean;
+  size?: number;
+}) {
+  const color = agentColorFor(agent.id);
+  const cls = classesFor(color);
+  const initial = initialFor(agent.name);
+
+  return (
+    <span className="relative inline-block shrink-0" style={{ width: size, height: size }}>
+      <span
+        className={
+          "flex items-center justify-center rounded-full font-semibold ring-2 " +
+          cls.bgSoft +
+          " " +
+          cls.text +
+          " " +
+          cls.ring
+        }
+        style={{
+          width: size,
+          height: size,
+          fontSize: Math.round(size * 0.42),
+        }}
+      >
+        {initial}
+      </span>
+      {manifest ? (
+        <span
+          className="absolute -bottom-0.5 -right-0.5 rounded-full bg-white dark:bg-zinc-950 p-0.5 ring-1 ring-zinc-200 dark:ring-zinc-800"
+          title={manifest.displayName}
+        >
+          <AdapterIcon manifest={manifest} size={Math.round(size * 0.36)} />
+        </span>
+      ) : null}
+      {working ? (
+        <span
+          className={
+            "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-zinc-950 breath " +
+            cls.dot
+          }
+        />
+      ) : null}
+    </span>
+  );
+}
+
+function UserAvatar({ size = 36 }: { size?: number }) {
+  return (
+    <span
+      className="inline-flex items-center justify-center rounded-full bg-zinc-900 text-white font-semibold ring-2 ring-zinc-200 shrink-0 dark:bg-zinc-100 dark:text-zinc-900 dark:ring-zinc-800"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
+    >
+      나
+    </span>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Member panel — top of the room
+// ────────────────────────────────────────────────────────────────────────────
+
+export function MemberPanel({
   agents,
   manifests,
   workingIds,
@@ -125,48 +201,56 @@ export function MemberBar({
 }) {
   const { t } = useI18n();
   return (
-    <div className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-4 py-2.5">
-      <div className="flex items-center gap-3 overflow-x-auto">
-        <span className="text-[10px] uppercase tracking-wide text-zinc-500 shrink-0">
+    <div className="border-b border-zinc-200 dark:border-zinc-800 bg-gradient-to-b from-white to-zinc-50/50 dark:from-zinc-950 dark:to-zinc-900/40">
+      <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
           {t("chat.members.title")}
         </span>
-        <div className="flex items-center gap-1.5">
-          {agents.map((a) => {
-            const manifest = manifests.find((m) => m.kind === a.adapterKind);
-            const working = workingIds.has(a.id);
-            const selected = selectedAgentId === a.id;
-            return (
-              <button
-                key={a.id}
-                onClick={() => onPick(a.id)}
-                title={`@${a.name} — ${working ? t("chat.members.working") : t("chat.members.idle")}`}
-                className={
-                  "flex items-center gap-1.5 rounded-full pl-1 pr-2.5 py-0.5 text-xs transition-colors border " +
-                  (selected
-                    ? "border-sky-400 bg-sky-50 text-sky-800 dark:border-sky-600 dark:bg-sky-950/40 dark:text-sky-200"
-                    : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300")
-                }
-              >
-                <span className="relative">
-                  {manifest ? (
-                    <AdapterIcon manifest={manifest} size={20} />
+        <span className="text-[10px] text-zinc-400 dark:text-zinc-600">
+          · {agents.length}
+        </span>
+      </div>
+      <div className="px-3 pb-3 flex items-center gap-2 overflow-x-auto">
+        {agents.map((a) => {
+          const manifest = manifests.find((m) => m.kind === a.adapterKind);
+          const working = workingIds.has(a.id);
+          const selected = selectedAgentId === a.id;
+          const cls = classesFor(agentColorFor(a.id));
+          return (
+            <button
+              key={a.id}
+              onClick={() => onPick(a.id)}
+              className={
+                "flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 transition-all border shrink-0 " +
+                (selected
+                  ? "border-zinc-900 bg-white shadow-sm dark:border-zinc-100 dark:bg-zinc-900"
+                  : "border-zinc-200 bg-white/60 hover:border-zinc-300 hover:bg-white dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-700 dark:hover:bg-zinc-900")
+              }
+            >
+              <AgentAvatar
+                agent={a}
+                manifest={manifest}
+                working={working}
+                size={32}
+              />
+              <div className="text-left">
+                <div className={"text-xs font-medium " + cls.text}>
+                  @{a.name}
+                </div>
+                <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                  {working ? (
+                    <span className="inline-flex items-center gap-1">
+                      <span className={"w-1 h-1 rounded-full breath " + cls.dot} />
+                      {t("chat.members.working")}
+                    </span>
                   ) : (
-                    <span className="block w-5 h-5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                    t("chat.members.idle")
                   )}
-                  <span
-                    className={
-                      "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 " +
-                      (working
-                        ? "bg-sky-500 ring-white animate-pulse dark:ring-zinc-900"
-                        : "bg-zinc-300 ring-white dark:bg-zinc-600 dark:ring-zinc-900")
-                    }
-                  />
-                </span>
-                <span className="font-medium">{a.name}</span>
-              </button>
-            );
-          })}
-        </div>
+                </div>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -176,16 +260,34 @@ export function MemberBar({
 // Messages
 // ────────────────────────────────────────────────────────────────────────────
 
-export function UserMessage({ run, target }: { run: Run; target: Agent | undefined }) {
+export function UserMessage({
+  run,
+  target,
+  manifest,
+}: {
+  run: Run;
+  target: Agent | undefined;
+  manifest: AdapterManifest | undefined;
+}) {
   const { t } = useI18n();
   return (
     <Row
       avatar={<UserAvatar />}
       name={t("chat.message.you")}
       timestamp={run.createdAt}
-      tag={target ? `→ @${target.name}` : undefined}
+      tag={
+        target ? (
+          <span className="text-[11px] text-zinc-500 inline-flex items-center gap-1">
+            →{" "}
+            <span className={"font-medium " + classesFor(agentColorFor(target.id)).text}>
+              @{target.name}
+            </span>
+            {manifest ? <AdapterIcon manifest={manifest} size={12} /> : null}
+          </span>
+        ) : undefined
+      }
     >
-      <div className="rounded-lg bg-white border border-zinc-200 px-3 py-2 text-sm text-zinc-900 whitespace-pre-wrap break-words dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-100">
+      <div className="rounded-xl bg-white border border-zinc-200 px-3.5 py-2 text-sm text-zinc-900 whitespace-pre-wrap break-words shadow-sm dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-100">
         {run.prompt}
       </div>
     </Row>
@@ -218,29 +320,46 @@ export function AgentMessage({
   const name = agent?.name ?? run.agentId.slice(0, 8);
   const tone = statusTone(run.status);
   const hasContent = events.length > 0 || resultText !== null;
+  const cls: ColorClasses | null = agent ? classesFor(agentColorFor(agent.id)) : null;
 
   return (
     <Row
-      avatar={<AgentAvatar manifest={manifest} working={isActive} />}
+      avatar={
+        agent ? (
+          <AgentAvatar agent={agent} manifest={manifest} working={isActive} />
+        ) : (
+          <span className="w-9 h-9 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
+        )
+      }
       name={name}
+      nameColor={cls?.text}
       timestamp={run.createdAt}
       tag={
         <span className={"flex items-center gap-1.5 text-xs " + toneText(tone)}>
-          <span className={"w-1.5 h-1.5 rounded-full " + toneDot(tone) + (isActive ? " animate-pulse" : "")} />
+          <span
+            className={
+              "w-1.5 h-1.5 rounded-full " +
+              toneDot(tone) +
+              (isActive ? " breath" : "")
+            }
+          />
           {t(`status.${run.status}`)}
         </span>
       }
+      leftRailClass={cls?.border}
     >
       <div
         className={
-          "rounded-lg border px-3 py-2 text-sm transition-colors " +
+          "rounded-xl border px-3.5 py-2 text-sm shadow-sm transition-colors " +
           (isActive
-            ? "border-sky-300 bg-sky-50/40 dark:border-sky-800 dark:bg-sky-950/20"
+            ? (cls?.bgSoft ?? "bg-sky-50") +
+              " " +
+              (cls?.border ?? "border-sky-300")
             : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900")
         }
       >
         {!hasContent ? (
-          <p className="text-xs italic text-zinc-400">
+          <p className="text-xs italic text-zinc-400 dark:text-zinc-500">
             {isActive ? t("chat.tail.waiting") : "—"}
           </p>
         ) : (
@@ -273,10 +392,10 @@ export function AgentMessage({
         )}
       </div>
 
-      <div className="flex items-center gap-3 text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+      <div className="flex items-center gap-3 text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
         <Link
           to={`/runs/${run.id}`}
-          className="hover:text-sky-600 hover:underline dark:hover:text-sky-300"
+          className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200"
         >
           {t("chat.message.openLog")}
         </Link>
@@ -284,13 +403,13 @@ export function AgentMessage({
           <>
             <button
               onClick={() => onReply(run, agent)}
-              className="hover:text-sky-600 hover:underline dark:hover:text-sky-300"
+              className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200"
             >
               {t("chat.message.reply")}
             </button>
             <button
               onClick={() => onForward(run, agent)}
-              className="hover:text-sky-600 hover:underline dark:hover:text-sky-300"
+              className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200"
             >
               {t("chat.message.forward")} →
             </button>
@@ -315,22 +434,31 @@ export function AgentMessage({
 function Row({
   avatar,
   name,
+  nameColor,
   timestamp,
   tag,
+  leftRailClass,
   children,
 }: {
   avatar: React.ReactNode;
   name: string;
+  nameColor?: string;
   timestamp: string;
   tag?: React.ReactNode;
+  leftRailClass?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 group">
+    <div className="msg-in flex items-start gap-3 group">
       <div className="shrink-0 mt-0.5">{avatar}</div>
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-baseline gap-2">
-          <span className="font-medium text-sm text-zinc-900 dark:text-zinc-100">
+          <span
+            className={
+              "font-semibold text-sm " +
+              (nameColor ?? "text-zinc-900 dark:text-zinc-100")
+            }
+          >
             {name}
           </span>
           {tag ? <span className="text-[11px]">{tag}</span> : null}
@@ -338,40 +466,17 @@ function Row({
             {new Date(timestamp).toLocaleTimeString()}
           </span>
         </div>
-        {children}
+        <div
+          className={
+            leftRailClass
+              ? "border-l-2 pl-3 -ml-3 " + leftRailClass
+              : ""
+          }
+        >
+          {children}
+        </div>
       </div>
     </div>
-  );
-}
-
-function UserAvatar() {
-  return (
-    <div className="w-8 h-8 rounded-full bg-zinc-900 text-white flex items-center justify-center text-xs font-semibold dark:bg-zinc-100 dark:text-zinc-900">
-      나
-    </div>
-  );
-}
-
-function AgentAvatar({
-  manifest,
-  working,
-}: {
-  manifest: AdapterManifest | undefined;
-  working: boolean;
-}) {
-  return (
-    <span className="relative block">
-      <span className="block w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden ring-1 ring-zinc-200 dark:ring-zinc-700">
-        {manifest ? (
-          <AdapterIcon manifest={manifest} size={22} />
-        ) : (
-          <span className="block w-5 h-5 rounded-full bg-zinc-300 dark:bg-zinc-600" />
-        )}
-      </span>
-      {working ? (
-        <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-sky-500 ring-2 ring-white dark:ring-zinc-950 animate-pulse" />
-      ) : null}
-    </span>
   );
 }
 
@@ -405,13 +510,15 @@ function toneDot(tone: string): string {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Working strip + Composer
+// Working strip
 // ────────────────────────────────────────────────────────────────────────────
 
 export function WorkingIndicator({
   workingAgents,
+  manifests,
 }: {
   workingAgents: Agent[];
+  manifests: AdapterManifest[];
 }) {
   const { t } = useI18n();
   if (workingAgents.length === 0) return null;
@@ -419,14 +526,58 @@ export function WorkingIndicator({
     workingAgents.length === 1
       ? t("chat.working.singular", { agent: workingAgents[0]!.name })
       : t("chat.working.plural", { count: workingAgents.length });
+
   return (
-    <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-sky-700 dark:text-sky-300 bg-sky-50/60 dark:bg-sky-950/30 border-t border-sky-100 dark:border-sky-900/50">
-      <span className="flex gap-0.5">
+    <div className="flex items-center gap-3 px-4 py-2 bg-gradient-to-r from-sky-50 via-white to-sky-50 dark:from-sky-950/30 dark:via-zinc-950 dark:to-sky-950/30 border-t border-sky-100 dark:border-sky-900/50">
+      <AvatarStack
+        agents={workingAgents}
+        manifests={manifests}
+        max={4}
+      />
+      <span className="text-xs text-sky-700 dark:text-sky-300 font-medium">
+        {label}
+      </span>
+      <span className="flex gap-0.5 ml-auto">
         <Dot delay={0} />
         <Dot delay={150} />
         <Dot delay={300} />
       </span>
-      <span>{label}</span>
+    </div>
+  );
+}
+
+function AvatarStack({
+  agents,
+  manifests,
+  max = 3,
+}: {
+  agents: Agent[];
+  manifests: AdapterManifest[];
+  max?: number;
+}) {
+  const visible = agents.slice(0, max);
+  const overflow = agents.length - visible.length;
+  return (
+    <div className="flex -space-x-2">
+      {visible.map((a) => (
+        <span
+          key={a.id}
+          className="ring-2 ring-white dark:ring-zinc-950 rounded-full"
+          title={a.name}
+        >
+          <AgentAvatar
+            agent={a}
+            manifest={manifests.find((m) => m.kind === a.adapterKind)}
+            working={false}
+            size={24}
+          />
+        </span>
+      ))}
+      {overflow > 0 ? (
+        <span className="w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-800 ring-2 ring-white dark:ring-zinc-950 flex items-center justify-center text-[10px] font-medium text-zinc-600 dark:text-zinc-400">
+          +{overflow}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -434,11 +585,15 @@ export function WorkingIndicator({
 function Dot({ delay }: { delay: number }) {
   return (
     <span
-      className="w-1 h-1 rounded-full bg-sky-500 animate-bounce"
-      style={{ animationDelay: `${delay}ms`, animationDuration: "1s" }}
+      className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-bounce"
+      style={{ animationDelay: `${delay}ms`, animationDuration: "1.1s" }}
     />
   );
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Composer
+// ────────────────────────────────────────────────────────────────────────────
 
 export function Composer({
   agents,
@@ -454,7 +609,6 @@ export function Composer({
   agentId: string;
   onAgentChange: (id: string) => void;
   initialDraft?: string;
-  /** Bumped when the parent injects a fresh quote, so we sync the draft. */
   draftKey?: number;
   onSent: () => void;
 }) {
@@ -469,7 +623,9 @@ export function Composer({
       const el = textareaRef.current;
       if (el) {
         el.focus();
-        requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length));
+        requestAnimationFrame(() =>
+          el.setSelectionRange(el.value.length, el.value.length),
+        );
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -493,6 +649,7 @@ export function Composer({
   const targetManifest = target
     ? manifests.find((m) => m.kind === target.adapterKind)
     : undefined;
+  const targetCls = target ? classesFor(agentColorFor(target.id)) : null;
 
   const placeholder = target
     ? t("chat.composer.placeholder", { agent: target.name })
@@ -505,15 +662,46 @@ export function Composer({
           {create.error.message}
         </p>
       ) : null}
-      <div className="rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 dark:focus-within:ring-sky-950/40 transition-colors">
-        <div className="flex items-center justify-between gap-2 px-2.5 pt-1.5">
-          <AgentChipPicker
-            agents={agents}
+      <div
+        className={
+          "rounded-2xl border bg-zinc-50 dark:bg-zinc-900 transition-all " +
+          (target
+            ? "border-zinc-300 dark:border-zinc-700 focus-within:border-zinc-500 focus-within:ring-2 focus-within:ring-zinc-200 dark:focus-within:border-zinc-400 dark:focus-within:ring-zinc-800"
+            : "border-zinc-300 dark:border-zinc-800")
+        }
+      >
+        <div className="flex items-center gap-2 px-2.5 pt-1.5">
+          {target ? (
+            <span className="flex items-center gap-1.5">
+              <AgentAvatar
+                agent={target}
+                manifest={targetManifest}
+                working={false}
+                size={20}
+              />
+              <span
+                className={
+                  "text-xs font-semibold " + (targetCls?.text ?? "text-zinc-700")
+                }
+              >
+                @{target.name}
+              </span>
+            </span>
+          ) : null}
+          <select
             value={agentId}
-            onChange={onAgentChange}
-            currentManifest={targetManifest}
-          />
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-600">
+            onChange={(e) => onAgentChange(e.target.value)}
+            className="appearance-none bg-transparent text-[10px] text-zinc-400 hover:text-zinc-600 cursor-pointer focus:outline-none dark:text-zinc-500 dark:hover:text-zinc-300"
+            title="Change target"
+          >
+            {agents.length === 0 ? <option value="">—</option> : null}
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                @{a.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-600 ml-auto">
             {t("chat.composer.hint")}
           </span>
         </div>
@@ -546,47 +734,8 @@ export function Composer({
   );
 }
 
-function AgentChipPicker({
-  agents,
-  value,
-  onChange,
-  currentManifest,
-}: {
-  agents: Agent[];
-  value: string;
-  onChange: (id: string) => void;
-  currentManifest: AdapterManifest | undefined;
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="appearance-none h-7 pl-7 pr-6 rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600 focus:outline-none cursor-pointer"
-      >
-        {agents.length === 0 ? <option value="">—</option> : null}
-        {agents.map((a) => (
-          <option key={a.id} value={a.id}>
-            @{a.name}
-          </option>
-        ))}
-      </select>
-      <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2">
-        {currentManifest ? (
-          <AdapterIcon manifest={currentManifest} size={16} />
-        ) : (
-          <span className="block w-4 h-4 rounded-full bg-zinc-200 dark:bg-zinc-700" />
-        )}
-      </span>
-      <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400">
-        ▾
-      </span>
-    </div>
-  );
-}
-
 // ────────────────────────────────────────────────────────────────────────────
-// Quote helpers — used by the page to prefill drafts
+// Quote helpers + room derivations
 // ────────────────────────────────────────────────────────────────────────────
 
 export function buildReplyQuote(
@@ -607,22 +756,18 @@ export async function buildForwardQuote(
 ): Promise<string> {
   const name = agent?.name ?? run.agentId.slice(0, 8);
   const heading = t("chat.message.quoteHeading", { agent: name });
-  // Forward pulls the agent's actual result text from the log file; if not
-  // available (no result line emitted), fall back to the user prompt so the
-  // forward target at least sees what was originally asked.
   let body = run.prompt;
   try {
     const r = await api.getRunResult(run.id);
     if (r.resultText) body = r.resultText;
   } catch {
-    // ignore — fallback already set
+    // fallback already set
   }
   const lines = body.split("\n").map((l) => `> ${l}`);
   return `${heading}\n${lines.join("\n")}\n\n`;
 }
 
-/** Small helper to compute the working agent set from runs. */
-export function workingAgentIdsFromRuns(runs: Run[]): Set<string> {
+function workingAgentIdsFromRuns(runs: Run[]): Set<string> {
   const out = new Set<string>();
   for (const r of runs) {
     if (r.status === "queued" || r.status === "running") out.add(r.agentId);
@@ -630,34 +775,22 @@ export function workingAgentIdsFromRuns(runs: Run[]): Set<string> {
   return out;
 }
 
-export function workingAgents(runs: Run[], agents: Agent[]): Agent[] {
-  const ids = workingAgentIdsFromRuns(runs);
-  return agents.filter((a) => ids.has(a.id));
-}
-
-/** Build a single chronological feed of user messages + agent replies. */
 export interface FeedItem {
   kind: "user" | "agent";
   run: Run;
   ts: string;
-  /** For agent items, the timestamp shown is run.startedAt or createdAt. */
 }
-export function buildFeed(runs: Run[]): FeedItem[] {
+
+function buildFeed(runs: Run[]): FeedItem[] {
   const items: FeedItem[] = [];
   for (const r of runs) {
     items.push({ kind: "user", run: r, ts: r.createdAt });
-    items.push({
-      kind: "agent",
-      run: r,
-      ts: r.startedAt ?? r.createdAt,
-    });
+    items.push({ kind: "agent", run: r, ts: r.startedAt ?? r.createdAt });
   }
-  // Stable sort by ts ascending — earliest at top.
   items.sort((a, b) => a.ts.localeCompare(b.ts));
   return items;
 }
 
-/** Convenience hook — keep all the room state derivation in one place. */
 export function useRoomDerived(
   runs: Run[],
   agents: Agent[],
