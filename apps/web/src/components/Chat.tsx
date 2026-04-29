@@ -375,6 +375,7 @@ function MessageRow({
   tag,
   isContinuation,
   actions,
+  runId,
   children,
 }: {
   avatar: React.ReactNode;
@@ -384,10 +385,15 @@ function MessageRow({
   tag?: React.ReactNode;
   isContinuation: boolean;
   actions?: React.ReactNode;
+  /** Stamped on the row so `↳ from @prev` badges elsewhere can scroll
+   *  to this exact message via [data-run-id="…"][data-msg-kind="agent"]. */
+  runId?: { id: string; kind: "user" | "agent" };
   children: React.ReactNode;
 }) {
   return (
     <div
+      data-run-id={runId?.id}
+      data-msg-kind={runId?.kind}
       className={cn(
         "group relative flex items-start gap-3 px-5 py-0.5 hover:bg-foreground/[0.03]",
         !isContinuation && "mt-2 pt-1.5",
@@ -420,6 +426,60 @@ function MessageRow({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Visit a parent message — smoothly scroll it into view, briefly flash
+ * its background, and dim the link if the target isn't on the page yet
+ * (e.g. the parent was pruned or filtered).
+ */
+function jumpToParent(parentRunId: string) {
+  const el = document.querySelector(
+    `[data-run-id="${parentRunId}"][data-msg-kind="agent"]`,
+  ) as HTMLElement | null;
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  // Restart the flash animation cleanly even on rapid re-clicks.
+  el.classList.remove("flash-target");
+  void el.offsetWidth;
+  el.classList.add("flash-target");
+  window.setTimeout(() => el.classList.remove("flash-target"), 1500);
+}
+
+function setHoverTarget(parentRunId: string, on: boolean) {
+  const el = document.querySelector(
+    `[data-run-id="${parentRunId}"][data-msg-kind="agent"]`,
+  );
+  if (!el) return;
+  el.classList.toggle("hover-target", on);
+}
+
+function ParentReference({
+  parentAgent,
+  parentRunId,
+}: {
+  parentAgent: Agent;
+  parentRunId: string;
+}) {
+  const cls = classesFor(agentColorFor(parentAgent.id));
+  return (
+    <button
+      type="button"
+      onClick={() => jumpToParent(parentRunId)}
+      onMouseEnter={() => setHoverTarget(parentRunId, true)}
+      onMouseLeave={() => setHoverTarget(parentRunId, false)}
+      className={cn(
+        "group/parent inline-flex items-center gap-1.5 mb-1.5 rounded-md border bg-muted/40",
+        "px-2 py-0.5 text-[11px] hover:bg-muted hover:border-foreground/30",
+        "transition-colors cursor-pointer",
+      )}
+      title="Jump to parent message"
+    >
+      <CornerDownLeft className="size-3 -scale-x-100 opacity-60 group-hover/parent:opacity-100" />
+      <span className="text-muted-foreground">from</span>
+      <span className={cn("font-medium", cls.text)}>@{parentAgent.name}</span>
+    </button>
   );
 }
 
@@ -463,22 +523,21 @@ export function UserMessage({
   run: Run;
   target: Agent | undefined;
   /** When the run continues from a previous run in the same thread, the
-   *  agent that produced that parent's output. We surface a small
-   *  "↳ from @prev" line above the prompt so the hand-off is explicit. */
+   *  agent that produced that parent's output. We surface a clickable
+   *  "↳ from @prev" pill above the prompt so the hand-off is explicit
+   *  AND the user can jump back to where the chain came from. */
   parentAgent?: Agent;
   isContinuation: boolean;
 }) {
   const { t } = useI18n();
   const cls = target ? classesFor(agentColorFor(target.id)) : null;
-  const parentCls = parentAgent
-    ? classesFor(agentColorFor(parentAgent.id))
-    : null;
   return (
     <MessageRow
       avatar={<UserAvatar />}
       name={t("chat.message.you")}
       timestamp={run.createdAt}
       isContinuation={isContinuation}
+      runId={{ id: run.id, kind: "user" }}
       tag={
         target ? (
           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -488,14 +547,11 @@ export function UserMessage({
         ) : undefined
       }
     >
-      {parentAgent ? (
-        <p className="text-[11px] text-muted-foreground mb-1 inline-flex items-center gap-1">
-          <CornerDownLeft className="size-3 -scale-x-100" />
-          {t("chat.thread.fromAgent", { agent: "" })}
-          <span className={cn("font-medium", parentCls?.text)}>
-            @{parentAgent.name}
-          </span>
-        </p>
+      {parentAgent && run.parentRunId ? (
+        <ParentReference
+          parentAgent={parentAgent}
+          parentRunId={run.parentRunId}
+        />
       ) : null}
       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
         {run.prompt}
@@ -576,6 +632,7 @@ export function AgentMessage({
       nameClassName={cls?.text}
       timestamp={run.createdAt}
       isContinuation={isContinuation}
+      runId={{ id: run.id, kind: "agent" }}
       tag={
         <Badge variant={statusVariant(run.status)} className="h-4 px-1.5 text-[9px] gap-1">
           {isActive ? <span className="size-1 rounded-full bg-current animate-pulse" /> : null}

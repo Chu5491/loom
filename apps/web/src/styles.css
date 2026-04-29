@@ -189,3 +189,42 @@ body {
   color: hsl(var(--foreground));
 }
 .prose-loom em { font-style: italic; }
+
+/* Chat micro-animations. */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.msg-in {
+  animation: msg-in 240ms ease-out both;
+}
+
+@keyframes breath {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.85); }
+}
+.breath {
+  animation: breath 1.6s ease-in-out infinite;
+}
+
+/* Flash highlight when navigating to a parent message — drawn around the
+ * agent-message body when the reader clicks "↳ from @x" to trace where a
+ * chain came from. One full cycle, then back to neutral. */
+@keyframes loom-flash {
+  0%   { background-color: transparent; }
+  20%  { background-color: hsl(var(--accent)); }
+  60%  { background-color: hsl(var(--accent)); }
+  100% { background-color: transparent; }
+}
+.flash-target {
+  animation: loom-flash 1.4s ease-in-out;
+  border-radius: 6px;
+}
+
+/* Quiet tint while a "↳ from …" badge is being hovered — lets the reader
+ * preview where the chain came from without committing to a click. */
+.hover-target {
+  background-color: hsl(var(--muted) / 0.6);
+  transition: background-color 120ms ease;
+  border-radius: 6px;
+}
