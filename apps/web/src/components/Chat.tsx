@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   CornerDownLeft,
@@ -122,9 +122,13 @@ export function AgentAvatar({
   size?: "sm" | "md" | "lg";
 }) {
   const cls = classesFor(agentColorFor(agent.id));
+  // Sizes are tighter than shadcn defaults — chat avatars are dense and
+  // shouldn't dominate. Only md/lg show the adapter badge in the corner;
+  // at sm the chip already names the agent so the badge is just noise.
   const dim =
-    size === "sm" ? "h-7 w-7 text-[11px]" : size === "lg" ? "h-10 w-10 text-sm" : "h-8 w-8 text-xs";
-  const badgeSize = size === "sm" ? 11 : size === "lg" ? 16 : 13;
+    size === "sm" ? "size-6 text-[10px]" : size === "lg" ? "size-10 text-sm" : "size-8 text-xs";
+  const showBadge = size !== "sm" && manifest;
+  const badgeSize = size === "lg" ? 14 : 11;
 
   return (
     <span className="relative inline-block shrink-0">
@@ -133,15 +137,15 @@ export function AgentAvatar({
           {initialFor(agent.name)}
         </AvatarFallback>
       </Avatar>
-      {manifest ? (
-        <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-background ring-1 ring-border p-px">
-          <AdapterIcon manifest={manifest} size={badgeSize} />
+      {showBadge ? (
+        <span className="absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full bg-background shadow-sm">
+          <AdapterIcon manifest={manifest!} size={badgeSize} />
         </span>
       ) : null}
       {working ? (
         <span
           className={cn(
-            "absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ring-2 ring-background",
+            "absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2 ring-background",
             cls.dot,
           )}
         />
@@ -180,42 +184,34 @@ export function MemberPanel({
 }) {
   const { t } = useI18n();
   return (
-    <div className="border-b bg-muted/30 px-4 py-2.5">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("chat.members.title")}
-        </span>
-        <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-          {agents.length}
-        </Badge>
-      </div>
-      <div className="flex items-center gap-1.5 overflow-x-auto">
-        {agents.map((a) => {
-          const manifest = manifests.find((m) => m.kind === a.adapterKind);
-          const working = workingIds.has(a.id);
-          const selected = selectedAgentId === a.id;
-          return (
-            <button
-              key={a.id}
-              onClick={() => onPick(a.id)}
-              className={cn(
-                "flex items-center gap-2 rounded-full pl-1 pr-3 py-1 text-xs font-medium transition-colors border shrink-0",
-                selected
-                  ? "border-foreground bg-background text-foreground shadow-sm"
-                  : "border-border bg-background/60 text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-              )}
-            >
-              <AgentAvatar agent={a} manifest={manifest} working={working} size="sm" />
-              <span>@{a.name}</span>
-              {working ? (
-                <span className="text-[10px] font-normal text-sky-600 dark:text-sky-400">
-                  · {t("chat.members.working")}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+    <div className="flex items-center gap-2 overflow-x-auto border-b bg-muted/30 px-4 py-2">
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {t("chat.members.title")} · {agents.length}
+      </span>
+      {agents.map((a) => {
+        const manifest = manifests.find((m) => m.kind === a.adapterKind);
+        const working = workingIds.has(a.id);
+        const selected = selectedAgentId === a.id;
+        const cls = classesFor(agentColorFor(a.id));
+        return (
+          <button
+            key={a.id}
+            onClick={() => onPick(a.id)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full pl-0.5 pr-2.5 py-0.5 text-xs font-medium transition-colors border shrink-0",
+              selected
+                ? "border-foreground bg-background text-foreground shadow-sm"
+                : "border-border bg-background/60 text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+            )}
+          >
+            <AgentAvatar agent={a} manifest={manifest} working={working} size="sm" />
+            <span>@{a.name}</span>
+            {working ? (
+              <span className={cn("size-1.5 rounded-full", cls.dot)} />
+            ) : null}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -295,7 +291,22 @@ export function AgentMessage({
 
   const name = agent?.name ?? run.agentId.slice(0, 8);
   const cls = agent ? classesFor(agentColorFor(agent.id)) : null;
-  const hasContent = events.length > 0 || resultText !== null;
+
+  // For completed runs we may have missed the SSE stream entirely (e.g.
+  // we opened the page after the run already terminated). Pull the final
+  // result from the log file in that case so the bubble has content.
+  const restingResult = useQuery({
+    queryKey: ["run", run.id, "result"],
+    queryFn: () => api.getRunResult(run.id),
+    enabled:
+      !isActive &&
+      run.status === "succeeded" &&
+      events.length === 0 &&
+      resultText === null,
+    staleTime: 60_000,
+  });
+  const finalText = resultText ?? restingResult.data?.resultText ?? null;
+  const hasContent = events.length > 0 || finalText !== null;
 
   return (
     <Row
@@ -345,9 +356,14 @@ export function AgentMessage({
                 )}
               </p>
             ))}
-            {resultText ? (
-              <p className="border-t pt-1.5 whitespace-pre-wrap break-words font-medium">
-                {resultText}
+            {finalText ? (
+              <p
+                className={cn(
+                  "whitespace-pre-wrap break-words",
+                  events.length > 0 && "border-t pt-1.5",
+                )}
+              >
+                {finalText}
               </p>
             ) : null}
           </div>

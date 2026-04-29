@@ -222,43 +222,47 @@ function Header({
   const { t } = useI18n();
   const initial = project.name.trim()[0]?.toUpperCase() ?? "?";
   return (
-    <div className="border-b px-5 py-4">
-      <Button asChild variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs text-muted-foreground">
-        <Link to="/projects">
-          <ArrowLeft />
-          {t("chat.back")}
-        </Link>
-      </Button>
-      <div className="mt-2 flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="flex size-11 items-center justify-center rounded-lg bg-foreground text-background text-base font-bold shrink-0">
-            {initial}
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-base font-semibold truncate leading-tight">
+    <div className="border-b px-4 py-3">
+      <div className="flex items-center gap-3">
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-muted-foreground"
+        >
+          <Link to="/projects" aria-label={t("chat.back")}>
+            <ArrowLeft />
+          </Link>
+        </Button>
+        <div className="flex size-9 items-center justify-center rounded-md bg-foreground text-background text-sm font-semibold shrink-0">
+          {initial}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-sm font-semibold truncate leading-tight">
               {project.name}
             </h1>
-            <p
-              className="text-[11px] text-muted-foreground mono truncate"
-              title={project.path}
-            >
-              {project.path}
-            </p>
-            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground/80 inline-flex items-center gap-1.5">
               <Stat n={agentCount} label="agents" />
-              <Separator orientation="vertical" className="h-3" />
+              <Separator orientation="vertical" className="h-2.5" />
               <Stat n={runCount} label="messages" />
               {workingCount > 0 ? (
                 <>
-                  <Separator orientation="vertical" className="h-3" />
+                  <Separator orientation="vertical" className="h-2.5" />
                   <span className="font-medium text-sky-600 dark:text-sky-400 inline-flex items-center gap-1">
                     <span className="size-1.5 rounded-full bg-sky-500 animate-pulse" />
                     {workingCount} working
                   </span>
                 </>
               ) : null}
-            </div>
+            </span>
           </div>
+          <p
+            className="text-[11px] text-muted-foreground mono truncate"
+            title={project.path}
+          >
+            {project.path}
+          </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <Button asChild variant="ghost" size="sm" className="h-8 text-xs">
