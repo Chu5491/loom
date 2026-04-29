@@ -1,12 +1,13 @@
 import type { AdapterManifest } from "@loom/core";
 
-// SST OpenCode mark — orange tile with stylized angle brackets, evoking
-// the project's "</>" CLI vibe.
+// OpenCode — SST's signature deep-slate tile with three orange code-line
+// stripes evoking a code listing / terminal output. Distinct from
+// Codex's curly-brace mark.
 const ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <rect x="2" y="2" width="20" height="20" rx="4.5" fill="#FB923C"/>
-  <path d="M8.5 9 L5.5 12 L8.5 15" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <path d="M15.5 9 L18.5 12 L15.5 15" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <path d="M13.2 7.8 L10.8 16.2" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <rect x="2" y="2" width="20" height="20" rx="5" fill="#0F172A"/>
+  <rect x="6" y="7.5" width="9" height="2" rx="1" fill="#FB923C"/>
+  <rect x="6" y="11" width="12" height="2" rx="1" fill="#FB923C"/>
+  <rect x="6" y="14.5" width="6" height="2" rx="1" fill="#FB923C"/>
 </svg>`;
 
 export const opencodeManifest: AdapterManifest = {
