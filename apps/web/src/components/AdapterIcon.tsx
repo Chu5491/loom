@@ -1,9 +1,8 @@
-import {
-  ClaudeCode,
-  Codex,
-  Gemini,
-  OpenCode,
-} from "@lobehub/icons";
+import ClaudeCodeColor from "@lobehub/icons/es/ClaudeCode/components/Color";
+import CodexColor from "@lobehub/icons/es/Codex/components/Color";
+import GeminiColor from "@lobehub/icons/es/Gemini/components/Color";
+// OpenCode ships only a Mono (single-color) variant in lobehub.
+import OpenCodeMono from "@lobehub/icons/es/OpenCode/components/Mono";
 import type { AdapterManifest } from "@loom/core";
 
 /**
@@ -13,16 +12,21 @@ import type { AdapterManifest } from "@loom/core";
  * official-looking lobehub icons. Anything else falls back to the
  * adapter's own `iconSvg` (server-controlled), and finally to the
  * one-letter `icon` glyph if no SVG was supplied.
+ *
+ * We deep-import each lobehub `.Color` component instead of doing
+ * `ClaudeCode.Color` from the top-level export — the compound-component
+ * attribute pattern lobehub uses (`Icons.Color = Color`) doesn't survive
+ * Vite's dependency pre-bundling cleanly.
  */
 
-// Each lobehub icon is a compound component (Mono base + Color/Avatar/etc.
-// subcomponents). We only use the multi-color `.Color` variant.
-const KIND_TO_LOBE = {
-  "claude-code": ClaudeCode,
-  gemini: Gemini,
-  codex: Codex,
-  opencode: OpenCode,
-} as const;
+type LobeIcon = React.ComponentType<{ size?: number | string }>;
+
+const KIND_TO_LOBE: Record<string, LobeIcon> = {
+  "claude-code": ClaudeCodeColor as LobeIcon,
+  gemini: GeminiColor as LobeIcon,
+  codex: CodexColor as LobeIcon,
+  opencode: OpenCodeMono as LobeIcon,
+};
 
 export function AdapterIcon({
   manifest,
@@ -34,11 +38,8 @@ export function AdapterIcon({
   className?: string;
 }) {
   const dim = `${size}px`;
-  const lobe = KIND_TO_LOBE[manifest.kind as keyof typeof KIND_TO_LOBE] as
-    | { Color: React.ComponentType<{ size?: number | string }> }
-    | undefined;
-  if (lobe) {
-    const ColorIcon = lobe.Color;
+  const Icon = KIND_TO_LOBE[manifest.kind];
+  if (Icon) {
     return (
       <span
         role="img"
@@ -46,7 +47,7 @@ export function AdapterIcon({
         className={"inline-flex shrink-0 items-center justify-center " + (className ?? "")}
         style={{ width: dim, height: dim }}
       >
-        <ColorIcon size={size} />
+        <Icon size={size} />
       </span>
     );
   }
