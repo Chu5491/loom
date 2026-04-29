@@ -41,9 +41,31 @@ CREATE TABLE IF NOT EXISTS specs (
   updated_at  TEXT NOT NULL
 );
 
+-- Conversation threads. Promoted from "implicit chains via parent_run_id"
+-- (which still works as a sub-grouping inside a thread for hand-off
+-- visualization) to a first-class container with a name, a status, and
+-- a curated context bundle that the user can opt into attaching.
+CREATE TABLE IF NOT EXISTS threads (
+  id              TEXT PRIMARY KEY,
+  project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'active',  -- active | done | archived
+  context_bundle  TEXT NOT NULL DEFAULT '',
+  -- Optional isolated git worktree for this thread. When set, runs
+  -- belonging to the thread cd into this path instead of the
+  -- project's main path. NULL means "share the project's path with
+  -- every other thread" (the default).
+  worktree_path   TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_id);
+CREATE INDEX IF NOT EXISTS idx_threads_status  ON threads(status);
+
 CREATE TABLE IF NOT EXISTS runs (
   id                  TEXT PRIMARY KEY,
   agent_id            TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  thread_id           TEXT REFERENCES threads(id) ON DELETE SET NULL,
   parent_run_id       TEXT REFERENCES runs(id) ON DELETE SET NULL,
   prompt              TEXT NOT NULL,
   attached_spec_ids   TEXT NOT NULL DEFAULT '[]',
@@ -52,12 +74,39 @@ CREATE TABLE IF NOT EXISTS runs (
   exit_code           INTEGER,
   pid                 INTEGER,
   log_path            TEXT,
+  -- Working-tree snapshots (dangling commit SHAs) used to compute the
+  -- file-level diff for "what did this run change?". NULL when the cwd
+  -- is not a git repo or snapshot failed.
+  before_ref          TEXT,
+  after_ref           TEXT,
+  -- Cost in USD as reported by the CLI (e.g. claude-code's `result`
+  -- event total_cost_usd). NULL when the adapter doesn't surface cost
+  -- — we don't fabricate estimates from token counts.
+  cost_usd            REAL,
   started_at          TEXT,
   ended_at            TEXT,
   created_at          TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs(agent_id);
+CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent_id);
 CREATE INDEX IF NOT EXISTS idx_runs_parent ON runs(parent_run_id);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_specs_agent ON specs(agent_id);
+-- idx_runs_thread is created in applyMigrations() after the
+-- ALTER-add-column step so fresh installs and existing-DB upgrades go
+-- through one path. Same convention as idx_agents_project above.
+
+-- Per-run, per-file changes derived from before/after work-tree snapshots
+-- and persisted at run-finish time. Persisting (rather than always
+-- recomputing from refs) means file-history queries don't need git
+-- access and survive git gc collecting the dangling snapshot commits.
+CREATE TABLE IF NOT EXISTS run_changes (
+  run_id      TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  path        TEXT NOT NULL,
+  from_path   TEXT,                       -- non-null only for renames
+  status      TEXT NOT NULL,              -- added | modified | deleted | renamed
+  additions   INTEGER NOT NULL DEFAULT 0,
+  deletions   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (run_id, path)
+);
+CREATE INDEX IF NOT EXISTS idx_run_changes_path ON run_changes(path);

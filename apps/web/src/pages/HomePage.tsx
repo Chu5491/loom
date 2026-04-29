@@ -1,15 +1,11 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import {
-  ArrowRight,
-  Hash,
-  Plus,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
 import type { Run } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "../components/AdapterIcon.js";
+import { LoomLogo } from "../components/LoomLogo.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
 import { PageScroll } from "../components/PageScroll.js";
@@ -107,7 +103,7 @@ function Hero() {
   return (
     <div>
       <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-        <Sparkles className="size-3" />
+        <LoomLogo className="size-5 dark:invert" />
         loom
       </div>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight">
@@ -231,8 +227,7 @@ function RecentActivity({
                         {agent?.name ?? "—"}
                       </span>
                       {project ? (
-                        <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
-                          <Hash className="size-2.5" />
+                        <span className="text-[11px] text-muted-foreground truncate">
                           {project.name}
                         </span>
                       ) : null}
@@ -300,7 +295,7 @@ function ProjectsGrid({
       <section>
         <SectionHeader title={t("home.projects.title")} />
         <div className="rounded-lg border border-dashed bg-card/50 px-6 py-10 text-center">
-          <Sparkles className="size-8 mx-auto text-muted-foreground/60" />
+          <LoomLogo className="size-16 mx-auto opacity-60 dark:invert" />
           <p className="mt-3 text-sm font-medium">
             {t("home.projects.empty.title")}
           </p>
@@ -338,10 +333,7 @@ function ProjectsGrid({
                   {p.name.trim()[0]?.toUpperCase() ?? "?"}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1 font-medium truncate">
-                    <Hash className="size-3 shrink-0 text-muted-foreground" />
-                    {p.name}
-                  </div>
+                  <div className="font-medium truncate">{p.name}</div>
                   <p className="text-[11px] text-muted-foreground mono truncate" title={p.path}>
                     {p.path}
                   </p>

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet, useParams } from "react-router-dom";
-import { Activity, FileText, Hash, MessageCircle, Users } from "lucide-react";
+import { Activity, FileText, MessageCircle, Users } from "lucide-react";
 import { api } from "../api/client.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
@@ -51,8 +51,7 @@ function Header({
   project: { id: string; name: string; path: string };
 }) {
   return (
-    <div className="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
-      <Hash className="size-4 text-muted-foreground shrink-0" />
+    <div className="flex items-center px-5 pt-4 pb-2 shrink-0">
       <div className="min-w-0">
         <h1 className="text-base font-semibold truncate leading-tight">
           {project.name}

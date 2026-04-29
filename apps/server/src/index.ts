@@ -9,6 +9,7 @@ import { healthRoute } from "./routes/health.js";
 import { projectsRoute } from "./routes/projects.js";
 import { runsRoute } from "./routes/runs.js";
 import { specsRoute } from "./routes/specs.js";
+import { threadsRoute } from "./routes/threads.js";
 
 getDb();
 
@@ -25,6 +26,7 @@ app.route("/api/projects", projectsRoute);
 app.route("/api/agents", agentsRoute);
 app.route("/api/specs", specsRoute);
 app.route("/api/runs", runsRoute);
+app.route("/api/threads", threadsRoute);
 
 app.onError((err, c) => {
   console.error("[loom] unhandled error:", err);

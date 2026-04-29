@@ -28,16 +28,17 @@
 | 5 | Spec 첨부 (composePrompt 합성) | `services/run-service.ts` |
 | 6 | claude-code 어댑터 | `packages/adapters/claude-code/` |
 | 7 | i18n (en/ko) + 테마 (system/light/dark) | `apps/web/src/context/` |
+| 8 | **통합 UI + 파일 관리** | Workspace 페이지 + ChangedFiles 컴포넌트 + Git 스냅샷 |
 
 ### To do — 이번 작업 범위
 
 | # | 기능 | 비고 |
 | - | --- | --- |
-| 8 | **공유 어댑터 유틸** (`@loom/adapter-utils`) | `spawnProcess` + `defineCliAdapter` factory |
-| 9 | **gemini 어댑터** | 구글 gemini CLI |
-| 10 | **codex 어댑터** | OpenAI codex CLI (`codex exec`) |
-| 11 | **opencode 어댑터** | SST opencode CLI (`opencode run`) |
-| 12 | 모든 어댑터 server registry 등록 | `apps/server/src/adapters/registry.ts` |
+| 9 | **공유 어댑터 유틸** (`@loom/adapter-utils`) | `spawnProcess` + `defineCliAdapter` factory |
+| 10 | **gemini 어댑터** | 구글 gemini CLI |
+| 11 | **codex 어댑터** | OpenAI codex CLI (`codex exec`) |
+| 12 | **opencode 어댑터** | SST opencode CLI (`opencode run`) |
+| 13 | 모든 어댑터 server registry 등록 | `apps/server/src/adapters/registry.ts` |
 
 ### 이번엔 절대 안 함
 
@@ -250,14 +251,15 @@ export const xxxAdapter = defineCliAdapter({
 
 ## 6. 작업 흐름 (이번 작업)
 
-1. ✅ 이 CLAUDE.md를 먼저 읽고 동의 (또는 사용자에게 확인)
-2. paperclip의 gemini-local / codex-local 인자 빌드만 빠르게 훑기
-3. `@loom/adapter-utils` 패키지 생성 — `spawnProcess` + `defineCliAdapter`
-4. `@loom/adapter-claude-code`를 새 추상화로 리팩토 (테스트 그대로 통과해야 함)
-5. `@loom/adapter-gemini` / `@loom/adapter-codex` / `@loom/adapter-opencode` 추가
-6. `apps/server/src/adapters/registry.ts`에 4개 모두 등록
-7. `pnpm -r typecheck` + `pnpm -r test` 그린 확인
-8. README의 "어댑터 작성" 섹션을 새 추상화에 맞게 업데이트
+1. ✅ 통합 UI + 파일 관리 구현 완료 (`WorkspacePage`, `ChangedFiles`, git snapshot)
+2. ✅ 이 CLAUDE.md를 읽고 동의 (또는 사용자에게 확인)
+3. paperclip의 gemini-local / codex-local 인자 빌드만 빠르게 훑기
+4. `@loom/adapter-utils` 패키지 생성 — `spawnProcess` + `defineCliAdapter`
+5. `@loom/adapter-claude-code`를 새 추상화로 리팩토 (테스트 그대로 통과해야 함)
+6. `@loom/adapter-gemini` / `@loom/adapter-codex` / `@loom/adapter-opencode` 추가
+7. `apps/server/src/adapters/registry.ts`에 4개 모두 등록
+8. `pnpm -r typecheck` + `pnpm -r test` 그린 확인
+9. README의 "어댑터 작성" 섹션을 새 추상화에 맞게 업데이트
 
 ---
 

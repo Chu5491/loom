@@ -5,6 +5,7 @@ import { getDb } from "./client.js";
 interface RunRow {
   id: string;
   agent_id: string;
+  thread_id: string | null;
   parent_run_id: string | null;
   prompt: string;
   attached_spec_ids: string;
@@ -13,6 +14,9 @@ interface RunRow {
   exit_code: number | null;
   pid: number | null;
   log_path: string | null;
+  before_ref: string | null;
+  after_ref: string | null;
+  cost_usd: number | null;
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
@@ -29,6 +33,7 @@ function rowToRun(row: RunRow): Run {
   return {
     id: row.id,
     agentId: row.agent_id,
+    threadId: row.thread_id,
     parentRunId: row.parent_run_id,
     prompt: row.prompt,
     attachedSpecIds,
@@ -37,6 +42,9 @@ function rowToRun(row: RunRow): Run {
     exitCode: row.exit_code,
     pid: row.pid,
     logPath: row.log_path,
+    beforeRef: row.before_ref,
+    afterRef: row.after_ref,
+    costUsd: row.cost_usd,
     startedAt: row.started_at,
     endedAt: row.ended_at,
     createdAt: row.created_at,
@@ -45,6 +53,7 @@ function rowToRun(row: RunRow): Run {
 
 export interface CreateRunInput {
   agentId: string;
+  threadId: string | null;
   parentRunId?: string | null;
   prompt: string;
   attachedSpecIds?: string[];
@@ -56,14 +65,15 @@ export function createRun(input: CreateRunInput): Run {
   const now = new Date().toISOString();
   getDb()
     .prepare(
-      `INSERT INTO runs (id, agent_id, parent_run_id, prompt, attached_spec_ids,
+      `INSERT INTO runs (id, agent_id, thread_id, parent_run_id, prompt, attached_spec_ids,
                          cwd, status, exit_code, pid, log_path,
                          started_at, ended_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, NULL, NULL, NULL, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, NULL, NULL, NULL, ?)`,
     )
     .run(
       id,
       input.agentId,
+      input.threadId,
       input.parentRunId ?? null,
       input.prompt,
       JSON.stringify(input.attachedSpecIds ?? []),
@@ -82,6 +92,7 @@ export function getRun(id: string): Run | null {
 
 export interface ListRunsFilter {
   agentId?: string;
+  threadId?: string;
   parentRunId?: string;
   status?: RunStatus;
   limit?: number;
@@ -93,6 +104,10 @@ export function listRuns(filter: ListRunsFilter = {}): Run[] {
   if (filter.agentId) {
     where.push("agent_id = ?");
     params.push(filter.agentId);
+  }
+  if (filter.threadId) {
+    where.push("thread_id = ?");
+    params.push(filter.threadId);
   }
   if (filter.parentRunId) {
     where.push("parent_run_id = ?");
@@ -113,6 +128,18 @@ export function listRuns(filter: ListRunsFilter = {}): Run[] {
 
 export function setRunLogPath(id: string, logPath: string): void {
   getDb().prepare("UPDATE runs SET log_path = ? WHERE id = ?").run(logPath, id);
+}
+
+export function setRunBeforeRef(id: string, ref: string | null): void {
+  getDb().prepare("UPDATE runs SET before_ref = ? WHERE id = ?").run(ref, id);
+}
+
+export function setRunAfterRef(id: string, ref: string | null): void {
+  getDb().prepare("UPDATE runs SET after_ref = ? WHERE id = ?").run(ref, id);
+}
+
+export function setRunCostUsd(id: string, cost: number): void {
+  getDb().prepare("UPDATE runs SET cost_usd = ? WHERE id = ?").run(cost, id);
 }
 
 export function markRunRunning(id: string, pid: number | null): void {

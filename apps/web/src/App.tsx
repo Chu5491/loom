@@ -3,11 +3,11 @@ import { Layout } from "./components/Layout.js";
 import { ProjectShell } from "./components/ProjectShell.js";
 import { AgentsPage } from "./pages/AgentsPage.js";
 import { HomePage } from "./pages/HomePage.js";
-import { ProjectChatPage } from "./pages/ProjectChatPage.js";
 import { ProjectsPage } from "./pages/ProjectsPage.js";
 import { RunDetailPage } from "./pages/RunDetailPage.js";
 import { RunsPage } from "./pages/RunsPage.js";
 import { SpecsPage } from "./pages/SpecsPage.js";
+import { WorkspacePage } from "./pages/WorkspacePage.js";
 
 /**
  * Project-scoped routing. The home page is a workspace dashboard;
@@ -22,7 +22,7 @@ export function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:id" element={<ProjectShell />}>
-          <Route index element={<ProjectChatPage />} />
+          <Route index element={<WorkspacePage />} />
           <Route path="agents" element={<AgentsPage />} />
           <Route path="skills" element={<SpecsPage />} />
           <Route path="skills/:specId" element={<SpecsPage />} />

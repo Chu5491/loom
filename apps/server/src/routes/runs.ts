@@ -3,7 +3,9 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { RunStatus } from "@loom/core";
 import { getRun, listRuns } from "../db/runs.js";
+import { listChangesForRun } from "../db/run-changes.js";
 import { cancelRun, startRun } from "../services/run-service.js";
+import { diffPatch, diffStat } from "../services/git-snapshot.js";
 import {
   readLogFile,
   subscribeActive,
@@ -14,19 +16,22 @@ const createSchema = z.object({
   agentId: z.string().min(1),
   prompt: z.string().min(1),
   cwd: z.string().optional(),
+  threadId: z.string().nullable().optional(),
   parentRunId: z.string().nullable().optional(),
   attachedSpecIds: z.array(z.string()).optional(),
+  includeContext: z.boolean().optional(),
 });
 
 export const runsRoute = new Hono();
 
 runsRoute.get("/", (c) => {
   const agentId = c.req.query("agentId") ?? undefined;
+  const threadId = c.req.query("threadId") ?? undefined;
   const parentRunId = c.req.query("parentRunId") ?? undefined;
   const status = c.req.query("status") as RunStatus | undefined;
   const limitRaw = c.req.query("limit");
   const limit = limitRaw ? Number(limitRaw) : undefined;
-  const runs = listRuns({ agentId, parentRunId, status, limit });
+  const runs = listRuns({ agentId, threadId, parentRunId, status, limit });
   return c.json({ runs });
 });
 
@@ -77,6 +82,36 @@ runsRoute.get("/:id/result", async (c) => {
     }
   }
   return c.json({ resultText });
+});
+
+/**
+ * Per-file change summary for a run. Reads the persisted `run_changes`
+ * rows first — those are durable past git gc. Falls back to live `git
+ * diff` against the snapshot refs only when the table is empty (legacy
+ * runs from before persistence existed).
+ */
+runsRoute.get("/:id/changes", async (c) => {
+  const run = getRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not_found" }, 404);
+  const persisted = listChangesForRun(run.id);
+  if (persisted.length > 0) return c.json({ changes: persisted });
+  const live = await diffStat(run.beforeRef, run.afterRef, run.cwd);
+  return c.json({ changes: live });
+});
+
+/**
+ * Unified diff for a single file in a run. Path is the destination path
+ * (post-rename for renames). Returned as text/plain — UI parses the
+ * unified diff client-side for rendering.
+ */
+runsRoute.get("/:id/changes/patch", async (c) => {
+  const run = getRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not_found" }, 404);
+  const path = c.req.query("path");
+  if (!path) return c.json({ error: "path_required" }, 400);
+  const patch = await diffPatch(run.beforeRef, run.afterRef, path, run.cwd);
+  if (patch === null) return c.json({ error: "diff_unavailable" }, 404);
+  return c.text(patch);
 });
 
 runsRoute.post("/:id/cancel", (c) => {

@@ -2,12 +2,19 @@ import type {
   AdapterManifest,
   AdapterProbeResult,
   Agent,
+  FileContent,
+  FileHistoryEntry,
   ModelListResult,
   Project,
   Run,
+  RunChange,
   RunStatus,
   Spec,
   TestAdapterResult,
+  Thread,
+  ThreadStatus,
+  TouchedPath,
+  TreeEntry,
 } from "@loom/core";
 
 async function request<T>(
@@ -54,8 +61,24 @@ export interface CreateRunBody {
   agentId: string;
   prompt: string;
   cwd?: string;
+  threadId?: string | null;
   parentRunId?: string | null;
   attachedSpecIds?: string[];
+  /** When true and the thread has a context bundle, prepend it to the
+   *  composed prompt for this run. Opt-in per-send. */
+  includeContext?: boolean;
+}
+
+export interface CreateThreadBody {
+  projectId: string;
+  name: string;
+  isolate?: boolean;
+}
+
+export interface UpdateThreadBody {
+  name?: string;
+  status?: ThreadStatus;
+  contextBundle?: string;
 }
 
 export interface CreateSpecBody {
@@ -129,6 +152,22 @@ export const api = {
     }),
   deleteProject: (id: string) =>
     request<void>(`/api/projects/${id}`, { method: "DELETE" }),
+  getProjectTree: (id: string, path?: string) => {
+    const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+    return request<{ entries: TreeEntry[] }>(`/api/projects/${id}/tree${qs}`);
+  },
+  getProjectFile: (id: string, path: string) =>
+    request<{ file: FileContent }>(
+      `/api/projects/${id}/file?path=${encodeURIComponent(path)}`,
+    ),
+  getProjectFileHistory: (id: string, path: string) =>
+    request<{ entries: FileHistoryEntry[] }>(
+      `/api/projects/${id}/file-history?path=${encodeURIComponent(path)}`,
+    ),
+  getProjectTouched: (id: string) =>
+    request<{ paths: TouchedPath[] }>(`/api/projects/${id}/touched`),
+  getProjectFilesFlat: (id: string) =>
+    request<{ paths: string[] }>(`/api/projects/${id}/files-flat`),
 
   listAgents: (filter: { projectId?: string } = {}) => {
     const qs = filter.projectId ? `?projectId=${filter.projectId}` : "";
@@ -151,6 +190,7 @@ export const api = {
   listRuns: (
     filter: {
       agentId?: string;
+      threadId?: string;
       parentRunId?: string;
       status?: RunStatus;
       limit?: number;
@@ -158,6 +198,7 @@ export const api = {
   ) => {
     const qs = new URLSearchParams();
     if (filter.agentId) qs.set("agentId", filter.agentId);
+    if (filter.threadId) qs.set("threadId", filter.threadId);
     if (filter.parentRunId) qs.set("parentRunId", filter.parentRunId);
     if (filter.status) qs.set("status", filter.status);
     if (filter.limit) qs.set("limit", String(filter.limit));
@@ -167,6 +208,16 @@ export const api = {
   getRun: (id: string) => request<{ run: Run }>(`/api/runs/${id}`),
   getRunResult: (id: string) =>
     request<{ resultText: string | null }>(`/api/runs/${id}/result`),
+  getRunChanges: (id: string) =>
+    request<{ changes: RunChange[] }>(`/api/runs/${id}/changes`),
+  /** Returns the unified-diff text for a single file in a run. */
+  getRunPatch: async (id: string, path: string): Promise<string> => {
+    const res = await fetch(
+      `/api/runs/${id}/changes/patch?path=${encodeURIComponent(path)}`,
+    );
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.text();
+  },
   createRun: (body: CreateRunBody) =>
     request<{ run: Run }>("/api/runs", {
       method: "POST",
@@ -194,4 +245,29 @@ export const api = {
     }),
   deleteSpec: (id: string) =>
     request<void>(`/api/specs/${id}`, { method: "DELETE" }),
+
+  listThreads: (
+    filter: { projectId?: string; status?: ThreadStatus; limit?: number } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (filter.projectId) qs.set("projectId", filter.projectId);
+    if (filter.status) qs.set("status", filter.status);
+    if (filter.limit) qs.set("limit", String(filter.limit));
+    const suffix = qs.toString() ? `?${qs}` : "";
+    return request<{ threads: Thread[] }>(`/api/threads${suffix}`);
+  },
+  getThread: (id: string) =>
+    request<{ thread: Thread }>(`/api/threads/${id}`),
+  createThread: (body: CreateThreadBody) =>
+    request<{ thread: Thread }>("/api/threads", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateThread: (id: string, body: UpdateThreadBody) =>
+    request<{ thread: Thread }>(`/api/threads/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteThread: (id: string) =>
+    request<void>(`/api/threads/${id}`, { method: "DELETE" }),
 };
