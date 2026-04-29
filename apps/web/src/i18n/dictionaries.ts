@@ -108,6 +108,12 @@ const en: Dictionary = {
   "runs.title": "Runs",
 
   // chat (project room)
+  "chat.today": "Today",
+  "chat.yesterday": "Yesterday",
+  "sidebar.projects": "Projects",
+  "sidebar.projects.empty": "No projects yet",
+  "sidebar.projects.new": "New project",
+  "sidebar.manage": "Manage",
   "chat.empty.noAgents": "Add an agent to this project to start chatting.",
   "chat.empty.firstMessage": "Send your first message below.",
   "chat.composer.placeholder": "Message {agent}…",
@@ -315,6 +321,12 @@ const ko: Dictionary = {
 
   "runs.title": "실행",
 
+  "chat.today": "오늘",
+  "chat.yesterday": "어제",
+  "sidebar.projects": "프로젝트",
+  "sidebar.projects.empty": "프로젝트 없음",
+  "sidebar.projects.new": "새 프로젝트",
+  "sidebar.manage": "관리",
   "chat.empty.noAgents": "이 프로젝트에 에이전트를 추가하면 대화를 시작할 수 있어요.",
   "chat.empty.firstMessage": "아래에 첫 메시지를 보내보세요.",
   "chat.composer.placeholder": "{agent}에게 메시지…",

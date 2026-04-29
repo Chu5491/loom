@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import type { RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
 import { Badge, Button, Card } from "../components/ui.js";
+import { PageScroll } from "../components/PageScroll.js";
 import { useI18n } from "../context/I18nContext.js";
 
 interface ChunkPayload {
@@ -181,7 +182,7 @@ export function RunDetailPage() {
   const isActive = r.status === "queued" || r.status === "running";
 
   return (
-    <div className="space-y-4">
+    <PageScroll className="space-y-4">
       <div className="flex items-center gap-3 text-sm">
         <Link
           to="/runs"
@@ -354,7 +355,7 @@ export function RunDetailPage() {
           </div>
         ) : null}
       </div>
-    </div>
+    </PageScroll>
   );
 }
 

@@ -5,6 +5,7 @@ import { marked } from "marked";
 import type { Spec } from "@loom/core";
 import { api, type CreateSpecBody, type UpdateSpecBody } from "../api/client.js";
 import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js";
+import { PageScroll } from "../components/PageScroll.js";
 import { useI18n } from "../context/I18nContext.js";
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -30,7 +31,7 @@ export function SpecsPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <PageScroll className="space-y-4">
       <div className="flex justify-end">
         <Button onClick={() => navigate(`${baseUrl}/new`)}>
           {t("specs.new")}
@@ -56,7 +57,7 @@ export function SpecsPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageScroll>
   );
 }
 

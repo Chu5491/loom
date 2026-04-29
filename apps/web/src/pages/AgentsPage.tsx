@@ -14,6 +14,7 @@ import {
   type UpdateAgentBody,
 } from "../api/client.js";
 import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js";
+import { PageScroll } from "../components/PageScroll.js";
 import { AdapterFieldInput } from "../components/AdapterFields.js";
 import { AdapterIcon } from "../components/AdapterIcon.js";
 import {
@@ -68,7 +69,7 @@ export function AgentsPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <PageScroll className="space-y-4">
       <div className="flex justify-end">
         <Button
           onClick={() =>
@@ -199,7 +200,7 @@ export function AgentsPage() {
           })}
         </div>
       )}
-    </div>
+    </PageScroll>
   );
 }
 

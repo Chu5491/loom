@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
-  CornerDownLeft,
+  ArrowRight,
   Forward,
+  Hash,
   MessageSquareReply,
+  MoreHorizontal,
+  Plus,
   Send,
   X,
 } from "lucide-react";
@@ -24,16 +27,24 @@ import {
 import { TooltipProvider } from "./ui/tooltip.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
-import { agentColorFor, classesFor, initialFor } from "./agentColor.js";
+import { agentColorFor, classesFor } from "./agentColor.js";
 
 /**
- * Group-chat view of a project, built on shadcn primitives.
+ * Slack/Discord-style chat for a project room.
  *
- * Restrained palette — neutral background with one tinted accent per
- * agent (used only on the avatar fill + a hairline left rail). Status,
- * spacing, typography come from shadcn tokens so the room reads like a
- * proper workspace rather than a multi-color demo.
+ * Messages flow as a single timeline of inline text rows (no bubbles).
+ * Consecutive messages from the same sender within a short window
+ * collapse — only the first row in a group shows avatar + name + ts.
+ * Date separators ("Today", "Yesterday") group the timeline. Hover on
+ * a row reveals timestamps and action buttons (reply / forward) like
+ * Slack's hover toolbar.
  */
+
+const CONTINUATION_WINDOW_MS = 5 * 60 * 1000;
+
+// ────────────────────────────────────────────────────────────────────────────
+// SSE tail
+// ────────────────────────────────────────────────────────────────────────────
 
 interface TailEvent {
   kind: "text" | "tool" | "system";
@@ -107,7 +118,7 @@ function useRunTail(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Avatars
+// Avatars (size: sm 24, md 36, lg 40)
 // ────────────────────────────────────────────────────────────────────────────
 
 export function AgentAvatar({
@@ -122,12 +133,8 @@ export function AgentAvatar({
   size?: "sm" | "md" | "lg";
 }) {
   const cls = classesFor(agentColorFor(agent.id));
-  // The avatar IS the brand mark — the adapter's logo painted on a
-  // tinted disc. The agent-color tint preserves per-agent identity
-  // (two Claude agents in the same room are still distinguishable by
-  // their disc hue) while the logo carries the brand.
-  const dim = size === "sm" ? "size-6" : size === "lg" ? "size-10" : "size-8";
-  const inner = size === "sm" ? 16 : size === "lg" ? 24 : 20;
+  const dim = size === "sm" ? "size-6" : size === "lg" ? "size-10" : "size-9";
+  const inner = size === "sm" ? 16 : size === "lg" ? 26 : 24;
 
   return (
     <span className="relative inline-block shrink-0">
@@ -136,16 +143,14 @@ export function AgentAvatar({
           {manifest ? (
             <AdapterIcon manifest={manifest} size={inner} />
           ) : (
-            <span className={cn("text-xs font-semibold", cls.text)}>
-              {initialFor(agent.name)}
-            </span>
+            <span className={cn("text-xs font-semibold", cls.text)}>?</span>
           )}
         </AvatarFallback>
       </Avatar>
       {working ? (
         <span
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-background",
+            "absolute bottom-0 right-0 size-2.5 rounded-full ring-2 ring-background",
             cls.dot,
           )}
         />
@@ -155,7 +160,7 @@ export function AgentAvatar({
 }
 
 function UserAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const dim = size === "sm" ? "h-7 w-7 text-[11px]" : size === "lg" ? "h-10 w-10 text-sm" : "h-8 w-8 text-xs";
+  const dim = size === "sm" ? "size-6 text-[10px]" : size === "lg" ? "size-10 text-sm" : "size-9 text-xs";
   return (
     <Avatar className={dim}>
       <AvatarFallback className="bg-foreground text-background font-semibold">
@@ -166,87 +171,341 @@ function UserAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Member panel
+// Channel header
 // ────────────────────────────────────────────────────────────────────────────
 
-export function MemberPanel({
+export function ChannelHeader({
+  project,
+  agentCount,
+  workingCount,
+  onToggleMembers,
+}: {
+  project: { id: string; name: string; path: string };
+  agentCount: number;
+  workingCount: number;
+  onToggleMembers: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-center gap-3 border-b bg-background px-5 h-14 shrink-0">
+      <Hash className="size-4 text-muted-foreground" />
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-sm font-semibold truncate">{project.name}</h1>
+          {workingCount > 0 ? (
+            <span className="inline-flex items-center gap-1 text-[11px] text-sky-600 dark:text-sky-400">
+              <span className="size-1.5 rounded-full bg-sky-500 animate-pulse" />
+              {workingCount} working
+            </span>
+          ) : null}
+        </div>
+        <p className="text-[11px] text-muted-foreground mono truncate" title={project.path}>
+          {project.path}
+        </p>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="ml-auto h-8 text-xs gap-1.5"
+        onClick={onToggleMembers}
+      >
+        <span className="size-1.5 rounded-full bg-emerald-500" />
+        {agentCount} {t("chat.members.title")}
+      </Button>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Member rail (right side, always vertical)
+// ────────────────────────────────────────────────────────────────────────────
+
+export function MemberRail({
   agents,
   manifests,
   workingIds,
   selectedAgentId,
   onPick,
+  projectId,
 }: {
   agents: Agent[];
   manifests: AdapterManifest[];
   workingIds: Set<string>;
   selectedAgentId?: string;
   onPick: (agentId: string) => void;
+  projectId: string;
 }) {
   const { t } = useI18n();
+  const working = agents.filter((a) => workingIds.has(a.id));
+  const idle = agents.filter((a) => !workingIds.has(a.id));
+
   return (
-    <div className="flex items-center gap-2 overflow-x-auto border-b bg-muted/30 px-4 py-2">
-      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {t("chat.members.title")} · {agents.length}
-      </span>
-      {agents.map((a) => {
-        const manifest = manifests.find((m) => m.kind === a.adapterKind);
-        const working = workingIds.has(a.id);
-        const selected = selectedAgentId === a.id;
-        const cls = classesFor(agentColorFor(a.id));
-        return (
-          <button
-            key={a.id}
-            onClick={() => onPick(a.id)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-full pl-0.5 pr-2.5 py-0.5 text-xs font-medium transition-colors border shrink-0",
-              selected
-                ? "border-foreground bg-background text-foreground shadow-sm"
-                : "border-border bg-background/60 text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-            )}
+    <aside className="hidden xl:flex h-full w-64 shrink-0 flex-col border-l bg-muted/20">
+      <div className="flex items-center justify-between px-4 h-14 border-b shrink-0">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("chat.members.title")} · {agents.length}
+        </h2>
+        <Button asChild variant="ghost" size="icon" className="size-7 text-muted-foreground">
+          <Link
+            to={`/agents?projectId=${projectId}`}
+            aria-label={t("chat.manageAgents")}
           >
-            <AgentAvatar agent={a} manifest={manifest} working={working} size="sm" />
-            <span>@{a.name}</span>
-            {working ? (
-              <span className={cn("size-1.5 rounded-full", cls.dot)} />
-            ) : null}
-          </button>
-        );
-      })}
+            <Plus />
+          </Link>
+        </Button>
+      </div>
+      <div className="flex-1 overflow-y-auto py-2">
+        {working.length > 0 ? (
+          <MemberSection
+            label={`— ${t("chat.members.working")} — ${working.length}`}
+            agents={working}
+            manifests={manifests}
+            workingIds={workingIds}
+            selectedAgentId={selectedAgentId}
+            onPick={onPick}
+          />
+        ) : null}
+        {idle.length > 0 ? (
+          <MemberSection
+            label={`— ${t("chat.members.idle")} — ${idle.length}`}
+            agents={idle}
+            manifests={manifests}
+            workingIds={workingIds}
+            selectedAgentId={selectedAgentId}
+            onPick={onPick}
+          />
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+function MemberSection({
+  label,
+  agents,
+  manifests,
+  workingIds,
+  selectedAgentId,
+  onPick,
+}: {
+  label: string;
+  agents: Agent[];
+  manifests: AdapterManifest[];
+  workingIds: Set<string>;
+  selectedAgentId?: string;
+  onPick: (agentId: string) => void;
+}) {
+  return (
+    <div className="mb-3">
+      <div className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <ul className="space-y-px">
+        {agents.map((a) => {
+          const m = manifests.find((mm) => mm.kind === a.adapterKind);
+          const cls = classesFor(agentColorFor(a.id));
+          const selected = selectedAgentId === a.id;
+          return (
+            <li key={a.id}>
+              <button
+                onClick={() => onPick(a.id)}
+                className={cn(
+                  "flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors",
+                  selected
+                    ? "bg-foreground/5"
+                    : "hover:bg-foreground/5",
+                )}
+              >
+                <AgentAvatar
+                  agent={a}
+                  manifest={m}
+                  working={workingIds.has(a.id)}
+                  size="sm"
+                />
+                <span className={cn("flex-1 truncate text-sm", cls.text, "font-medium")}>
+                  {a.name}
+                </span>
+                {a.role ? (
+                  <span className="text-[10px] text-muted-foreground/70">
+                    {a.role}
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Messages
+// Date separators
 // ────────────────────────────────────────────────────────────────────────────
+
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function dayLabel(iso: string, t: (key: string) => string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yKey = `${yesterday.getFullYear()}-${yesterday.getMonth()}-${yesterday.getDate()}`;
+  const k = dayKey(iso);
+  if (k === todayKey) return t("chat.today");
+  if (k === yKey) return t("chat.yesterday");
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function DaySeparator({ ts }: { ts: string }) {
+  const { t } = useI18n();
+  return (
+    <div className="sticky top-0 z-10 my-3 flex items-center gap-3 px-1">
+      <div className="flex-1 border-t" />
+      <span className="rounded-full border bg-background px-3 py-0.5 text-[11px] font-medium text-muted-foreground shadow-sm">
+        {dayLabel(ts, t)}
+      </span>
+      <div className="flex-1 border-t" />
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Messages (Slack-style — no bubbles, continuation grouping)
+// ────────────────────────────────────────────────────────────────────────────
+
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function MessageRow({
+  avatar,
+  name,
+  nameClassName,
+  timestamp,
+  tag,
+  isContinuation,
+  actions,
+  children,
+}: {
+  avatar: React.ReactNode;
+  name: string;
+  nameClassName?: string;
+  timestamp: string;
+  tag?: React.ReactNode;
+  isContinuation: boolean;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "group relative flex items-start gap-3 px-5 py-0.5 hover:bg-foreground/[0.03]",
+        !isContinuation && "mt-2 pt-1.5",
+      )}
+    >
+      <div className="w-9 shrink-0 mt-0.5">
+        {isContinuation ? (
+          <span className="invisible group-hover:visible block text-right text-[10px] text-muted-foreground/70 mono leading-9 -mt-2">
+            {fmtTime(timestamp)}
+          </span>
+        ) : (
+          avatar
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        {!isContinuation ? (
+          <div className="flex items-baseline gap-2 mb-0.5">
+            <span className={cn("text-sm font-semibold", nameClassName)}>{name}</span>
+            <span className="text-[11px] text-muted-foreground mono">
+              {fmtTime(timestamp)}
+            </span>
+            {tag}
+          </div>
+        ) : null}
+        {children}
+      </div>
+      {actions ? (
+        <div className="absolute right-4 -top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          {actions}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function HoverActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-0.5 rounded-md border bg-background shadow-sm px-1 py-0.5">
+      {children}
+    </div>
+  );
+}
+
+function HoverButton({
+  onClick,
+  icon,
+  label,
+}: {
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="size-7 text-muted-foreground hover:text-foreground"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+    >
+      {icon}
+    </Button>
+  );
+}
 
 export function UserMessage({
   run,
   target,
+  isContinuation,
 }: {
   run: Run;
   target: Agent | undefined;
+  isContinuation: boolean;
 }) {
   const { t } = useI18n();
   const cls = target ? classesFor(agentColorFor(target.id)) : null;
   return (
-    <Row
+    <MessageRow
       avatar={<UserAvatar />}
       name={t("chat.message.you")}
       timestamp={run.createdAt}
+      isContinuation={isContinuation}
       tag={
         target ? (
           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-            <CornerDownLeft className="size-3 -scale-x-100" />
+            <ArrowRight className="size-3" />
             <span className={cn("font-medium", cls?.text)}>@{target.name}</span>
           </span>
         ) : undefined
       }
     >
-      <div className="rounded-lg bg-card border px-3 py-2 text-sm whitespace-pre-wrap break-words shadow-sm">
+      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
         {run.prompt}
-      </div>
-    </Row>
+      </p>
+    </MessageRow>
   );
 }
 
@@ -270,12 +529,14 @@ export function AgentMessage({
   run,
   agent,
   manifest,
+  isContinuation,
   onReply,
   onForward,
 }: {
   run: Run;
   agent: Agent | undefined;
   manifest: AdapterManifest | undefined;
+  isContinuation: boolean;
   onReply: (run: Run, agent: Agent | undefined) => void;
   onForward: (run: Run, agent: Agent | undefined) => void;
 }) {
@@ -289,12 +550,6 @@ export function AgentMessage({
     onSuccess: () => qc.invalidateQueries({ queryKey: ["runs"] }),
   });
 
-  const name = agent?.name ?? run.agentId.slice(0, 8);
-  const cls = agent ? classesFor(agentColorFor(agent.id)) : null;
-
-  // For completed runs we may have missed the SSE stream entirely (e.g.
-  // we opened the page after the run already terminated). Pull the final
-  // result from the log file in that case so the bubble has content.
   const restingResult = useQuery({
     queryKey: ["run", run.id, "result"],
     queryFn: () => api.getRunResult(run.id),
@@ -305,16 +560,19 @@ export function AgentMessage({
       resultText === null,
     staleTime: 60_000,
   });
+
+  const name = agent?.name ?? run.agentId.slice(0, 8);
+  const cls = agent ? classesFor(agentColorFor(agent.id)) : null;
   const finalText = resultText ?? restingResult.data?.resultText ?? null;
   const hasContent = events.length > 0 || finalText !== null;
 
   return (
-    <Row
+    <MessageRow
       avatar={
         agent ? (
           <AgentAvatar agent={agent} manifest={manifest} working={isActive} />
         ) : (
-          <Avatar>
+          <Avatar className="size-9">
             <AvatarFallback>?</AvatarFallback>
           </Avatar>
         )
@@ -322,145 +580,89 @@ export function AgentMessage({
       name={name}
       nameClassName={cls?.text}
       timestamp={run.createdAt}
+      isContinuation={isContinuation}
       tag={
-        <Badge variant={statusVariant(run.status)} className="h-5 px-1.5 text-[10px] gap-1">
-          {isActive ? <span className="size-1.5 rounded-full bg-current animate-pulse" /> : null}
+        <Badge variant={statusVariant(run.status)} className="h-4 px-1.5 text-[9px] gap-1">
+          {isActive ? <span className="size-1 rounded-full bg-current animate-pulse" /> : null}
           {t(`status.${run.status}`)}
         </Badge>
       }
-      leftRailClass={cls?.border}
-    >
-      <div
-        className={cn(
-          "rounded-lg border px-3 py-2 text-sm transition-colors",
-          isActive ? "bg-muted/40 border-foreground/15" : "bg-card",
-        )}
-      >
-        {!hasContent ? (
-          <p className="text-xs italic text-muted-foreground">
-            {isActive ? t("chat.tail.waiting") : "—"}
-          </p>
-        ) : (
-          <div className="space-y-1.5">
-            {events.map((evt, i) => (
-              <p key={i} className="whitespace-pre-wrap break-words leading-relaxed">
-                {evt.kind === "tool" ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground mono">
-                    <span aria-hidden>🛠</span>
-                    <span>{evt.text}</span>
-                  </span>
-                ) : evt.kind === "system" ? (
-                  <span className="text-xs text-muted-foreground">· {evt.text}</span>
-                ) : (
-                  <span>{evt.text}</span>
-                )}
-              </p>
-            ))}
-            {finalText ? (
-              <p
-                className={cn(
-                  "whitespace-pre-wrap break-words",
-                  events.length > 0 && "border-t pt-1.5",
-                )}
-              >
-                {finalText}
-              </p>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
-          <Link to={`/runs/${run.id}`}>{t("chat.message.openLog")}</Link>
-        </Button>
-        {!isActive ? (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => onReply(run, agent)}
-            >
-              <MessageSquareReply />
-              {t("chat.message.reply")}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => onForward(run, agent)}
-            >
-              <Forward />
-              {t("chat.message.forward")}
-            </Button>
-          </>
-        ) : null}
-        {isActive ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-            disabled={cancel.isPending}
-            onClick={() => {
-              if (confirm(t("chat.message.cancelConfirm"))) cancel.mutate();
-            }}
-          >
-            <X />
-            {t("chat.message.cancel")}
+      actions={
+        <HoverActions>
+          {!isActive ? (
+            <>
+              <HoverButton
+                onClick={() => onReply(run, agent)}
+                icon={<MessageSquareReply />}
+                label={t("chat.message.reply")}
+              />
+              <HoverButton
+                onClick={() => onForward(run, agent)}
+                icon={<Forward />}
+                label={t("chat.message.forward")}
+              />
+            </>
+          ) : (
+            <HoverButton
+              onClick={() => {
+                if (confirm(t("chat.message.cancelConfirm"))) cancel.mutate();
+              }}
+              icon={<X />}
+              label={t("chat.message.cancel")}
+            />
+          )}
+          <Button asChild variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-foreground">
+            <Link to={`/runs/${run.id}`} aria-label={t("chat.message.openLog")}>
+              <MoreHorizontal />
+            </Link>
           </Button>
-        ) : null}
-      </div>
-    </Row>
-  );
-}
-
-function Row({
-  avatar,
-  name,
-  nameClassName,
-  timestamp,
-  tag,
-  leftRailClass,
-  children,
-}: {
-  avatar: React.ReactNode;
-  name: string;
-  nameClassName?: string;
-  timestamp: string;
-  tag?: React.ReactNode;
-  leftRailClass?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="msg-in flex items-start gap-3 group">
-      <div className="shrink-0 mt-0.5">{avatar}</div>
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex items-baseline gap-2">
-          <span className={cn("text-sm font-semibold", nameClassName)}>{name}</span>
-          {tag}
-          <span className="ml-auto text-[10px] text-muted-foreground/60 mono opacity-0 group-hover:opacity-100 transition-opacity">
-            {new Date(timestamp).toLocaleTimeString()}
-          </span>
+        </HoverActions>
+      }
+    >
+      {!hasContent ? (
+        <p className="text-sm italic text-muted-foreground">
+          {isActive ? t("chat.tail.waiting") : "—"}
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {events.map((evt, i) => (
+            <p key={i} className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+              {evt.kind === "tool" ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground mono">
+                  <span aria-hidden>🛠</span>
+                  <span>{evt.text}</span>
+                </span>
+              ) : evt.kind === "system" ? (
+                <span className="text-xs text-muted-foreground">· {evt.text}</span>
+              ) : (
+                <span>{evt.text}</span>
+              )}
+            </p>
+          ))}
+          {finalText ? (
+            <p
+              className={cn(
+                "text-sm whitespace-pre-wrap break-words leading-relaxed",
+                events.length > 0 && "border-t pt-1.5 mt-1",
+              )}
+            >
+              {finalText}
+            </p>
+          ) : null}
         </div>
-        <div className={cn(leftRailClass && "border-l-2 -ml-3 pl-3", leftRailClass)}>
-          {children}
-        </div>
-      </div>
-    </div>
+      )}
+    </MessageRow>
   );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Working strip
+// Working indicator (small strip above composer)
 // ────────────────────────────────────────────────────────────────────────────
 
 export function WorkingIndicator({
   workingAgents,
-  manifests,
 }: {
   workingAgents: Agent[];
-  manifests: AdapterManifest[];
 }) {
   const { t } = useI18n();
   if (workingAgents.length === 0) return null;
@@ -468,47 +670,14 @@ export function WorkingIndicator({
     workingAgents.length === 1
       ? t("chat.working.singular", { agent: workingAgents[0]!.name })
       : t("chat.working.plural", { count: workingAgents.length });
-
   return (
-    <div className="flex items-center gap-3 border-t bg-muted/40 px-4 py-2">
-      <AvatarStack agents={workingAgents} manifests={manifests} max={4} />
-      <span className="text-xs font-medium text-foreground">{label}</span>
-      <span className="ml-auto flex gap-1">
+    <div className="flex items-center gap-2 px-5 py-1.5 text-xs text-muted-foreground bg-background">
+      <span className="flex gap-0.5">
         <Dot delay={0} />
         <Dot delay={150} />
         <Dot delay={300} />
       </span>
-    </div>
-  );
-}
-
-function AvatarStack({
-  agents,
-  manifests,
-  max = 3,
-}: {
-  agents: Agent[];
-  manifests: AdapterManifest[];
-  max?: number;
-}) {
-  const visible = agents.slice(0, max);
-  const overflow = agents.length - visible.length;
-  return (
-    <div className="flex -space-x-1.5">
-      {visible.map((a) => (
-        <span key={a.id} className="ring-2 ring-background rounded-full">
-          <AgentAvatar
-            agent={a}
-            manifest={manifests.find((m) => m.kind === a.adapterKind)}
-            size="sm"
-          />
-        </span>
-      ))}
-      {overflow > 0 ? (
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted ring-2 ring-background text-[10px] font-medium text-muted-foreground">
-          +{overflow}
-        </span>
-      ) : null}
+      <span>{label}</span>
     </div>
   );
 }
@@ -516,7 +685,7 @@ function AvatarStack({
 function Dot({ delay }: { delay: number }) {
   return (
     <span
-      className="size-1.5 rounded-full bg-foreground/60 animate-bounce"
+      className="size-1 rounded-full bg-foreground/50 animate-bounce"
       style={{ animationDelay: `${delay}ms`, animationDuration: "1.1s" }}
     />
   );
@@ -562,6 +731,15 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey]);
 
+  // Auto-grow textarea up to 8 rows.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const max = 8 * 20; // ~8 lines at 20px line-height
+    el.style.height = Math.min(el.scrollHeight, max) + "px";
+  }, [text]);
+
   const create = useMutation({
     mutationFn: api.createRun,
     onSuccess: () => {
@@ -587,23 +765,35 @@ export function Composer({
     : t("chat.composer.placeholderNoAgent");
 
   return (
-    <div className="border-t bg-card px-3 py-3">
+    <div className="px-5 pb-4 pt-1 bg-background shrink-0">
       {create.error ? (
-        <p className="mb-2 text-xs text-destructive px-1">{create.error.message}</p>
+        <p className="mb-2 text-xs text-destructive">{create.error.message}</p>
       ) : null}
-      <div className="rounded-xl border bg-background focus-within:ring-1 focus-within:ring-ring transition-all">
-        <div className="flex items-center justify-between gap-2 px-2 pt-2">
+      <div className="rounded-lg border bg-background focus-within:ring-1 focus-within:ring-ring transition-shadow">
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder={placeholder}
+          disabled={!agentId}
+          className="w-full resize-none bg-transparent px-3.5 py-3 text-sm placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+          style={{ minHeight: "40px" }}
+        />
+        <div className="flex items-center justify-between gap-2 border-t px-2 py-1.5">
           <Select value={agentId} onValueChange={onAgentChange}>
-            <SelectTrigger className="h-7 w-auto gap-2 border-0 bg-muted/60 hover:bg-muted px-2 shadow-none focus:ring-0 [&>svg]:opacity-100">
+            <SelectTrigger className="h-7 w-auto gap-1.5 border-0 bg-transparent hover:bg-muted px-2 shadow-none focus:ring-0 [&>svg]:opacity-50">
               <SelectValue>
                 {target ? (
                   <span className="flex items-center gap-1.5">
-                    <AgentAvatar
-                      agent={target}
-                      manifest={targetManifest}
-                      size="sm"
-                    />
-                    <span className={cn("text-xs font-semibold", targetCls?.text)}>
+                    <AgentAvatar agent={target} manifest={targetManifest} size="sm" />
+                    <span className={cn("text-xs font-medium", targetCls?.text)}>
                       @{target.name}
                     </span>
                   </span>
@@ -629,39 +819,19 @@ export function Composer({
               })}
             </SelectContent>
           </Select>
-          <span className="text-[10px] text-muted-foreground/70">
-            {t("chat.composer.hint")}
-          </span>
-        </div>
-        <textarea
-          ref={textareaRef}
-          rows={2}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          placeholder={placeholder}
-          disabled={!agentId}
-          className="w-full resize-none bg-transparent px-3 pb-2 pt-1 text-sm placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
-        />
-        <div className="flex justify-end px-2 pb-2">
-          <Button
-            size="sm"
-            disabled={!agentId || !text.trim() || create.isPending}
-            onClick={send}
-          >
-            {create.isPending ? (
-              t("chat.composer.sending")
-            ) : (
-              <>
-                <Send /> {t("chat.composer.send")}
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground/70">
+              {t("chat.composer.hint")}
+            </span>
+            <Button
+              size="icon"
+              className="size-7"
+              disabled={!agentId || !text.trim() || create.isPending}
+              onClick={send}
+            >
+              <Send />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -669,7 +839,7 @@ export function Composer({
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Helpers (quote builders, feed derivation)
 // ────────────────────────────────────────────────────────────────────────────
 
 export function buildReplyQuote(
@@ -713,13 +883,20 @@ export interface FeedItem {
   kind: "user" | "agent";
   run: Run;
   ts: string;
+  /** Sender id for continuation grouping ("user" or agent.id). */
+  senderId: string;
 }
 
 function buildFeed(runs: Run[]): FeedItem[] {
   const items: FeedItem[] = [];
   for (const r of runs) {
-    items.push({ kind: "user", run: r, ts: r.createdAt });
-    items.push({ kind: "agent", run: r, ts: r.startedAt ?? r.createdAt });
+    items.push({ kind: "user", run: r, ts: r.createdAt, senderId: "user" });
+    items.push({
+      kind: "agent",
+      run: r,
+      ts: r.startedAt ?? r.createdAt,
+      senderId: r.agentId,
+    });
   }
   items.sort((a, b) => a.ts.localeCompare(b.ts));
   return items;
@@ -743,5 +920,16 @@ export function useRoomDerived(
   }, [runs, agents]);
 }
 
-/** Wrap consumers in TooltipProvider once at the top of the chat root. */
-export { TooltipProvider };
+/**
+ * Decide if this feed item should fold into the previous one (no avatar
+ * + name repeat). Same sender + ≤5 minutes apart and same calendar day.
+ */
+export function isContinuation(curr: FeedItem, prev: FeedItem | undefined): boolean {
+  if (!prev) return false;
+  if (prev.senderId !== curr.senderId) return false;
+  if (dayKey(prev.ts) !== dayKey(curr.ts)) return false;
+  const delta = new Date(curr.ts).getTime() - new Date(prev.ts).getTime();
+  return delta < CONTINUATION_WINDOW_MS;
+}
+
+export { dayKey, DaySeparator, TooltipProvider };

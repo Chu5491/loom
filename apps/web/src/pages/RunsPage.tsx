@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { Run, RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
 import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js";
+import { PageScroll } from "../components/PageScroll.js";
 import { useI18n } from "../context/I18nContext.js";
 
 const ALL_STATUSES: RunStatus[] = [
@@ -66,7 +67,7 @@ export function RunsPage() {
     "h-9 rounded-md border px-2 text-sm border-zinc-300 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100";
 
   return (
-    <div className="space-y-4">
+    <PageScroll className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{t("runs.title")}</h1>
         <Button onClick={() => setShowForm((s) => !s)}>
@@ -134,7 +135,7 @@ export function RunsPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageScroll>
   );
 }
 

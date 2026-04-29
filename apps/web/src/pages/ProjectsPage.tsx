@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import type { Project } from "@loom/core";
 import { api, type CreateProjectBody } from "../api/client.js";
 import { Button, Card, Field, Input, Textarea } from "../components/ui.js";
+import { PageScroll } from "../components/PageScroll.js";
 import { useI18n } from "../context/I18nContext.js";
 
 export function ProjectsPage() {
@@ -27,7 +28,7 @@ export function ProjectsPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <PageScroll className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{t("projects.title")}</h1>
         <Button onClick={() => setShowForm((s) => !s)}>
@@ -75,7 +76,7 @@ export function ProjectsPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageScroll>
   );
 }
 
