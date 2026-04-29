@@ -70,13 +70,19 @@ export function ProjectChatPage() {
 
   const { threads, working, workingIds } = useRoomDerived(projectRuns, agentList);
 
-  const [agentId, setAgentId] = useState<string>("");
+  // Composer target list — usually one agent, but can be many for parallel
+  // broadcast (same prompt → N agents in parallel).
+  const [agentIds, setAgentIds] = useState<string[]>([]);
   const [draft, setDraft] = useState<string | undefined>();
   const [draftKey, setDraftKey] = useState(0);
 
   useEffect(() => {
-    if (!agentId && agentList.length) setAgentId(agentList[0]!.id);
-  }, [agentList, agentId]);
+    // Seed with the first agent when the project loads, but only if the
+    // user hasn't already picked. Don't clobber a multi-target selection.
+    if (agentIds.length === 0 && agentList.length) {
+      setAgentIds([agentList[0]!.id]);
+    }
+  }, [agentList, agentIds.length]);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickyBottomRef = useRef(true);
@@ -96,11 +102,15 @@ export function ProjectChatPage() {
   }, [threads.length, working.length]);
 
   const handleReply = (run: Run, agent: Agent | undefined) => {
-    if (agent) setAgentId(agent.id);
+    // Reply continues with the SAME agent — replace any multi-target with
+    // just this one so the user doesn't accidentally broadcast a reply.
+    if (agent) setAgentIds([agent.id]);
     setDraft(buildReplyQuote(run, agent, t));
     setDraftKey((k) => k + 1);
   };
   const handleForward = async (run: Run, agent: Agent | undefined) => {
+    // Forward keeps the current target list (the user picks where to
+    // route — including a multi-target broadcast of the quoted result).
     setDraft(await buildForwardQuote(run, agent, t));
     setDraftKey((k) => k + 1);
   };
@@ -206,8 +216,8 @@ export function ProjectChatPage() {
             <Composer
               agents={agentList}
               manifests={manifests}
-              agentId={agentId}
-              onAgentChange={setAgentId}
+              agentIds={agentIds}
+              onAgentIdsChange={setAgentIds}
               initialDraft={draft}
               draftKey={draftKey}
               onSent={() => {
@@ -222,8 +232,8 @@ export function ProjectChatPage() {
           agents={agentList}
           manifests={manifests}
           workingIds={workingIds}
-          selectedAgentId={agentId}
-          onPick={(id) => setAgentId(id)}
+          selectedAgentId={agentIds[0]}
+          onPick={(id) => setAgentIds([id])}
           projectId={p.id}
         />
       </div>

@@ -751,16 +751,17 @@ function Dot({ delay }: { delay: number }) {
 export function Composer({
   agents,
   manifests,
-  agentId,
-  onAgentChange,
+  agentIds,
+  onAgentIdsChange,
   initialDraft,
   draftKey,
   onSent,
 }: {
   agents: Agent[];
   manifests: AdapterManifest[];
-  agentId: string;
-  onAgentChange: (id: string) => void;
+  /** Selected target(s). One = single send. Multiple = parallel broadcast. */
+  agentIds: string[];
+  onAgentIdsChange: (ids: string[]) => void;
   initialDraft?: string;
   draftKey?: number;
   onSent: () => void;
@@ -768,6 +769,8 @@ export function Composer({
   const { t } = useI18n();
   const qc = useQueryClient();
   const [text, setText] = useState(initialDraft ?? "");
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -793,48 +796,84 @@ export function Composer({
     el.style.height = Math.min(el.scrollHeight, max) + "px";
   }, [text]);
 
-  const create = useMutation({
-    mutationFn: api.createRun,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["runs"] });
-      setText("");
-      onSent();
-    },
-  });
-
-  // Ref-based latch on top of `create.isPending` — React Query's pending
-  // state is async, so two send() calls in the same event tick can both
-  // pass the isPending check. The ref flips synchronously before mutate
-  // is even called, so a second call inside the same tick bails out.
+  // Synchronous latch — protects against IME-driven double-fire and the
+  // (rare) race where React hasn't yet flushed isSending=true.
   const sendingRef = useRef(false);
 
-  const send = () => {
-    if (sendingRef.current || !agentId || !text.trim() || create.isPending) return;
-    sendingRef.current = true;
-    create.mutate(
-      { agentId, prompt: text },
-      {
-        onSettled: () => {
-          sendingRef.current = false;
-        },
-      },
-    );
+  const removeTarget = (id: string) => {
+    onAgentIdsChange(agentIds.filter((x) => x !== id));
+  };
+  const addTarget = (id: string) => {
+    if (agentIds.includes(id)) return;
+    onAgentIdsChange([...agentIds, id]);
   };
 
-  const target = agents.find((a) => a.id === agentId);
-  const targetManifest = target
-    ? manifests.find((m) => m.kind === target.adapterKind)
-    : undefined;
-  const targetCls = target ? classesFor(agentColorFor(target.id)) : null;
+  const targets = agentIds
+    .map((id) => agents.find((a) => a.id === id))
+    .filter((a): a is Agent => !!a);
 
-  const placeholder = target
-    ? t("chat.composer.placeholder", { agent: target.name })
-    : t("chat.composer.placeholderNoAgent");
+  const availableAgents = agents.filter((a) => !agentIds.includes(a.id));
+
+  const placeholder =
+    targets.length === 1
+      ? t("chat.composer.placeholder", { agent: targets[0]!.name })
+      : targets.length > 1
+        ? t("chat.composer.broadcasting", { n: targets.length })
+        : t("chat.composer.placeholderNoAgent");
+
+  const send = async () => {
+    if (
+      sendingRef.current ||
+      targets.length === 0 ||
+      !text.trim() ||
+      isSending
+    ) {
+      return;
+    }
+    sendingRef.current = true;
+    setIsSending(true);
+    setError(null);
+    try {
+      // Parallel POST /api/runs — each agent gets its own independent
+      // run with the same prompt. No parentRunId, no shared context;
+      // they're peer broadcasts, not a thread.
+      const results = await Promise.allSettled(
+        targets.map((agent) =>
+          api.createRun({ agentId: agent.id, prompt: text }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === "rejected") as Array<
+        PromiseRejectedResult
+      >;
+      if (failed.length > 0) {
+        const reason =
+          failed[0]!.reason instanceof Error
+            ? failed[0]!.reason.message
+            : String(failed[0]!.reason);
+        setError(
+          failed.length === targets.length
+            ? reason
+            : `${failed.length}/${targets.length}: ${reason}`,
+        );
+      }
+      qc.invalidateQueries({ queryKey: ["runs"] });
+      if (failed.length < targets.length) {
+        // Only reset draft when at least one send went through.
+        setText("");
+        onSent();
+      }
+    } finally {
+      sendingRef.current = false;
+      setIsSending(false);
+    }
+  };
+
+  const canSend = targets.length > 0 && text.trim().length > 0 && !isSending;
 
   return (
     <div className="px-5 pb-4 pt-1 bg-background shrink-0">
-      {create.error ? (
-        <p className="mb-2 text-xs text-destructive">{create.error.message}</p>
+      {error ? (
+        <p className="mb-2 text-xs text-destructive">{error}</p>
       ) : null}
       <div className="rounded-lg border bg-background focus-within:ring-1 focus-within:ring-ring transition-shadow">
         <textarea
@@ -843,10 +882,6 @@ export function Composer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            // During Korean (or any IME) composition, Enter is "commit
-            // the candidate" — NOT submit. Without the isComposing guard
-            // the same physical Enter press would fire keydown twice
-            // (once mid-composition, once after) and double-send.
             if (
               e.key === "Enter" &&
               !e.shiftKey &&
@@ -858,55 +893,101 @@ export function Composer({
             }
           }}
           placeholder={placeholder}
-          disabled={!agentId}
+          disabled={targets.length === 0}
           className="w-full resize-none bg-transparent px-3.5 py-3 text-sm placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
           style={{ minHeight: "40px" }}
         />
         <div className="flex items-center justify-between gap-2 border-t px-2 py-1.5">
-          <Select value={agentId} onValueChange={onAgentChange}>
-            <SelectTrigger className="h-7 w-auto gap-1.5 border-0 bg-transparent hover:bg-muted px-2 shadow-none focus:ring-0 [&>svg]:opacity-50">
-              <SelectValue>
-                {target ? (
-                  <span className="flex items-center gap-1.5">
-                    <AgentAvatar agent={target} manifest={targetManifest} size="sm" />
-                    <span className={cn("text-xs font-medium", targetCls?.text)}>
-                      @{target.name}
-                    </span>
+          <div className="flex items-center gap-1 flex-wrap min-w-0">
+            {targets.map((a) => {
+              const m = manifests.find((mm) => mm.kind === a.adapterKind);
+              const c = classesFor(agentColorFor(a.id));
+              return (
+                <span
+                  key={a.id}
+                  className="inline-flex items-center gap-1 rounded-full border bg-muted/40 pl-1 pr-0.5 py-0.5"
+                >
+                  <AgentAvatar agent={a} manifest={m} size="sm" />
+                  <span className={cn("text-xs font-medium", c.text)}>
+                    @{a.name}
                   </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
-                )}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start">
-              {agents.map((a) => {
-                const m = manifests.find((mm) => mm.kind === a.adapterKind);
-                const c = classesFor(agentColorFor(a.id));
-                return (
-                  <SelectItem key={a.id} value={a.id} className="pl-8">
-                    <span className="flex items-center gap-2">
-                      <AgentAvatar agent={a} manifest={m} size="sm" />
-                      <span className={cn("text-sm font-medium", c.text)}>
-                        @{a.name}
-                      </span>
+                  {agents.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => removeTarget(a.id)}
+                      title={t("chat.composer.removeTarget")}
+                      aria-label={t("chat.composer.removeTarget")}
+                      className="ml-0.5 inline-flex size-4 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  ) : null}
+                </span>
+              );
+            })}
+            {availableAgents.length > 0 ? (
+              <Select
+                value=""
+                onValueChange={(id) => {
+                  if (id) addTarget(id);
+                }}
+              >
+                <SelectTrigger className="h-7 w-auto gap-1 border-dashed bg-transparent hover:bg-muted px-2 shadow-none focus:ring-0 [&>svg]:hidden">
+                  <SelectValue>
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <Plus className="size-3" />
+                      {targets.length === 0
+                        ? t("chat.composer.placeholderNoAgent")
+                        : t("chat.composer.addTarget")}
                     </span>
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground/70">
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {availableAgents.map((a) => {
+                    const m = manifests.find((mm) => mm.kind === a.adapterKind);
+                    const c = classesFor(agentColorFor(a.id));
+                    return (
+                      <SelectItem key={a.id} value={a.id} className="pl-8">
+                        <span className="flex items-center gap-2">
+                          <AgentAvatar agent={a} manifest={m} size="sm" />
+                          <span className={cn("text-sm font-medium", c.text)}>
+                            @{a.name}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] text-muted-foreground/70 hidden sm:inline">
               {t("chat.composer.hint")}
             </span>
-            <Button
-              size="icon"
-              className="size-7"
-              disabled={!agentId || !text.trim() || create.isPending}
-              onClick={send}
-            >
-              <Send />
-            </Button>
+            {targets.length > 1 ? (
+              <Button
+                size="sm"
+                className="h-7 gap-1.5"
+                disabled={!canSend}
+                onClick={send}
+              >
+                <Send />
+                {isSending
+                  ? t("chat.composer.broadcasting", { n: targets.length })
+                  : t("chat.composer.sendToN", { n: targets.length })}
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                className="size-7"
+                disabled={!canSend}
+                onClick={send}
+                aria-label={t("chat.composer.send")}
+              >
+                <Send />
+              </Button>
+            )}
           </div>
         </div>
       </div>
