@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowUpRight,
   ChevronDown,
   ChevronRight,
   FileEdit,
@@ -14,26 +15,23 @@ import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
 /**
- * "What did this run change?" panel that hangs off an agent message.
- * Lazy-loads the change list once (small JSON), then expands per-file
- * unified diffs on demand. Rendered inside the chat — kept compact so it
- * doesn't dominate the conversation, but expressive enough that a quick
- * scan tells you "did this run actually do work, and where?"
+ * Action card hanging off an agent message — surfaces what the run
+ * actually did to the working tree. Auto-expands for small change sets
+ * so a typical "edited 1–2 files" agent reply doesn't hide its work
+ * behind an extra click. Each file row has an "open" affordance that
+ * pops the file into the right-side viewer for a closer look.
  *
- * Hidden entirely when there are no changes (or the cwd isn't a git repo
- * — those produce identical "empty changes" responses on purpose).
+ * Hidden when the run produced no changes (or the cwd isn't a git repo).
  */
 export function ChangedFiles({
   runId,
   enabled,
 }: {
   runId: string;
-  /** Only fetch once the run is finished. While running the diff is a
-   *  moving target and the component would flicker. */
+  /** Wait until the run is finished — mid-run the diff is a moving target. */
   enabled: boolean;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
 
   const changes = useQuery({
     queryKey: ["run", runId, "changes"],
@@ -42,8 +40,14 @@ export function ChangedFiles({
     staleTime: 60_000,
   });
 
-  if (!enabled || changes.isLoading) return null;
   const list = changes.data?.changes ?? [];
+  // Default-open for small change sets (≤3) so the user sees the work
+  // without hunting for a chevron. Larger sets stay collapsed to keep
+  // the chat scannable.
+  const [open, setOpen] = useState<boolean | null>(null);
+  const isOpen = open ?? (list.length > 0 && list.length <= 3);
+
+  if (!enabled || changes.isLoading) return null;
   if (list.length === 0) return null;
 
   const totals = list.reduce(
@@ -54,32 +58,52 @@ export function ChangedFiles({
     { add: 0, del: 0 },
   );
 
+  const openFirst = () => {
+    const first = list[0];
+    if (!first) return;
+    window.dispatchEvent(
+      new CustomEvent("loom:openFile", { detail: { path: first.path } }),
+    );
+  };
+
   return (
-    <div className="mt-2 rounded-md border bg-muted/20 text-xs">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 hover:bg-muted/40 transition-colors rounded-md"
-      >
-        {open ? (
-          <ChevronDown className="size-3 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="size-3 text-muted-foreground" />
-        )}
-        <FileEdit className="size-3 text-muted-foreground" />
-        <span className="font-medium">
-          {t("changes.summary", { n: list.length })}
-        </span>
-        <span className="text-muted-foreground">·</span>
-        <span className="text-emerald-600 dark:text-emerald-400 mono">
+    <div className="mt-2 rounded-md border border-border/80 bg-muted/30 overflow-hidden">
+      <div className="flex items-center gap-2 px-2.5 py-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen(!isOpen)}
+          className="flex items-center gap-1.5 text-xs text-foreground/90 hover:text-foreground"
+        >
+          {isOpen ? (
+            <ChevronDown className="size-3 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-3 text-muted-foreground" />
+          )}
+          <FileEdit className="size-3 text-muted-foreground" />
+          <span className="font-medium">
+            {t("changes.summary", { n: list.length })}
+          </span>
+        </button>
+        <span className="text-emerald-600 dark:text-emerald-400 mono text-xs">
           +{totals.add}
         </span>
-        <span className="text-rose-600 dark:text-rose-400 mono">
+        <span className="text-rose-600 dark:text-rose-400 mono text-xs">
           −{totals.del}
         </span>
-      </button>
-      {open ? (
-        <ul className="border-t divide-y divide-border/60">
+        <div className="ml-auto flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={openFirst}
+            className="inline-flex items-center gap-1 px-1.5 h-5 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title={t("changes.openFirst", { path: list[0]?.path ?? "" })}
+          >
+            <ArrowUpRight className="size-3" />
+            <span>{t("changes.openInViewer")}</span>
+          </button>
+        </div>
+      </div>
+      {isOpen ? (
+        <ul className="border-t border-border/60 divide-y divide-border/40 bg-background/40">
           {list.map((c) => (
             <FileRow key={`${c.status}:${c.path}`} runId={runId} change={c} />
           ))}
@@ -90,6 +114,7 @@ export function ChangedFiles({
 }
 
 function FileRow({ runId, change }: { runId: string; change: RunChange }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const patch = useQuery({
     queryKey: ["run", runId, "patch", change.path],
@@ -98,43 +123,61 @@ function FileRow({ runId, change }: { runId: string; change: RunChange }) {
     staleTime: 60_000,
   });
 
+  const openInViewer = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.dispatchEvent(
+      new CustomEvent("loom:openFile", { detail: { path: change.path } }),
+    );
+  };
+
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 hover:bg-muted/40 transition-colors text-left"
-      >
-        {open ? (
-          <ChevronDown className="size-3 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="size-3 text-muted-foreground shrink-0" />
-        )}
-        <StatusIcon status={change.status} />
-        <span className="mono truncate flex-1">
-          {change.fromPath ? (
-            <>
-              <span className="text-muted-foreground">{change.fromPath}</span>
-              <span className="text-muted-foreground/60"> → </span>
-              {change.path}
-            </>
+      <div className="group flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/30 transition-colors">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+        >
+          {open ? (
+            <ChevronDown className="size-3 text-muted-foreground shrink-0" />
           ) : (
-            change.path
+            <ChevronRight className="size-3 text-muted-foreground shrink-0" />
           )}
-        </span>
-        <span className="text-emerald-600 dark:text-emerald-400 mono shrink-0">
+          <StatusIcon status={change.status} />
+          <span className="mono text-xs truncate">
+            {change.fromPath ? (
+              <>
+                <span className="text-muted-foreground">{change.fromPath}</span>
+                <span className="text-muted-foreground/60"> → </span>
+                {change.path}
+              </>
+            ) : (
+              change.path
+            )}
+          </span>
+        </button>
+        <span className="text-emerald-600 dark:text-emerald-400 mono text-xs shrink-0">
           +{change.additions}
         </span>
-        <span className="text-rose-600 dark:text-rose-400 mono shrink-0">
+        <span className="text-rose-600 dark:text-rose-400 mono text-xs shrink-0">
           −{change.deletions}
         </span>
-      </button>
+        <button
+          type="button"
+          onClick={openInViewer}
+          title={t("changes.openInViewer")}
+          aria-label={t("changes.openInViewer")}
+          className="inline-flex size-5 items-center justify-center rounded text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-foreground hover:bg-muted transition-colors"
+        >
+          <ArrowUpRight className="size-3" />
+        </button>
+      </div>
       {open ? (
         <div className="px-2 pb-2">
           {patch.isLoading ? (
-            <p className="px-2 py-1 text-muted-foreground italic">…</p>
+            <p className="px-2 py-1 text-xs text-muted-foreground italic">…</p>
           ) : patch.isError ? (
-            <p className="px-2 py-1 text-destructive">
+            <p className="px-2 py-1 text-xs text-destructive">
               {(patch.error as Error)?.message ?? "error"}
             </p>
           ) : (
@@ -163,27 +206,21 @@ function StatusIcon({ status }: { status: RunChange["status"] }) {
   }
 }
 
-/**
- * Minimal unified-diff renderer. We strip the `diff --git` / `index` /
- * `+++` / `---` preamble (it's redundant — the file row above already
- * shows the path) and render hunks line-by-line. Lines are colored by
- * their first character: `+` add, `-` del, `@` hunk header, anything
- * else is context.
- */
+/** Strip the per-file `diff --git` preamble (path is already in the row
+ *  above) and color lines by their first character. */
 function DiffView({ text }: { text: string }) {
-  // Strip the per-file header. We keep everything from the first hunk
-  // marker (`@@`) onward. If there's no hunk marker (e.g. binary patch
-  // or rename without content change) fall back to showing a brief note.
   const hunkStart = text.indexOf("\n@@");
   const body = hunkStart >= 0 ? text.slice(hunkStart + 1) : "";
   if (!body.trim()) {
     return (
-      <p className="px-2 py-1 text-muted-foreground italic">no text diff</p>
+      <p className="px-2 py-1 text-xs text-muted-foreground italic">
+        no text diff
+      </p>
     );
   }
   const lines = body.split("\n");
   return (
-    <pre className="overflow-x-auto rounded border bg-background mono text-[11px] leading-relaxed">
+    <pre className="overflow-x-auto rounded border border-border/60 bg-background mono text-[11px] leading-relaxed">
       <code className="block">
         {lines.map((line, i) => {
           if (!line) return <span key={i} className="block">&nbsp;</span>;

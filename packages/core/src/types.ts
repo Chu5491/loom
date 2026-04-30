@@ -112,6 +112,22 @@ export interface Run {
    * — UIs hide cost displays in that case rather than show $0.
    */
   costUsd: number | null;
+  /**
+   * CLI-side session id captured from this run's output (claude-code's
+   * `session_id` in stream-json events, opencode's `--session`, etc.).
+   * The run-service feeds this back as a resume token on the next run
+   * in the same thread/agent so the agent keeps its memory across turns.
+   * NULL when the adapter doesn't expose a session id (or the run was
+   * cancelled before it surfaced one).
+   */
+  sessionId: string | null;
+  /**
+   * Session id this run attempted to resume from at start, if any.
+   * When the run fails the session-lookup code uses this to mark the
+   * id as poisoned so the next run won't try to resume the same dead
+   * session.
+   */
+  resumedSessionId: string | null;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
@@ -166,6 +182,24 @@ export interface TouchedPath {
   path: string;
   lastTouchedAt: string;
   lastAgentId: string;
+}
+
+/**
+ * Live "an agent is editing this right now" entry. Backed by an
+ * in-memory map fed from the CLI's tool_use stream and drained when
+ * the run finishes — once it's gone, run_changes / TouchedPath cover
+ * the post-mortem read.
+ */
+export interface ActiveTouch {
+  runId: string;
+  agentId: string;
+  projectId: string;
+  paths: string[];
+  /** Most recent edit locations the server could pin to a line — i.e.
+   *  the agent's `old_string` matched something in the current file.
+   *  Empty when the adapter doesn't expose targets, or none of the
+   *  current edits could be located (file already shifted). */
+  locations: { path: string; line: number }[];
 }
 
 /**

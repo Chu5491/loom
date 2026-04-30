@@ -36,4 +36,8 @@ export const opencodeAdapter = defineCliAdapter<OpencodeConfig>({
   buildCommand: buildOpencodeCommand,
   prompt: { via: "arg" },
   resolveEnv: (cfg) => cfg.env ?? {},
+  // `opencode run --session <id>` resumes that conversation. Splice it
+  // in front of the existing args so the runtime session beats any
+  // static `config.sessionId` the user may have set.
+  applyResume: (args, sessionId) => ["run", "--session", sessionId, ...args.slice(1)],
 });

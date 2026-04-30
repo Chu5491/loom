@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { buildClaudeCommand, claudeCodeAdapter } from "./index.js";
+import {
+  buildClaudeCommand,
+  claudeCodeAdapter,
+  extractClaudeSessionId,
+  extractClaudeTouchedEdits,
+  extractClaudeTouchedPaths,
+} from "./index.js";
 
 describe("buildClaudeCommand", () => {
   it("uses defaults: claude --print - --output-format stream-json --verbose", () => {
@@ -64,5 +70,175 @@ describe("claudeCodeAdapter", () => {
   });
   it("buildCommand on adapter delegates to buildClaudeCommand", () => {
     expect(claudeCodeAdapter.buildCommand({ model: "x" }).args).toContain("x");
+  });
+  it("exposes extractSessionId for resume capture", () => {
+    expect(typeof claudeCodeAdapter.extractSessionId).toBe("function");
+  });
+});
+
+describe("extractClaudeSessionId", () => {
+  it("plucks session_id out of an init event", () => {
+    const line = JSON.stringify({
+      type: "system",
+      subtype: "init",
+      session_id: "abc-123",
+    });
+    expect(extractClaudeSessionId(line)).toBe("abc-123");
+  });
+
+  it("ignores non-JSON noise and partial lines", () => {
+    expect(extractClaudeSessionId("warming up...\n")).toBeNull();
+    expect(extractClaudeSessionId("{\"type\":\"system\",\"sub")).toBeNull();
+  });
+
+  it("returns null when session_id is missing", () => {
+    const line = JSON.stringify({ type: "assistant", message: { content: [] } });
+    expect(extractClaudeSessionId(line)).toBeNull();
+  });
+
+  it("scans across multiple lines and returns the first hit", () => {
+    const chunk =
+      "noise\n" +
+      JSON.stringify({ type: "x" }) +
+      "\n" +
+      JSON.stringify({ type: "system", session_id: "first" }) +
+      "\n" +
+      JSON.stringify({ type: "result", session_id: "second" });
+    expect(extractClaudeSessionId(chunk)).toBe("first");
+  });
+});
+
+describe("extractClaudeTouchedPaths", () => {
+  const writeEvent = (filePath: string) =>
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            name: "Write",
+            input: { file_path: filePath, content: "..." },
+          },
+        ],
+      },
+    });
+
+  it("plucks file_path from a Write tool_use", () => {
+    expect(extractClaudeTouchedPaths(writeEvent("/abs/src/auth.ts"))).toEqual([
+      "/abs/src/auth.ts",
+    ]);
+  });
+
+  it("supports Edit and MultiEdit", () => {
+    const editEvent = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", name: "Edit", input: { file_path: "/a.ts" } },
+          { type: "tool_use", name: "MultiEdit", input: { file_path: "/b.ts" } },
+        ],
+      },
+    });
+    expect(extractClaudeTouchedPaths(editEvent)).toEqual(["/a.ts", "/b.ts"]);
+  });
+
+  it("ignores Read / Bash / Grep — those are inspection, not edits", () => {
+    const readEvent = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", name: "Read", input: { file_path: "/a.ts" } },
+          { type: "tool_use", name: "Bash", input: { command: "ls" } },
+          { type: "tool_use", name: "Grep", input: { pattern: "x" } },
+        ],
+      },
+    });
+    expect(extractClaudeTouchedPaths(readEvent)).toEqual([]);
+  });
+
+  it("handles NotebookEdit's notebook_path field", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            name: "NotebookEdit",
+            input: { notebook_path: "/n.ipynb" },
+          },
+        ],
+      },
+    });
+    expect(extractClaudeTouchedPaths(ev)).toEqual(["/n.ipynb"]);
+  });
+
+  it("returns empty for non-assistant events and malformed lines", () => {
+    expect(extractClaudeTouchedPaths("garbage\n")).toEqual([]);
+    expect(
+      extractClaudeTouchedPaths(
+        JSON.stringify({ type: "system", subtype: "init" }),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("extractClaudeTouchedEdits", () => {
+  it("returns {path, target} for an Edit", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            name: "Edit",
+            input: { file_path: "/a.ts", old_string: "foo", new_string: "bar" },
+          },
+        ],
+      },
+    });
+    expect(extractClaudeTouchedEdits(ev)).toEqual([
+      { path: "/a.ts", target: "foo" },
+    ]);
+  });
+
+  it("Write has path but no target (whole-file overwrite)", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            name: "Write",
+            input: { file_path: "/a.ts", content: "..." },
+          },
+        ],
+      },
+    });
+    expect(extractClaudeTouchedEdits(ev)).toEqual([{ path: "/a.ts" }]);
+  });
+
+  it("MultiEdit emits one entry per nested edit", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            name: "MultiEdit",
+            input: {
+              file_path: "/a.ts",
+              edits: [
+                { old_string: "foo", new_string: "FOO" },
+                { old_string: "bar", new_string: "BAR" },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(extractClaudeTouchedEdits(ev)).toEqual([
+      { path: "/a.ts", target: "foo" },
+      { path: "/a.ts", target: "bar" },
+    ]);
   });
 });

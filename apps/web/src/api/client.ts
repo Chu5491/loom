@@ -1,4 +1,5 @@
 import type {
+  ActiveTouch,
   AdapterManifest,
   AdapterProbeResult,
   Agent,
@@ -166,6 +167,8 @@ export const api = {
     ),
   getProjectTouched: (id: string) =>
     request<{ paths: TouchedPath[] }>(`/api/projects/${id}/touched`),
+  getProjectActiveTouches: (id: string) =>
+    request<{ touches: ActiveTouch[] }>(`/api/projects/${id}/active-touches`),
   getProjectFilesFlat: (id: string) =>
     request<{ paths: string[] }>(`/api/projects/${id}/files-flat`),
 
@@ -206,6 +209,8 @@ export const api = {
     return request<{ runs: Run[] }>(`/api/runs${suffix}`);
   },
   getRun: (id: string) => request<{ run: Run }>(`/api/runs/${id}`),
+  getRunError: (id: string) =>
+    request<{ stderr: string | null }>(`/api/runs/${id}/error`),
   getRunResult: (id: string) =>
     request<{ resultText: string | null }>(`/api/runs/${id}/result`),
   getRunChanges: (id: string) =>

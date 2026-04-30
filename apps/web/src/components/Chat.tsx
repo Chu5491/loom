@@ -9,7 +9,6 @@ import {
   MessageSquareReply,
   MoreHorizontal,
   Paperclip,
-  Plus,
   Quote,
   Send,
   User,
@@ -39,19 +38,29 @@ import {
 import { TooltipProvider } from "./ui/tooltip.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
-import { agentColorFor, classesFor } from "./agentColor.js";
+import { agentColorOf, classesFor } from "./agentColor.js";
 
 marked.setOptions({ breaks: true, gfm: true });
 
-/**
- * Render an agent's markdown reply. The text comes from the CLI which is
- * effectively LLM output — we render it as markdown for code blocks /
- * lists / headings, and ride the existing `prose-loom` typography rules
- * (already used by the spec preview).
- *
- * For commercial / hosted use we'd add DOMPurify here; for the current
- * single-user local tool we trust the local CLI output.
- */
+/** Quick-action prefixes the composer suggests when the user types `/`
+ *  at the start of the buffer. Each command is just a text prefix —
+ *  the CLI side doesn't parse them, but they label the user's intent
+ *  for the agent and for anyone reading the thread later. */
+interface SlashCommand {
+  cmd: string;
+  i18nLabel: string;
+  i18nHint: string;
+}
+const SLASH_COMMANDS: SlashCommand[] = [
+  { cmd: "/ask", i18nLabel: "chat.slash.ask.label", i18nHint: "chat.slash.ask.hint" },
+  { cmd: "/fix", i18nLabel: "chat.slash.fix.label", i18nHint: "chat.slash.fix.hint" },
+  { cmd: "/review", i18nLabel: "chat.slash.review.label", i18nHint: "chat.slash.review.hint" },
+  { cmd: "/explain", i18nLabel: "chat.slash.explain.label", i18nHint: "chat.slash.explain.hint" },
+  { cmd: "/test", i18nLabel: "chat.slash.test.label", i18nHint: "chat.slash.test.hint" },
+];
+
+/** Markdown view for an agent reply. CLI output is local-trusted in
+ *  this tool; a hosted version would route this through DOMPurify. */
 function MarkdownView({ text }: { text: string }) {
   const html = useMemo(() => marked.parse(text) as string, [text]);
   return (
@@ -62,26 +71,51 @@ function MarkdownView({ text }: { text: string }) {
   );
 }
 
-/**
- * Slack/Discord-style chat for a project room.
- *
- * Messages flow as a single timeline of inline text rows (no bubbles).
- * Consecutive messages from the same sender within a short window
- * collapse — only the first row in a group shows avatar + name + ts.
- * Date separators ("Today", "Yesterday") group the timeline. Hover on
- * a row reveals timestamps and action buttons (reply / forward) like
- * Slack's hover toolbar.
- */
-
+/** Inline timeline (no bubbles). Consecutive messages from the same
+ *  sender within `CONTINUATION_WINDOW_MS` fold into one group; only
+ *  the first row in the group shows avatar + name + timestamp. */
 const CONTINUATION_WINDOW_MS = 5 * 60 * 1000;
-
-// ────────────────────────────────────────────────────────────────────────────
-// SSE tail
-// ────────────────────────────────────────────────────────────────────────────
 
 interface TailEvent {
   kind: "text" | "tool";
   text: string;
+  /** For tool events with a file_path / notebook_path / pattern input —
+   *  surfaced in the active-progress indicator so the user sees what
+   *  file is being touched right now. */
+  detail?: string;
+}
+
+/** Pull a short "what is this acting on?" string out of a tool_use's
+ *  input. Mirrors the server-side path extractor but adds a few
+ *  read-only tools so the user sees Reads/Bash/Globs too — those are
+ *  useful as live progress signals even if they don't modify files. */
+function summarizeToolInput(
+  name: string,
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!input) return undefined;
+  const v = (k: string): string | undefined => {
+    const x = input[k];
+    return typeof x === "string" && x.length > 0 ? x : undefined;
+  };
+  switch (name) {
+    case "Write":
+    case "Edit":
+    case "MultiEdit":
+    case "Read":
+      return v("file_path");
+    case "NotebookEdit":
+    case "NotebookRead":
+      return v("notebook_path");
+    case "Bash":
+      return v("command");
+    case "Glob":
+      return v("pattern");
+    case "Grep":
+      return v("pattern");
+    default:
+      return undefined;
+  }
 }
 
 function useRunTail(
@@ -116,7 +150,12 @@ function useRunTail(
             type?: string;
             subtype?: string;
             message?: {
-              content?: Array<{ type: string; text?: string; name?: string }>;
+              content?: Array<{
+                type: string;
+                text?: string;
+                name?: string;
+                input?: Record<string, unknown>;
+              }>;
             };
             result?: string;
           };
@@ -125,7 +164,11 @@ function useRunTail(
               if (c.type === "text" && c.text) {
                 next.push({ kind: "text", text: c.text });
               } else if (c.type === "tool_use" && c.name) {
-                next.push({ kind: "tool", text: c.name });
+                next.push({
+                  kind: "tool",
+                  text: c.name,
+                  detail: summarizeToolInput(c.name, c.input),
+                });
               }
             }
           } else if (j.type === "result" && typeof j.result === "string") {
@@ -151,10 +194,6 @@ function useRunTail(
   return { events, resultText };
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Avatars (size: sm 24, md 36, lg 40)
-// ────────────────────────────────────────────────────────────────────────────
-
 export function AgentAvatar({
   agent,
   manifest,
@@ -166,7 +205,7 @@ export function AgentAvatar({
   working?: boolean;
   size?: "sm" | "md" | "lg";
 }) {
-  const cls = classesFor(agentColorFor(agent.id));
+  const cls = classesFor(agentColorOf(agent));
   const dim = size === "sm" ? "size-6" : size === "lg" ? "size-10" : "size-9";
   // The lobehub icons already carry brand color, so the avatar wrapper
   // is intentionally bare — no tinted disc, no ring. Working state is a
@@ -205,10 +244,6 @@ function UserAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Date separators
-// ────────────────────────────────────────────────────────────────────────────
-
 function dayKey(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -243,10 +278,6 @@ function DaySeparator({ ts }: { ts: string }) {
     </div>
   );
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Messages (Slack-style — no bubbles, continuation grouping)
-// ────────────────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, {
@@ -359,7 +390,7 @@ function ParentReference({
   parentAgent: Agent;
   parentRunId: string;
 }) {
-  const cls = classesFor(agentColorFor(parentAgent.id));
+  const cls = classesFor(agentColorOf(parentAgent));
   return (
     <button
       type="button"
@@ -427,7 +458,7 @@ export function UserMessage({
   isContinuation: boolean;
 }) {
   const { t } = useI18n();
-  const cls = target ? classesFor(agentColorFor(target.id)) : null;
+  const cls = target ? classesFor(agentColorOf(target)) : null;
   return (
     <MessageRow
       avatar={<UserAvatar />}
@@ -536,7 +567,7 @@ export function AgentMessage({
   });
 
   const name = agent?.name ?? run.agentId.slice(0, 8);
-  const cls = agent ? classesFor(agentColorFor(agent.id)) : null;
+  const cls = agent ? classesFor(agentColorOf(agent)) : null;
   const finalText = resultText ?? restingResult.data?.resultText ?? null;
   const hasContent = events.length > 0 || finalText !== null;
 
@@ -606,9 +637,16 @@ export function AgentMessage({
       }
     >
       {!hasContent ? (
-        <p className="text-sm italic text-muted-foreground">
-          {isActive ? <ActiveProgress run={run} events={events} /> : "—"}
-        </p>
+        // Use a div so ActiveProgress (which wraps in flex divs) doesn't
+        // nest inside a <p> — that throws DOM warnings and breaks the
+        // computed line height on Safari.
+        <div className="text-sm italic text-muted-foreground">
+          {isActive ? (
+            <ActiveProgress run={run} events={events} />
+          ) : (
+            <FailedReason runId={run.id} status={run.status} />
+          )}
+        </div>
       ) : (
         <SelectionQuoteScope
           onQuote={(text) => onQuoteSelection(text, run, agent)}
@@ -646,18 +684,68 @@ export function AgentMessage({
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Active-run progress — elapsed timer + last tool that fired
-// ────────────────────────────────────────────────────────────────────────────
+/** When a run lands in `failed` / `cancelled` and produced no result
+ *  text, surface the tail of stderr so the user understands *why*. We
+ *  fetch lazily so the SSE-tail path stays cheap; cached at the query
+ *  level so re-renders don't re-fire. */
+function FailedReason({
+  runId,
+  status,
+}: {
+  runId: string;
+  status: RunStatus;
+}) {
+  const { t } = useI18n();
+  const enabled = status === "failed" || status === "cancelled";
+  const q = useQuery({
+    queryKey: ["run", runId, "error"],
+    queryFn: () => api.getRunError(runId),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+  if (!enabled) return <>—</>;
+  const stderr = q.data?.stderr ?? "";
+  if (!stderr) {
+    return (
+      <span className="not-italic">
+        <Badge variant="destructive" className="h-4 px-1.5 text-[9px]">
+          {t(`status.${status}`)}
+        </Badge>
+        <Link
+          to={`/runs/${runId}`}
+          className="ml-2 text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+        >
+          {t("chat.message.openLog")}
+        </Link>
+      </span>
+    );
+  }
+  return (
+    <div className="not-italic space-y-1">
+      <Badge variant="destructive" className="h-4 px-1.5 text-[9px]">
+        {t(`status.${status}`)}
+      </Badge>
+      <pre className="mt-1 max-h-32 overflow-auto rounded border border-border/60 bg-muted/40 px-2 py-1.5 mono text-[11px] leading-snug whitespace-pre-wrap break-words text-destructive">
+        {stderr}
+      </pre>
+      <Link
+        to={`/runs/${runId}`}
+        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+      >
+        {t("chat.message.openLog")}
+      </Link>
+    </div>
+  );
+}
 
 /**
- * Shown only while a run is active. Two signals folded into one row:
+ * Live progress strip beneath an active run. Three signals in one row:
  *
- *   ⏱  12s · last: Read
+ *   ⏱  12s · Edit  src/auth.ts
  *
- * The clock keeps the run from feeling stuck (long agents go quiet
- * between tool calls), and the "last" hint surfaces what the agent is
- * doing *right now* without making the user expand the tool strip.
+ * The clock keeps the run from feeling stuck. The tool name + path
+ * answers "what is the agent doing right *now*" — sourced from the
+ * tool_use stream so the user doesn't have to switch panels.
  */
 function ActiveProgress({
   run,
@@ -676,13 +764,23 @@ function ActiveProgress({
   const lastTool = [...events].reverse().find((e) => e.kind === "tool");
 
   return (
-    <div className="flex items-center gap-2 text-[11px] text-muted-foreground mono">
-      <span className="inline-flex size-1.5 rounded-full bg-foreground/40 animate-pulse" />
-      <span>{formatElapsed(elapsed)}</span>
+    <div className="flex items-center gap-2 text-[11px] text-muted-foreground mono min-w-0">
+      <span className="inline-flex size-1.5 rounded-full bg-foreground/40 animate-pulse shrink-0" />
+      <span className="shrink-0">{formatElapsed(elapsed)}</span>
       {lastTool ? (
         <>
-          <span className="text-muted-foreground/40">·</span>
-          <span className="truncate">{lastTool.text}</span>
+          <span className="text-muted-foreground/40 shrink-0">·</span>
+          <span className="text-foreground/80 font-medium shrink-0">
+            {lastTool.text}
+          </span>
+          {lastTool.detail ? (
+            <span
+              className="truncate text-muted-foreground"
+              title={lastTool.detail}
+            >
+              {lastTool.detail}
+            </span>
+          ) : null}
         </>
       ) : null}
     </div>
@@ -700,10 +798,6 @@ function formatElapsed(s: number): string {
   const rem = s % 60;
   return `${m}m ${rem}s`;
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Tool strip — one compact row, counts per tool kind
-// ────────────────────────────────────────────────────────────────────────────
 
 /**
  * Renders an agent's tool activity as a single muted line:
@@ -741,10 +835,6 @@ function ToolStrip({ events }: { events: TailEvent[] }) {
     </div>
   );
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Hand-off menu — explicit "give this to whom?" picker
-// ────────────────────────────────────────────────────────────────────────────
 
 /**
  * Replaces the old "Forward" hover action. Forward used to dump a quote
@@ -797,7 +887,7 @@ function HandoffMenu({
         ) : (
           others.map((a) => {
             const m = manifests.find((mm) => mm.kind === a.adapterKind);
-            const cls = classesFor(agentColorFor(a.id));
+            const cls = classesFor(agentColorOf(a));
             return (
               <DropdownMenuItem
                 key={a.id}
@@ -821,10 +911,6 @@ function HandoffMenu({
     </DropdownMenu>
   );
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Selection-quote scope (Phase D)
-// ────────────────────────────────────────────────────────────────────────────
 
 /**
  * Wraps an agent message body. When the user drags a text selection
@@ -925,10 +1011,6 @@ function SelectionQuoteScope({
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Working indicator (small strip above composer)
-// ────────────────────────────────────────────────────────────────────────────
-
 export function WorkingIndicator({
   workingAgents,
 }: {
@@ -961,10 +1043,6 @@ function Dot({ delay }: { delay: number }) {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Composer
-// ────────────────────────────────────────────────────────────────────────────
-
 export function Composer({
   agents,
   manifests,
@@ -979,16 +1057,13 @@ export function Composer({
 }: {
   agents: Agent[];
   manifests: AdapterManifest[];
-  /** Selected target(s). One = single send. Multiple = parallel broadcast. */
+  /** Selected target. The array is single-element by design — multi-
+   *  agent broadcast was removed (one room, one teammate at a time). */
   agentIds: string[];
   onAgentIdsChange: (ids: string[]) => void;
-  /** Active thread for new runs to join. null = "the next send creates
-   *  a fresh thread"; we adopt the new id from the response via
-   *  `onThreadCreated`. Broadcast sends share one thread by always
-   *  passing the same id (after the first response if previously null). */
+  /** null = the next send creates a fresh thread; the parent adopts
+   *  the returned id via `onThreadCreated`. */
   threadId?: string | null;
-  /** Whether the active thread has a non-empty context bundle. Drives
-   *  the visibility / enabled state of the "attach context" toggle. */
   threadHasContext?: boolean;
   onThreadCreated?: (id: string) => void;
   initialDraft?: string;
@@ -1002,58 +1077,31 @@ export function Composer({
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // @-mention state. `query` is the partial name typed after the trigger;
-  // `start` is the index of the `@` so we can replace the right slice on
-  // commit. Active iff query !== null.
-  const [mention, setMention] = useState<{
-    query: string;
-    start: number;
-  } | null>(null);
-  const [mentionIndex, setMentionIndex] = useState(0);
-  const mentionMatches = mention
-    ? agents.filter((a) =>
-        a.name.toLowerCase().includes(mention.query.toLowerCase()),
+  // Slash-command palette. Active when text starts with `/` and no
+  // space has been typed yet — once the user starts adding the actual
+  // prompt, the menu folds away.
+  const slashMatch = /^\/([a-z]*)$/i.exec(text);
+  const slashOpen = !!slashMatch;
+  const slashQuery = slashMatch?.[1] ?? "";
+  const slashMatches = slashOpen
+    ? SLASH_COMMANDS.filter((c) =>
+        c.cmd.slice(1).toLowerCase().startsWith(slashQuery.toLowerCase()),
       )
     : [];
+  const [slashIndex, setSlashIndex] = useState(0);
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashQuery]);
 
-  /** Find the @-token the caret is currently inside, if any. We walk back
-   *  from the cursor until we hit whitespace, a newline, or the start of
-   *  the buffer — and only treat the run as a mention trigger when the
-   *  character before `@` is empty/whitespace (so emails / `email@host`
-   *  don't accidentally open the picker). */
-  const recomputeMention = (value: string, caret: number) => {
-    let i = caret - 1;
-    while (i >= 0 && /[^\s@]/.test(value[i]!)) i--;
-    if (i < 0 || value[i] !== "@") {
-      setMention(null);
-      return;
-    }
-    const before = i === 0 ? " " : value[i - 1]!;
-    if (!/\s/.test(before)) {
-      setMention(null);
-      return;
-    }
-    setMention({ query: value.slice(i + 1, caret), start: i });
-    setMentionIndex(0);
-  };
-
-  const commitMention = (agent: Agent) => {
-    if (!mention) return;
-    const el = textareaRef.current;
-    const caret = el?.selectionStart ?? text.length;
-    const before = text.slice(0, mention.start);
-    const after = text.slice(caret);
-    const inserted = `@${agent.name} `;
-    const next = before + inserted + after;
+  const commitSlash = (cmd: SlashCommand) => {
+    const next = `${cmd.cmd} `;
     setText(next);
-    setMention(null);
-    if (!agentIds.includes(agent.id)) onAgentIdsChange([...agentIds, agent.id]);
-    // Restore caret right after the inserted handle so the user can keep
-    // typing inline without reaching for the mouse.
     requestAnimationFrame(() => {
-      const pos = before.length + inserted.length;
-      el?.setSelectionRange(pos, pos);
-      el?.focus();
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(next.length, next.length);
+      }
     });
   };
 
@@ -1117,118 +1165,41 @@ export function Composer({
     }
   }, [attachKey, attachContext]);
 
-  const removeTarget = (id: string) => {
-    onAgentIdsChange(agentIds.filter((x) => x !== id));
-  };
-  const addTarget = (id: string) => {
-    if (agentIds.includes(id)) return;
-    onAgentIdsChange([...agentIds, id]);
-  };
+  const setTarget = (id: string) => onAgentIdsChange([id]);
 
-  const targets = agentIds
-    .map((id) => agents.find((a) => a.id === id))
-    .filter((a): a is Agent => !!a);
+  const target = agents.find((a) => a.id === agentIds[0]) ?? null;
 
-  const availableAgents = agents.filter((a) => !agentIds.includes(a.id));
-
-  const placeholder =
-    targets.length === 1
-      ? t("chat.composer.placeholder", { agent: targets[0]!.name })
-      : targets.length > 1
-        ? t("chat.composer.broadcasting", { n: targets.length })
-        : t("chat.composer.placeholderNoAgent");
+  const placeholder = target
+    ? t("chat.composer.placeholder", { agent: target.name })
+    : t("chat.composer.placeholderNoAgent");
 
   const send = async () => {
-    if (
-      sendingRef.current ||
-      targets.length === 0 ||
-      !text.trim() ||
-      isSending
-    ) {
-      return;
-    }
+    if (sendingRef.current || !target || !text.trim() || isSending) return;
     sendingRef.current = true;
     setIsSending(true);
     setError(null);
     try {
-      // Broadcast to N agents in *one* thread, not N. We send the first
-      // run with whatever threadId we currently have (possibly null),
-      // adopt its result thread_id, then attach the rest to that same
-      // thread. Without this, broadcasts on a fresh "new conversation"
-      // would split into N parallel threads — confusing as hell.
-      let effectiveThreadId: string | null = threadId ?? null;
-      const results: Array<PromiseSettledResult<{ run: Run }>> = [];
-
-      const first = await api
-        .createRun({
-          agentId: targets[0]!.id,
-          prompt: text,
-          threadId: effectiveThreadId,
-          includeContext: attachContext && threadHasContext,
-        })
-        .then(
-          (r): PromiseFulfilledResult<{ run: Run }> => ({
-            status: "fulfilled",
-            value: r,
-          }),
-        )
-        .catch(
-          (err): PromiseRejectedResult => ({ status: "rejected", reason: err }),
-        );
-      results.push(first);
-      if (first.status === "fulfilled") {
-        // Adopt the thread the server materialized so the rest of this
-        // broadcast joins it. Tell the parent so the next send (and
-        // sidebar / switcher state) match.
-        const newId = first.value.run.threadId;
-        if (newId && newId !== effectiveThreadId) {
-          effectiveThreadId = newId;
-          onThreadCreated?.(newId);
-        }
-      }
-
-      if (targets.length > 1) {
-        const rest = await Promise.allSettled(
-          targets.slice(1).map((agent) =>
-            api.createRun({
-              agentId: agent.id,
-              prompt: text,
-              threadId: effectiveThreadId,
-              includeContext: attachContext && threadHasContext,
-            }),
-          ),
-        );
-        results.push(...rest);
-      }
-
-      const failed = results.filter(
-        (r) => r.status === "rejected",
-      ) as PromiseRejectedResult[];
-      if (failed.length > 0) {
-        const reason =
-          failed[0]!.reason instanceof Error
-            ? failed[0]!.reason.message
-            : String(failed[0]!.reason);
-        setError(
-          failed.length === targets.length
-            ? reason
-            : `${failed.length}/${targets.length}: ${reason}`,
-        );
-      }
+      const r = await api.createRun({
+        agentId: target.id,
+        prompt: text,
+        threadId: threadId ?? null,
+        includeContext: attachContext && threadHasContext,
+      });
+      const newId = r.run.threadId;
+      if (newId && newId !== threadId) onThreadCreated?.(newId);
       qc.invalidateQueries({ queryKey: ["runs"] });
       qc.invalidateQueries({ queryKey: ["threads"] });
-      if (failed.length < targets.length) {
-        // Only reset draft when at least one send went through.
-        setText("");
-        onSent();
-      }
+      setText("");
+      onSent();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       sendingRef.current = false;
       setIsSending(false);
     }
   };
 
-  const canSend = targets.length > 0 && text.trim().length > 0 && !isSending;
+  const canSend = !!target && text.trim().length > 0 && !isSending;
 
   return (
     <div className="px-5 pb-4 pt-1 bg-background shrink-0">
@@ -1236,47 +1207,31 @@ export function Composer({
         <p className="mb-2 text-xs text-destructive">{error}</p>
       ) : null}
       <div className="relative rounded-lg border bg-background focus-within:ring-1 focus-within:ring-ring transition-shadow">
-        {mention ? (
-          <MentionMenu
-            matches={mentionMatches}
-            manifests={manifests}
-            highlight={mentionIndex}
-            onPick={commitMention}
+        {slashOpen && slashMatches.length > 0 ? (
+          <SlashMenu
+            matches={slashMatches}
+            highlight={slashIndex}
+            onPick={commitSlash}
           />
         ) : null}
         <textarea
           ref={textareaRef}
           rows={1}
           value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            recomputeMention(e.target.value, e.target.selectionStart);
-          }}
-          onKeyUp={(e) => {
-            // Arrow keys move the caret without triggering onChange — we
-            // need to re-scan for an @-token after caret moves too.
-            const t = e.currentTarget;
-            recomputeMention(t.value, t.selectionStart);
-          }}
+          onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            // Mention navigation takes priority while the picker is open.
-            if (mention && mentionMatches.length > 0) {
+            // Slash-menu navigation takes priority while open.
+            if (slashOpen && slashMatches.length > 0) {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
-                setMentionIndex((i) => (i + 1) % mentionMatches.length);
+                setSlashIndex((i) => (i + 1) % slashMatches.length);
                 return;
               }
               if (e.key === "ArrowUp") {
                 e.preventDefault();
-                setMentionIndex(
-                  (i) =>
-                    (i - 1 + mentionMatches.length) % mentionMatches.length,
+                setSlashIndex(
+                  (i) => (i - 1 + slashMatches.length) % slashMatches.length,
                 );
-                return;
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setMention(null);
                 return;
               }
               if (
@@ -1286,7 +1241,12 @@ export function Composer({
                 e.nativeEvent.keyCode !== 229
               ) {
                 e.preventDefault();
-                commitMention(mentionMatches[mentionIndex]!);
+                commitSlash(slashMatches[slashIndex]!);
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setText("");
                 return;
               }
             }
@@ -1301,74 +1261,61 @@ export function Composer({
             }
           }}
           placeholder={placeholder}
-          disabled={targets.length === 0}
+          disabled={!target}
           className="w-full resize-none bg-transparent px-3.5 py-3 text-sm placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
           style={{ minHeight: "40px" }}
         />
         <div className="flex items-center justify-between gap-2 border-t px-2 py-1.5">
-          <div className="flex items-center gap-1 flex-wrap min-w-0">
-            {targets.map((a) => {
-              const m = manifests.find((mm) => mm.kind === a.adapterKind);
-              const c = classesFor(agentColorFor(a.id));
-              return (
-                <span
-                  key={a.id}
-                  className="inline-flex items-center gap-1 rounded-full border bg-muted/40 pl-1 pr-0.5 py-0.5"
-                >
-                  <AgentAvatar agent={a} manifest={m} size="sm" />
-                  <span className={cn("text-xs font-medium", c.text)}>
-                    @{a.name}
-                  </span>
-                  {agents.length > 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => removeTarget(a.id)}
-                      title={t("chat.composer.removeTarget")}
-                      aria-label={t("chat.composer.removeTarget")}
-                      className="ml-0.5 inline-flex size-4 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+          <Select
+            value={target?.id ?? ""}
+            onValueChange={(id) => {
+              if (id) setTarget(id);
+            }}
+          >
+            <SelectTrigger className="h-7 w-auto gap-1 border-0 bg-transparent hover:bg-muted px-2 shadow-none focus:ring-0">
+              <SelectValue>
+                {target ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <AgentAvatar
+                      agent={target}
+                      manifest={manifests.find(
+                        (m) => m.kind === target.adapterKind,
+                      )}
+                      size="sm"
+                    />
+                    <span
+                      className={cn(
+                        "text-xs font-medium",
+                        classesFor(agentColorOf(target)).text,
+                      )}
                     >
-                      <X className="size-2.5" />
-                    </button>
-                  ) : null}
-                </span>
-              );
-            })}
-            {availableAgents.length > 0 ? (
-              <Select
-                value=""
-                onValueChange={(id) => {
-                  if (id) addTarget(id);
-                }}
-              >
-                <SelectTrigger className="h-7 w-auto gap-1 border-dashed bg-transparent hover:bg-muted px-2 shadow-none focus:ring-0 [&>svg]:hidden">
-                  <SelectValue>
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      <Plus className="size-3" />
-                      {targets.length === 0
-                        ? t("chat.composer.placeholderNoAgent")
-                        : t("chat.composer.addTarget")}
+                      @{target.name}
                     </span>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {availableAgents.map((a) => {
-                    const m = manifests.find((mm) => mm.kind === a.adapterKind);
-                    const c = classesFor(agentColorFor(a.id));
-                    return (
-                      <SelectItem key={a.id} value={a.id} className="pl-8">
-                        <span className="flex items-center gap-2">
-                          <AgentAvatar agent={a} manifest={m} size="sm" />
-                          <span className={cn("text-sm font-medium", c.text)}>
-                            @{a.name}
-                          </span>
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            ) : null}
-          </div>
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {t("chat.composer.placeholderNoAgent")}
+                  </span>
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              {agents.map((a) => {
+                const m = manifests.find((mm) => mm.kind === a.adapterKind);
+                const c = classesFor(agentColorOf(a));
+                return (
+                  <SelectItem key={a.id} value={a.id} className="pl-8">
+                    <span className="flex items-center gap-2">
+                      <AgentAvatar agent={a} manifest={m} size="sm" />
+                      <span className={cn("text-sm font-medium", c.text)}>
+                        @{a.name}
+                      </span>
+                    </span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
           <div className="flex items-center gap-2 shrink-0">
             {threadHasContext ? (
               <button
@@ -1394,31 +1341,17 @@ export function Composer({
               </button>
             ) : null}
             <span className="text-[10px] text-muted-foreground/70 hidden md:inline">
-              {t("chat.composer.mention.hint")} · {t("chat.composer.hint")}
+              {t("chat.composer.hint")}
             </span>
-            {targets.length > 1 ? (
-              <Button
-                size="sm"
-                className="h-7 gap-1.5"
-                disabled={!canSend}
-                onClick={send}
-              >
-                <Send />
-                {isSending
-                  ? t("chat.composer.broadcasting", { n: targets.length })
-                  : t("chat.composer.sendToN", { n: targets.length })}
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                className="size-7"
-                disabled={!canSend}
-                onClick={send}
-                aria-label={t("chat.composer.send")}
-              >
-                <Send />
-              </Button>
-            )}
+            <Button
+              size="icon"
+              className="size-7"
+              disabled={!canSend}
+              onClick={send}
+              aria-label={t("chat.composer.send")}
+            >
+              <Send />
+            </Button>
           </div>
         </div>
       </div>
@@ -1426,75 +1359,6 @@ export function Composer({
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// @-mention menu (rendered above the composer when active)
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * Slack/Discord-style autocomplete pop-up. Anchored to the top of the
- * composer (full width inside the rounded box, sliding upward). Keyboard
- * driven from the textarea — this component is purely visual.
- */
-function MentionMenu({
-  matches,
-  manifests,
-  highlight,
-  onPick,
-}: {
-  matches: Agent[];
-  manifests: AdapterManifest[];
-  highlight: number;
-  onPick: (agent: Agent) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border bg-popover shadow-lg overflow-hidden z-30">
-      {matches.length === 0 ? (
-        <div className="px-3 py-2 text-xs text-muted-foreground">
-          {t("chat.composer.mention.empty")}
-        </div>
-      ) : (
-        <ul className="max-h-56 overflow-y-auto py-1">
-          {matches.map((a, i) => {
-            const m = manifests.find((mm) => mm.kind === a.adapterKind);
-            const cls = classesFor(agentColorFor(a.id));
-            return (
-              <li key={a.id}>
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    // Prevent textarea blur — onMouseDown fires before
-                    // onClick, and a blur would close the menu.
-                    e.preventDefault();
-                  }}
-                  onClick={() => onPick(a)}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-1.5 text-left",
-                    i === highlight ? "bg-muted" : "hover:bg-muted/60",
-                  )}
-                >
-                  <AgentAvatar agent={a} manifest={m} size="sm" />
-                  <span className={cn("text-sm font-medium", cls.text)}>
-                    @{a.name}
-                  </span>
-                  {a.role ? (
-                    <span className="ml-auto text-[10px] text-muted-foreground/70">
-                      {a.role}
-                    </span>
-                  ) : null}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Helpers (quote builders, feed derivation)
-// ────────────────────────────────────────────────────────────────────────────
 
 export function buildReplyQuote(
   run: Run,
@@ -1656,10 +1520,6 @@ export function isContinuation(curr: FeedItem, prev: FeedItem | undefined): bool
   return delta < CONTINUATION_WINDOW_MS;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Thread frame
-// ────────────────────────────────────────────────────────────────────────────
-
 export function ThreadFrame({
   thread,
   children,
@@ -1690,6 +1550,53 @@ export function findParentAgent(
   const parent = thread.runs.find((r) => r.id === run.parentRunId);
   if (!parent) return undefined;
   return agents.find((a) => a.id === parent.agentId);
+}
+
+/** Floating menu for slash commands. Anchored above the textarea so it
+ *  doesn't collide with the placeholder while the user is still typing. */
+function SlashMenu({
+  matches,
+  highlight,
+  onPick,
+}: {
+  matches: SlashCommand[];
+  highlight: number;
+  onPick: (cmd: SlashCommand) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border bg-popover shadow-lg overflow-hidden z-30">
+      <ul className="max-h-56 overflow-y-auto py-1">
+        {matches.map((c, i) => (
+          <li key={c.cmd}>
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                // Prevent textarea blur — onMouseDown fires before
+                // onClick, and a blur would close the menu.
+                e.preventDefault();
+              }}
+              onClick={() => onPick(c)}
+              className={cn(
+                "flex w-full items-baseline gap-2 px-3 py-1.5 text-left",
+                i === highlight ? "bg-muted" : "hover:bg-muted/60",
+              )}
+            >
+              <span className="mono text-sm font-semibold text-foreground shrink-0">
+                {c.cmd}
+              </span>
+              <span className="text-sm text-foreground/80">
+                {t(c.i18nLabel)}
+              </span>
+              <span className="ml-auto text-[10px] text-muted-foreground/70 truncate">
+                {t(c.i18nHint)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export { dayKey, DaySeparator, TooltipProvider };

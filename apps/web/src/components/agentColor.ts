@@ -22,12 +22,32 @@ const PALETTE = [
 
 export type AgentColor = (typeof PALETTE)[number];
 
+/** Whole list — exposed so the agent form can render a swatch picker. */
+export const AGENT_COLORS: ReadonlyArray<AgentColor> = PALETTE;
+
 export function agentColorFor(agentId: string): AgentColor {
   let h = 0;
   for (let i = 0; i < agentId.length; i++) {
     h = (Math.imul(h, 31) + agentId.charCodeAt(i)) | 0;
   }
   return PALETTE[Math.abs(h) % PALETTE.length]!;
+}
+
+/** Validates and narrows a stored value to a known palette color. */
+export function isAgentColor(v: unknown): v is AgentColor {
+  return typeof v === "string" && (PALETTE as readonly string[]).includes(v);
+}
+
+/** Resolve an agent's display color: explicit `adapterConfig.color`
+ *  if set, otherwise the deterministic hash of its id. Used everywhere
+ *  the UI tints an agent (chips, dots, avatars). */
+export function agentColorOf(agent: {
+  id: string;
+  adapterConfig?: Record<string, unknown> | null;
+}): AgentColor {
+  const explicit = agent.adapterConfig?.color;
+  if (isAgentColor(explicit)) return explicit;
+  return agentColorFor(agent.id);
 }
 
 export interface ColorClasses {

@@ -17,6 +17,8 @@ interface RunRow {
   before_ref: string | null;
   after_ref: string | null;
   cost_usd: number | null;
+  session_id: string | null;
+  resumed_session_id: string | null;
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
@@ -45,6 +47,8 @@ function rowToRun(row: RunRow): Run {
     beforeRef: row.before_ref,
     afterRef: row.after_ref,
     costUsd: row.cost_usd,
+    sessionId: row.session_id,
+    resumedSessionId: row.resumed_session_id,
     startedAt: row.started_at,
     endedAt: row.ended_at,
     createdAt: row.created_at,
@@ -58,6 +62,9 @@ export interface CreateRunInput {
   prompt: string;
   attachedSpecIds?: string[];
   cwd: string;
+  /** Session id this run attempts to resume from. Persisted so we can
+   *  identify poisoned sessions if this run fails. */
+  resumedSessionId?: string | null;
 }
 
 export function createRun(input: CreateRunInput): Run {
@@ -67,8 +74,9 @@ export function createRun(input: CreateRunInput): Run {
     .prepare(
       `INSERT INTO runs (id, agent_id, thread_id, parent_run_id, prompt, attached_spec_ids,
                          cwd, status, exit_code, pid, log_path,
+                         resumed_session_id,
                          started_at, ended_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, NULL, NULL, NULL, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, NULL, ?, NULL, NULL, ?)`,
     )
     .run(
       id,
@@ -78,6 +86,7 @@ export function createRun(input: CreateRunInput): Run {
       input.prompt,
       JSON.stringify(input.attachedSpecIds ?? []),
       input.cwd,
+      input.resumedSessionId ?? null,
       now,
     );
   return getRun(id)!;
@@ -140,6 +149,75 @@ export function setRunAfterRef(id: string, ref: string | null): void {
 
 export function setRunCostUsd(id: string, cost: number): void {
   getDb().prepare("UPDATE runs SET cost_usd = ? WHERE id = ?").run(cost, id);
+}
+
+export function setRunSessionId(id: string, sessionId: string): void {
+  getDb()
+    .prepare("UPDATE runs SET session_id = ? WHERE id = ?")
+    .run(sessionId, id);
+}
+
+/** Most recent (thread, agent) session id that's safe to resume.
+ *
+ *  Two layers of safety:
+ *
+ *    1. We only inherit from runs that exited `succeeded` — failed
+ *       runs may have left the CLI session in a half-baked state.
+ *
+ *    2. If a *later* failed run already tried to resume some session
+ *       id, that id is "poisoned" and we never hand it out again. The
+ *       CLI typically rejects an expired session with a hard error
+ *       ("no conversation found with session ID …") which crashes
+ *       every subsequent run unless we forget the dead id and start
+ *       a fresh session. Cascading skip handles the case where the
+ *       prior succeeded run's id is the poisoned one — we move on to
+ *       the next-most-recent succeeded session, or fall back to null
+ *       (meaning: don't pass --resume, start fresh). */
+export function getLatestSessionId(args: {
+  threadId: string;
+  agentId: string;
+}): string | null {
+  const recent = getDb()
+    .prepare<
+      [string, string],
+      {
+        status: string;
+        session_id: string | null;
+        resumed_session_id: string | null;
+      }
+    >(
+      `SELECT status, session_id, resumed_session_id
+       FROM runs
+       WHERE thread_id = ? AND agent_id = ?
+       ORDER BY created_at DESC
+       LIMIT 30`,
+    )
+    .all(args.threadId, args.agentId);
+
+  // First pass: collect every session id that a failed/cancelled run
+  // tried to resume from. Those are stale on the CLI side.
+  const poisoned = new Set<string>();
+  for (const r of recent) {
+    if (
+      (r.status === "failed" || r.status === "cancelled") &&
+      r.resumed_session_id
+    ) {
+      poisoned.add(r.resumed_session_id);
+    }
+  }
+
+  // Second pass: walk newest → oldest, return the first succeeded
+  // session id that hasn't been poisoned.
+  for (const r of recent) {
+    if (
+      r.status === "succeeded" &&
+      r.session_id &&
+      !poisoned.has(r.session_id)
+    ) {
+      return r.session_id;
+    }
+  }
+  return null;
 }
 
 export function markRunRunning(id: string, pid: number | null): void {

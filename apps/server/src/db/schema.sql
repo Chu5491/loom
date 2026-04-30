@@ -83,6 +83,15 @@ CREATE TABLE IF NOT EXISTS runs (
   -- event total_cost_usd). NULL when the adapter doesn't surface cost
   -- — we don't fabricate estimates from token counts.
   cost_usd            REAL,
+  -- CLI session id captured during this run (claude-code's session_id,
+  -- opencode's --session, …). The next run in the same thread/agent
+  -- pulls the most recent non-null one and feeds it back as a resume
+  -- token, so the CLI keeps its conversation memory across turns.
+  session_id          TEXT,
+  -- Session id this run *attempted* to resume from. When the run fails
+  -- (e.g. the CLI says "no conversation found"), the session-lookup
+  -- code marks that id as poisoned and never resumes it again.
+  resumed_session_id  TEXT,
   started_at          TEXT,
   ended_at            TEXT,
   created_at          TEXT NOT NULL

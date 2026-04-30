@@ -4,6 +4,7 @@ import { ProjectShell } from "./components/ProjectShell.js";
 import { AgentsPage } from "./pages/AgentsPage.js";
 import { HomePage } from "./pages/HomePage.js";
 import { ProjectsPage } from "./pages/ProjectsPage.js";
+import { ReviewPage } from "./pages/ReviewPage.js";
 import { RunDetailPage } from "./pages/RunDetailPage.js";
 import { RunsPage } from "./pages/RunsPage.js";
 import { SpecsPage } from "./pages/SpecsPage.js";
@@ -28,6 +29,7 @@ export function App() {
           <Route path="skills/:specId" element={<SpecsPage />} />
           <Route path="runs" element={<RunsPage />} />
           <Route path="runs/:runId" element={<RunDetailPage />} />
+          <Route path="review" element={<ReviewPage />} />
         </Route>
         <Route path="*" element={<p className="p-6">Not found</p>} />
       </Route>

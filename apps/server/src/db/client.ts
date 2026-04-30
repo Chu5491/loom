@@ -170,6 +170,23 @@ function applyMigrations(db: DB): void {
   if (!columnExists(db, "threads", "worktree_path")) {
     db.exec(`ALTER TABLE threads ADD COLUMN worktree_path TEXT`);
   }
+
+  // 0010: runs.session_id — captured during the run from the CLI's
+  // output (stream-json `session_id` for claude-code, equivalents for
+  // others). The next run in the same thread/agent looks up the most
+  // recent non-null session id and feeds it back as a resume token so
+  // the conversation memory survives across turns.
+  if (!columnExists(db, "runs", "session_id")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN session_id TEXT`);
+  }
+
+  // 0011: runs.resumed_session_id — the session this run *tried* to
+  // resume from at start. Lets us detect "this session is now stale"
+  // when a resume attempt fails, and skip it forever after instead of
+  // crashing every subsequent run with "no conversation found".
+  if (!columnExists(db, "runs", "resumed_session_id")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN resumed_session_id TEXT`);
+  }
 }
 
 interface OrphanRunRow {

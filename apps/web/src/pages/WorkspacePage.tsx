@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams } from "react-router-dom";
+import type { LayoutOutletContext } from "../components/Layout.js";
 import {
   Archive,
   ArchiveRestore,
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
+  Expand,
   FileText,
   GitBranch,
-  MessageCircle,
   MessagesSquare,
+  Minimize2,
   Paperclip,
-  Pencil,
   Plus,
   Users,
   X,
@@ -22,6 +21,7 @@ import {
 import type { AdapterManifest, Agent, Run, Thread } from "@loom/core";
 import { api } from "../api/client.js";
 import {
+  AgentAvatar,
   AgentMessage,
   Composer,
   DaySeparator,
@@ -37,11 +37,12 @@ import {
   isContinuation,
   useRoomDerived,
 } from "../components/Chat.js";
+import { AgentInitialBadge } from "../components/AgentInitialBadge.js";
 import { ContextDrawer } from "../components/ContextDrawer.js";
 import { FilePalette } from "../components/FilePalette.js";
-import { FilesTree } from "../components/FilesTree.js";
 import { FileTab } from "../components/FileTab.js";
-import { TopAgentsStrip } from "../components/TopAgentsStrip.js";
+import { LiveActivityRail } from "../components/LiveActivityRail.js";
+import { TeamRibbon } from "../components/TeamRibbon.js";
 import { Button } from "../components/ui/button.js";
 import {
   DropdownMenu,
@@ -54,26 +55,15 @@ import {
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
-/**
- * Unified project workspace — the "VSCode + Discord" surface.
- *
- *   ┌──────────┬─────────────────────────────┬──────────┐
- *   │ Files    │  ┌Tabs────────────────────┐ │ Members  │
- *   │ tree     │  │ Chat | src/auth.ts | × │ │ (agents) │
- *   │          │  ├────────────────────────┤ │          │
- *   │          │  │ active tab content     │ │          │
- *   └──────────┴──┴────────────────────────┴─┴──────────┘
- *
- *   - Chat tab is always pinned and never closes.
- *   - Clicking a file in the tree opens (or activates) a tab for it.
- *   - File tabs show contents + a "runs that touched this file" rail
- *     whose entries are clickable: clicking jumps back to the chat tab
- *     and scrolls to that run's message — closing the loop between
- *     files and the conversation.
- */
+/** Project workspace. Channel banner + file tabs in the centre, chat
+ *  drawer on the right. Clicking a file pill in chat opens it as a
+ *  tab; clicking a run in a file's history rail jumps back to the
+ *  matching message in chat. */
 export function WorkspacePage() {
   const { t } = useI18n();
   const { id: projectId } = useParams<{ id: string }>();
+  const { chatFullModal, setChatFullModal } =
+    useOutletContext<LayoutOutletContext>();
 
   // ── Data
   const project = useQuery({
@@ -113,15 +103,43 @@ export function WorkspacePage() {
     [runsQuery.data, projectAgentIds],
   );
 
-  // Threads in this project. Sidebar order is most-recent-activity first
-  // (server orders by updated_at, which run-service bumps on every run).
+  // Live "@agent is editing this file *now*" map — keyed by project-
+  // relative path → agent id. Polls fast while runs are happening so
+  // file tabs / file viewer can pulse a badge in near-real-time.
+  const activeTouchesQuery = useQuery({
+    queryKey: ["projectActiveTouches", projectId],
+    queryFn: () => api.getProjectActiveTouches(projectId!),
+    enabled: !!projectId,
+    refetchInterval: 1500,
+  });
+  const activeByPath = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const tch of activeTouchesQuery.data?.touches ?? []) {
+      for (const p of tch.paths) m.set(p, tch.agentId);
+    }
+    return m;
+  }, [activeTouchesQuery.data]);
+  // Last-known edit line per path — drives ":42" suffix in banners
+  // and tab tooltips. We keep just the freshest hit per path because
+  // the user typically wants "where is the agent at *now*", not a
+  // history of every line they swept through.
+  const lineByPath = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const tch of activeTouchesQuery.data?.touches ?? []) {
+      for (const loc of tch.locations) m.set(loc.path, loc.line);
+    }
+    return m;
+  }, [activeTouchesQuery.data]);
+
+  // Server orders by updated_at (run-service bumps on every run), so
+  // the most-recently-touched thread always lands at the top.
   const threadsQuery = useQuery({
     queryKey: ["threads", { projectId }],
     queryFn: () => api.listThreads({ projectId }),
     enabled: !!projectId,
     refetchInterval: () => {
-      // Bump faster while runs are active so a freshly-created thread
-      // (first message in a brand-new conversation) shows up promptly.
+      // Faster polls while something is running so a brand-new thread
+      // shows up before the user wonders where their first message went.
       const active = runsQuery.data?.runs.some(
         (r) => r.status === "queued" || r.status === "running",
       );
@@ -138,45 +156,13 @@ export function WorkspacePage() {
     return map;
   }, [manifests]);
 
-  // Touched-paths set powers the file-tree dot decorations. Refresh on
-  // a slow cadence (and after an active run finishes) — it's purely
-  // visual, so we don't need it second-by-second.
-  const touched = useQuery({
-    queryKey: ["projectTouched", projectId],
-    queryFn: () => api.getProjectTouched(projectId!),
-    enabled: !!projectId,
-    refetchInterval: () => {
-      // Re-fetch faster while runs are active — newly touched files
-      // should pop a dot soon after the run ends.
-      const active = runsQuery.data?.runs.some(
-        (r) => r.status === "queued" || r.status === "running",
-      );
-      return active ? 4000 : 30_000;
-    },
-  });
-  const touchedSet = useMemo(
-    () => new Set((touched.data?.paths ?? []).map((p) => p.path)),
-    [touched.data],
-  );
-
-  // The member rail tracks "anyone busy anywhere in this project,"
-  // independent of the active thread, so users can see e.g. "@QA is
-  // busy in another thread." The chat panel narrows to the active
-  // thread further down (after activeThreadId is declared).
+  // Anyone busy anywhere in the project — used by the team ribbon so
+  // a teammate working in a different thread still reads as present.
   const { working, workingIds } = useRoomDerived(projectRuns, agentList);
 
-  // ── Tabs + active thread + drawer state (persisted per project)
-  // Center tabs hold *only* file paths now — chat moved to its own
-  // right-side drawer. `activeFile` is the path of the file in view
-  // (or null when no file is open and the center shows an empty state).
-  //
-  // `chatDrawerOpen` controls the right-side chat panel. ⌘L (or its
-  // header button) toggles it. Closed = full-width work area, open =
-  // chat sits beside the file content for live monitor / quick reply.
-  //
-  // `activeThreadId` is null until the first message lands or the user
-  // explicitly picks a thread. Sending while null tells the server to
-  // create a fresh thread, then we adopt the new id from the response.
+  // Tabs are file paths only; chat lives in its own drawer. activeFile
+  // is null = empty centre. activeThreadId null = next send creates a
+  // fresh thread server-side and we adopt the returned id.
   const tabsKey = projectId ? `loom:workspace:${projectId}:tabs` : null;
   const [openFiles, setOpenFiles] = useState<string[]>(() =>
     readPersistedTabs(tabsKey).openFiles,
@@ -188,12 +174,29 @@ export function WorkspacePage() {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(
     () => readPersistedTabs(tabsKey).activeThreadId,
   );
-  const [chatDrawerOpen, setChatDrawerOpen] = useState<boolean>(() =>
-    readBoolFlag("loom:workspace:chatDrawerOpen", () => true),
-  );
 
-  // Reload state when the project changes (within the same component
-  // instance — e.g. navigating /projects/A → /projects/B).
+  // File viewer is the side panel — the conversation is the main work,
+  // files are just where we verify what an agent did. Clamped on read
+  // so a saved value from a wider monitor doesn't strand the panel.
+  const [fileViewerWidth, setFileViewerWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 520;
+    const raw = window.localStorage.getItem("loom:workspace:fileViewerWidth");
+    const n = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(n)) return 520;
+    return Math.min(Math.max(n, 320), 1200);
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "loom:workspace:fileViewerWidth",
+        String(fileViewerWidth),
+      );
+    } catch {
+      // ignore quota / private mode
+    }
+  }, [fileViewerWidth]);
+
+  // Re-read when the user navigates between projects without unmounting.
   useEffect(() => {
     const next = readPersistedTabs(tabsKey);
     setOpenFiles(next.openFiles);
@@ -221,21 +224,14 @@ export function WorkspacePage() {
     }
   }, [tabsKey, openFiles, activeFile, activeThreadId]);
 
-  useEffect(() => {
-    writeBoolFlag("loom:workspace:chatDrawerOpen", chatDrawerOpen);
-  }, [chatDrawerOpen]);
-
-  // Auto-pick the most recent thread when the project loads and no
-  // thread is selected yet. Skip if the user has explicitly chosen
-  // "no thread" (null after a "new thread" click) — that's an active
-  // signal that the next send should create a fresh conversation.
+  // Auto-pick the most recent thread on first load. A `null`
+  // activeThreadId after the user clicks "new thread" is intentional
+  // — leave it alone so the next send starts a fresh conversation.
   const [hasInitializedThread, setHasInitializedThread] = useState(false);
   useEffect(() => {
     if (hasInitializedThread) return;
     if (threadList.length === 0) return;
     if (activeThreadId === null) {
-      // Only auto-pick on the very first load — once the user clears
-      // the thread we respect that until they send.
       const persisted = readPersistedTabs(tabsKey).activeThreadId;
       if (persisted === null) {
         setActiveThreadId(threadList[0]!.id);
@@ -245,9 +241,6 @@ export function WorkspacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadList.length]);
 
-  // Chat-panel runs are scoped to the active thread. With null thread
-  // (a "new conversation" the user is about to start), nothing is
-  // shown — the empty state will say "send a message to begin."
   const filteredRuns = useMemo(
     () =>
       activeThreadId
@@ -257,9 +250,8 @@ export function WorkspacePage() {
   );
   const { threads } = useRoomDerived(filteredRuns, agentList);
 
-  // Sum of the active thread's run costs. We sum everything that has a
-  // cost reported — cost-less runs (non-claude-code adapters) just
-  // don't contribute, which is the right shape for "total cost so far."
+  // Cost-less runs (non-claude-code adapters) drop out of the sum,
+  // which is the right shape for "total cost so far."
   const threadCost = useMemo(() => {
     let total = 0;
     let any = false;
@@ -288,8 +280,13 @@ export function WorkspacePage() {
       return next;
     });
   }, []);
+  const closeAllFiles = useCallback(() => {
+    setOpenFiles([]);
+    setActiveFile(null);
+  }, []);
 
-  // ── Composer state (lifted up so file→jump can also surface chat)
+  // Composer state lives at this level so file-history → chat jumps
+  // can swap the target agent and surface a draft.
   const [agentIds, setAgentIds] = useState<string[]>([]);
   const [draft, setDraft] = useState<string | undefined>();
   const [draftKey, setDraftKey] = useState(0);
@@ -299,40 +296,61 @@ export function WorkspacePage() {
     }
   }, [agentList, agentIds.length]);
 
-  // Jump-to-run target — set when a file-history entry is clicked.
-  // Auto-opens the chat drawer (so the message is actually rendered)
-  // and the ChatPanel inside scrolls to the matching message after
-  // mount / update, then clears it.
+  // Set by a file's history rail OR the live activity rail / sidebar
+  // when the user wants to jump to a specific message. If the run lives
+  // in a different thread we switch to it first — otherwise the chat
+  // can't find the matching DOM node and the click reads as broken.
   const [pendingJumpRunId, setPendingJumpRunId] = useState<string | null>(null);
-  const handleJumpToRun = useCallback((runId: string) => {
-    setChatDrawerOpen(true);
-    setPendingJumpRunId(runId);
-  }, []);
+  const handleJumpToRun = useCallback(
+    (runId: string) => {
+      const run = projectRuns.find((r) => r.id === runId);
+      if (run && run.threadId && run.threadId !== activeThreadId) {
+        setActiveThreadId(run.threadId);
+      }
+      setPendingJumpRunId(runId);
+    },
+    [projectRuns, activeThreadId],
+  );
 
-  // Context drawer (markdown editor for the active thread's bundle)
-  // and file palette state.
+  // The activity panels live above us in the tree and can't reach our
+  // state directly. They fire window events; we listen here. Loose
+  // coupling — any page that wants the same hooks just adds listeners.
+  useEffect(() => {
+    const onOpenFile = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path;
+      if (path) openFile(path);
+    };
+    const onPickThread = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string }>).detail?.id;
+      if (id) setActiveThreadId(id);
+    };
+    const onNewThread = () => setActiveThreadId(null);
+    const onPickAgent = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string }>).detail?.id;
+      if (id) setAgentIds([id]);
+    };
+    const onJumpRun = (e: Event) => {
+      const runId = (e as CustomEvent<{ runId: string }>).detail?.runId;
+      if (runId) handleJumpToRun(runId);
+    };
+    window.addEventListener("loom:openFile", onOpenFile);
+    window.addEventListener("loom:pickThread", onPickThread);
+    window.addEventListener("loom:newThread", onNewThread);
+    window.addEventListener("loom:pickAgent", onPickAgent);
+    window.addEventListener("loom:jumpToRun", onJumpRun);
+    return () => {
+      window.removeEventListener("loom:openFile", onOpenFile);
+      window.removeEventListener("loom:pickThread", onPickThread);
+      window.removeEventListener("loom:newThread", onNewThread);
+      window.removeEventListener("loom:pickAgent", onPickAgent);
+      window.removeEventListener("loom:jumpToRun", onJumpRun);
+    };
+  }, [openFile, handleJumpToRun]);
+
   const [contextOpen, setContextOpen] = useState(false);
 
-  // Files panel collapse. Persisted in localStorage so the layout
-  // survives reloads. Defaults collapsed on narrow viewports so the
-  // chat itself gets the room it deserves; the user can expand it
-  // when they actually need to browse the tree.
-  //
-  // The old MemberRail (right side) collapse is gone — the strip at
-  // the top of the workspace replaced that rail entirely.
-  const [filesCollapsed, setFilesCollapsed] = useState(() =>
-    readBoolFlag("loom:workspace:filesCollapsed", () =>
-      typeof window !== "undefined" && window.innerWidth < 1100,
-    ),
-  );
-  useEffect(() => {
-    writeBoolFlag("loom:workspace:filesCollapsed", filesCollapsed);
-  }, [filesCollapsed]);
-
-  // Cmd+P / Ctrl+P opens the file quick-open palette. Cmd+L / Ctrl+L
-  // toggles the chat drawer. Skip both when an editable element has
-  // focus so the user can still print / select-line text inside an
-  // input or textarea.
+  // ⌘P opens the file palette. ⌘\ closes the file viewer (= close all
+  // open files). Skipped while an editable is focused.
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
     const inEditable = (e: KeyboardEvent) => {
@@ -351,14 +369,14 @@ export function WorkspacePage() {
       if (k === "p") {
         e.preventDefault();
         setPaletteOpen(true);
-      } else if (k === "l") {
+      } else if (e.key === "\\") {
         e.preventDefault();
-        setChatDrawerOpen((v) => !v);
+        closeAllFiles();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [closeAllFiles]);
 
   if (project.isLoading || agents.isLoading) {
     return (
@@ -378,154 +396,109 @@ export function WorkspacePage() {
   const activeThread =
     threadList.find((th) => th.id === activeThreadId) ?? null;
 
+  // Show the file viewer panel when the user has opened at least one
+  // file. ⌘⇧L (focus mode) hides it so the conversation can breathe.
+  const fileViewerVisible = openFiles.length > 0 && !chatFullModal;
+
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex h-full min-w-0 flex-col">
-        {/* Workspace-wide top strip — full width across all sub-areas
-         *  so member presence is visible whether you're in a file or
-         *  the chat drawer. */}
-        <TopAgentsStrip
-          agents={agentList}
-          manifests={manifests}
-          workingIds={workingIds}
-          runs={projectRuns}
-          selectedAgentId={agentIds[0]}
-          onPick={(id) => setAgentIds([id])}
-          projectId={p.id}
-        />
+        {chatFullModal ? null : (
+          <TeamRibbon
+            project={p}
+            agents={agentList}
+            workingIds={workingIds}
+            activeThread={activeThread}
+          />
+        )}
 
-        <div className="flex-1 min-h-0 flex">
-          {/* Files panel — left rail, collapsible. */}
-          <aside
-            className={cn(
-              "hidden md:flex shrink-0 flex-col border-r bg-muted/20 transition-[width] duration-200",
-              filesCollapsed ? "w-8" : "w-60",
-            )}
-          >
-            <div
-              className={cn(
-                "flex items-center border-b shrink-0",
-                filesCollapsed ? "justify-center px-1" : "justify-between px-3",
-                "py-2",
-              )}
+        <div className="flex-1 min-h-0 min-w-0 flex">
+          {/* The conversation IS the workspace — always centred, always
+           *  visible. Files only get a side panel when the user opens
+           *  one to verify what an agent did. */}
+          <section className="flex-1 min-w-0 flex flex-col bg-card">
+            <ThreadBar
+              projectId={p.id}
+              threads={threadList}
+              activeThread={activeThread}
+              activeThreadCost={threadCost}
+              fullModal={chatFullModal}
+              onToggleFullModal={() => setChatFullModal(!chatFullModal)}
+              onOpenContext={() => setContextOpen(true)}
+              onPickThread={(id) => setActiveThreadId(id)}
+              onNewThread={() => setActiveThreadId(null)}
+              onNewIsolatedThread={async () => {
+                try {
+                  const r = await api.createThread({
+                    projectId: p.id,
+                    name: "Isolated thread",
+                    isolate: true,
+                  });
+                  setActiveThreadId(r.thread.id);
+                } catch (err) {
+                  console.error("[loom] failed to create isolated thread", err);
+                }
+              }}
+            />
+            <ChatPanel
+              project={p}
+              agentList={agentList}
+              manifests={manifests}
+              threads={threads}
+              working={working}
+              activeThreadId={activeThreadId}
+              threadHasContext={!!activeThread?.contextBundle}
+              onAdoptThreadId={setActiveThreadId}
+              agentIds={agentIds}
+              setAgentIds={setAgentIds}
+              draft={draft}
+              setDraft={setDraft}
+              draftKey={draftKey}
+              setDraftKey={setDraftKey}
+              pendingJumpRunId={pendingJumpRunId}
+              onConsumedJump={() => setPendingJumpRunId(null)}
+            />
+          </section>
+
+          {fileViewerVisible ? (
+            <aside
+              className="hidden lg:flex shrink-0 flex-col border-l border-border bg-background relative"
+              style={{ width: fileViewerWidth }}
             >
-              {filesCollapsed ? null : (
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {t("files.tree.title")}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => setFilesCollapsed((v) => !v)}
-                title={
-                  filesCollapsed
-                    ? t("workspace.files.expand")
-                    : t("workspace.files.collapse")
-                }
-                aria-label={
-                  filesCollapsed
-                    ? t("workspace.files.expand")
-                    : t("workspace.files.collapse")
-                }
-                className="inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                {filesCollapsed ? (
-                  <ChevronRight className="size-3" />
-                ) : (
-                  <ChevronLeft className="size-3" />
-                )}
-              </button>
-            </div>
-            {filesCollapsed ? null : (
-              <div className="flex-1 overflow-y-auto">
-                <FilesTree
-                  projectId={p.id}
-                  selectedPath={activeFile}
-                  touched={touchedSet}
-                  onPick={openFile}
-                />
-              </div>
-            )}
-          </aside>
-
-          {/* Center — file viewer or empty state. The chat used to live
-           *  here as a tab; now it sits in the right drawer so files and
-           *  chat can be visible at the same time. */}
-          <div className="flex-1 min-w-0 flex flex-col">
-            {openFiles.length > 0 ? (
+              <PanelResizer
+                width={fileViewerWidth}
+                onChange={setFileViewerWidth}
+              />
               <FileTabBar
                 activeFile={activeFile}
                 openFiles={openFiles}
+                activeByPath={activeByPath}
+                lineByPath={lineByPath}
+                agents={agentList}
                 onActivate={(path) => setActiveFile(path)}
                 onClose={closeFile}
-                chatDrawerOpen={chatDrawerOpen}
-                onToggleChatDrawer={() => setChatDrawerOpen((v) => !v)}
+                onCloseAll={closeAllFiles}
               />
-            ) : (
-              <CenterTopBar
-                chatDrawerOpen={chatDrawerOpen}
-                onToggleChatDrawer={() => setChatDrawerOpen((v) => !v)}
-              />
-            )}
-            <div className="flex-1 min-h-0 flex flex-col">
-              {activeFile && openFiles.includes(activeFile) ? (
-                <FileTab
-                  projectId={p.id}
-                  path={activeFile}
-                  onJumpToRun={handleJumpToRun}
-                  adapterByKind={adapterByKind}
-                />
-              ) : (
-                <CenterEmptyState chatDrawerOpen={chatDrawerOpen} />
-              )}
-            </div>
-          </div>
-
-          {/* Chat drawer — slides in from the right. Toggleable via
-           *  ⌘L or its own header button; persisted across sessions. */}
-          {chatDrawerOpen ? (
-            <aside className="hidden lg:flex shrink-0 w-[440px] flex-col border-l bg-background">
-              <ThreadBar
-                projectId={p.id}
-                threads={threadList}
-                activeThread={activeThread}
-                activeThreadCost={threadCost}
-                onCloseDrawer={() => setChatDrawerOpen(false)}
-                onOpenContext={() => setContextOpen(true)}
-                onPickThread={(id) => setActiveThreadId(id)}
-                onNewThread={() => setActiveThreadId(null)}
-                onNewIsolatedThread={async () => {
-                  try {
-                    const r = await api.createThread({
-                      projectId: p.id,
-                      name: "Isolated thread",
-                      isolate: true,
-                    });
-                    setActiveThreadId(r.thread.id);
-                  } catch (err) {
-                    console.error("[loom] failed to create isolated thread", err);
-                  }
-                }}
-              />
-              <ChatPanel
-                project={p}
-                agentList={agentList}
-                manifests={manifests}
-                threads={threads}
-                working={working}
-                activeThreadId={activeThreadId}
-                threadHasContext={!!activeThread?.contextBundle}
-                onAdoptThreadId={setActiveThreadId}
-                agentIds={agentIds}
-                setAgentIds={setAgentIds}
-                draft={draft}
-                setDraft={setDraft}
-                draftKey={draftKey}
-                setDraftKey={setDraftKey}
-                pendingJumpRunId={pendingJumpRunId}
-                onConsumedJump={() => setPendingJumpRunId(null)}
-              />
+              <div className="flex-1 min-h-0 flex flex-col">
+                {activeFile && openFiles.includes(activeFile) ? (
+                  <FileTab
+                    projectId={p.id}
+                    path={activeFile}
+                    activeAgentId={activeByPath.get(activeFile)}
+                    activeLine={lineByPath.get(activeFile)}
+                    agents={agentList}
+                    onJumpToRun={handleJumpToRun}
+                    adapterByKind={adapterByKind}
+                  />
+                ) : null}
+              </div>
             </aside>
+          ) : !chatFullModal ? (
+            <LiveActivityRail
+              agents={agentList}
+              manifests={manifests}
+              runs={projectRuns}
+            />
           ) : null}
         </div>
       </div>
@@ -546,104 +519,15 @@ export function WorkspacePage() {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Center-area top bars (when files exist vs. empty state)
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * Mini bar that sits above the empty center state. Even with no file
- * tabs open, the user still needs the chat-drawer toggle reachable so
- * they can re-open a closed drawer without leaving the workspace.
- */
-function CenterTopBar({
-  chatDrawerOpen,
-  onToggleChatDrawer,
-}: {
-  chatDrawerOpen: boolean;
-  onToggleChatDrawer: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="flex items-center justify-end gap-1 px-3 py-1.5 border-b bg-muted/10 shrink-0">
-      <button
-        type="button"
-        onClick={onToggleChatDrawer}
-        title={
-          chatDrawerOpen
-            ? t("workspace.chat.close")
-            : t("workspace.chat.open")
-        }
-        aria-label={
-          chatDrawerOpen
-            ? t("workspace.chat.close")
-            : t("workspace.chat.open")
-        }
-        className="inline-flex items-center gap-1 px-2 h-6 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-      >
-        <MessageCircle className="size-3.5" />
-        <span>{t("workspace.chat.label")}</span>
-        <span className="text-muted-foreground/60 mono ml-1">⌘L</span>
-      </button>
-    </div>
-  );
-}
-
-/**
- * Empty state for the center pane when no file tab is open. Hints at
- * the two ways into a file: the tree on the left, and ⌘P search.
- * Doesn't mention the chat drawer here — the top bar above already
- * has its toggle.
- */
-function CenterEmptyState({
-  chatDrawerOpen,
-}: {
-  chatDrawerOpen: boolean;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="flex-1 flex items-center justify-center text-center px-6">
-      <div className="max-w-sm">
-        <FileText className="size-10 mx-auto text-muted-foreground/50" />
-        <h3 className="mt-3 text-sm font-medium text-muted-foreground">
-          {t("workspace.empty.title")}
-        </h3>
-        <p className="mt-1 text-xs text-muted-foreground/70">
-          {t("workspace.empty.hintTree")}
-          <br />
-          {t("workspace.empty.hintPalette")}
-        </p>
-        {!chatDrawerOpen ? (
-          <p className="mt-3 text-[11px] text-muted-foreground/60 mono">
-            {t("workspace.empty.hintChat")}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Thread bar — active thread name + switcher + rename + new
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * Always-visible bar above the tab strip showing the active thread.
- * Hosts three controls:
- *
- *   - The thread name (editable inline — click pencil to rename)
- *   - A switcher dropdown listing every thread in the project
- *   - "+ new thread" — clears the active thread; the next send creates
- *     a fresh one and we adopt its id from the create-run response
- *
- * When no thread is selected (post-"new thread" or empty project) the
- * bar shows "New conversation" as a placeholder.
- */
+/** Header strip above the chat. Thread switcher, context-bundle
+ *  pill, cost, and a focus-mode toggle. */
 function ThreadBar({
   projectId,
   threads,
   activeThread,
   activeThreadCost,
-  onCloseDrawer,
+  fullModal,
+  onToggleFullModal,
   onOpenContext,
   onPickThread,
   onNewThread,
@@ -652,13 +536,10 @@ function ThreadBar({
   projectId: string;
   threads: Thread[];
   activeThread: Thread | null;
-  /** Total $ cost across the active thread's runs, or null when no
-   *  run in this thread has reported a cost yet. */
+  /** Sum of run costs in this thread, or null if no run reported a cost. */
   activeThreadCost: number | null;
-  /** Close button in the bar — collapses the chat drawer entirely so
-   *  the center pane reclaims the chat's width for full-screen file
-   *  work. */
-  onCloseDrawer?: () => void;
+  fullModal?: boolean;
+  onToggleFullModal?: () => void;
   onOpenContext: () => void;
   onPickThread: (id: string) => void;
   onNewThread: () => void;
@@ -686,10 +567,8 @@ function ThreadBar({
     },
   });
 
-  // ⌘⇧A / Ctrl+Shift+A — toggle the active thread's archived state.
-  // Picked over a plain ⌘A because that conflicts with "select all".
-  // Skips when an editable element is focused so it doesn't fire while
-  // the user is typing (composer, rename input, etc.).
+  // ⌘⇧A archives the active thread. Plain ⌘A is taken by "select all",
+  // and shift makes it a deliberate gesture. Skipped while typing.
   useEffect(() => {
     if (!activeThread) return;
     const onKey = (e: KeyboardEvent) => {
@@ -742,125 +621,30 @@ function ThreadBar({
   const cancelEdit = () => setEditing(false);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-1.5 border-b shrink-0 bg-muted/10">
-      {activeThread?.worktreePath ? (
-        <span
-          title={`worktree: ${activeThread.worktreePath}`}
-          className="text-sky-600 dark:text-sky-400 shrink-0"
-        >
-          <GitBranch className="size-3.5" />
-        </span>
-      ) : (
-        <MessagesSquare className="size-3.5 text-muted-foreground shrink-0" />
-      )}
-      {editing && activeThread ? (
-        <input
-          ref={inputRef}
-          value={draftName}
-          onChange={(e) => setDraftName(e.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.nativeEvent.isComposing &&
-              e.nativeEvent.keyCode !== 229
-            ) {
-              e.preventDefault();
-              commitEdit();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              cancelEdit();
-            }
-          }}
-          className="flex-1 min-w-0 bg-transparent border-0 px-0 py-0 text-sm font-medium focus:outline-none focus:ring-0"
-        />
-      ) : (
-        <span
-          className={cn(
-            "flex-1 min-w-0 truncate text-sm flex items-center gap-2",
-            activeThread ? "font-medium" : "italic text-muted-foreground",
-          )}
-          title={activeThread?.name}
-        >
-          <span className="truncate">
-            {activeThread?.name ?? t("thread.bar.newConversation")}
-          </span>
-          {activeThread && activeThread.status !== "active" ? (
-            <span
-              className={cn(
-                "shrink-0 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
-                activeThread.status === "done"
-                  ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10"
-                  : "border-zinc-500/40 text-zinc-600 dark:text-zinc-400 bg-zinc-500/10",
-              )}
-            >
-              {activeThread.status === "done" ? (
-                <CheckCircle2 className="size-2.5" />
-              ) : (
-                <Archive className="size-2.5" />
-              )}
-              {activeThread.status}
-            </span>
-          ) : null}
-        </span>
-      )}
-      {activeThread && !editing ? (
-        <>
-          <button
-            type="button"
-            onClick={startEdit}
-            title={t("thread.bar.rename")}
-            aria-label={t("thread.bar.rename")}
-            className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-          >
-            <Pencil className="size-3" />
-          </button>
-          <button
-            type="button"
-            onClick={onOpenContext}
-            title={t("thread.bar.editContext")}
-            aria-label={t("thread.bar.editContext")}
-            className={cn(
-              "inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] transition-colors",
-              activeThread.contextBundle
-                ? "text-sky-700 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted",
-            )}
-          >
-            <Paperclip className="size-3" />
-            {activeThread.contextBundle ? (
-              <span className="mono">
-                {compactBundleSize(activeThread.contextBundle)}
-              </span>
-            ) : (
-              <span>{t("thread.bar.addContext")}</span>
-            )}
-          </button>
-        </>
-      ) : null}
-
-      {activeThreadCost !== null ? (
-        <span
-          className="text-[11px] text-muted-foreground/80 mono shrink-0"
-          title={t("thread.bar.totalCost", {
-            value: `$${activeThreadCost.toFixed(4)}`,
-          })}
-        >
-          {formatThreadCost(activeThreadCost)}
-        </span>
-      ) : null}
-
+    <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border shrink-0 bg-card">
+      {/* Thread switcher. The thread name lives in the channel banner
+       *  above; in here we just need pick / attach / manage. */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            className="inline-flex items-center gap-1.5 px-2 h-7 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             title={t("thread.bar.switch")}
           >
+            {activeThread?.worktreePath ? (
+              <GitBranch className="size-3.5 text-sky-600 dark:text-sky-400" />
+            ) : (
+              <MessagesSquare className="size-3.5" />
+            )}
+            <span>
+              {activeThread
+                ? t("thread.bar.threadsCount", { n: threads.length })
+                : t("thread.bar.newConversation")}
+            </span>
             <ChevronDown className="size-3" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-[18rem] max-w-[24rem]">
+        <DropdownMenuContent align="start" className="min-w-[18rem] max-w-[24rem]">
           <DropdownMenuLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             {t("thread.bar.threadsCount", { n: threads.length })}
           </DropdownMenuLabel>
@@ -888,10 +672,7 @@ function ThreadBar({
             ))
           )}
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={onNewThread}
-            className="gap-2 text-sm"
-          >
+          <DropdownMenuItem onSelect={onNewThread} className="gap-2 text-sm">
             <Plus className="size-3.5 text-muted-foreground" />
             {t("thread.bar.newThread")}
           </DropdownMenuItem>
@@ -908,6 +689,15 @@ function ThreadBar({
           {activeThread ? (
             <>
               <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => activeThread && startEdit()}
+                className="gap-2 text-sm"
+              >
+                <span className="size-3.5 inline-flex items-center justify-center text-muted-foreground">
+                  ✎
+                </span>
+                {t("thread.bar.rename")}
+              </DropdownMenuItem>
               {activeThread.status !== "done" ? (
                 <DropdownMenuItem
                   onSelect={() =>
@@ -960,26 +750,143 @@ function ThreadBar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <button
-        type="button"
-        onClick={onNewThread}
-        title={t("thread.bar.newThread")}
-        aria-label={t("thread.bar.newThread")}
-        className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-      >
-        <Plus className="size-3.5" />
-      </button>
-      {onCloseDrawer ? (
+      {/* Rename swaps in over the switcher to keep the bar one row. */}
+      {editing && activeThread ? (
+        <input
+          ref={inputRef}
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={(e) => {
+            if (
+              e.key === "Enter" &&
+              !e.nativeEvent.isComposing &&
+              e.nativeEvent.keyCode !== 229
+            ) {
+              e.preventDefault();
+              commitEdit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              cancelEdit();
+            }
+          }}
+          placeholder={t("thread.bar.rename")}
+          className="flex-1 min-w-0 bg-transparent border-0 px-2 py-0 text-sm focus:outline-none focus:ring-0"
+        />
+      ) : (
+        <div className="flex-1" />
+      )}
+
+      {activeThread ? (
         <button
           type="button"
-          onClick={onCloseDrawer}
-          title={t("workspace.chat.close")}
-          aria-label={t("workspace.chat.close")}
-          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          onClick={onOpenContext}
+          title={t("thread.bar.editContext")}
+          aria-label={t("thread.bar.editContext")}
+          className={cn(
+            "inline-flex items-center gap-1 px-1.5 h-7 rounded text-[11px] transition-colors shrink-0",
+            activeThread.contextBundle
+              ? "text-sky-700 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted",
+          )}
         >
-          <X className="size-3.5" />
+          <Paperclip className="size-3" />
+          {activeThread.contextBundle ? (
+            <span className="mono">
+              {compactBundleSize(activeThread.contextBundle)}
+            </span>
+          ) : null}
         </button>
       ) : null}
+
+      {activeThreadCost !== null ? (
+        <span
+          className="text-[11px] text-muted-foreground/80 mono shrink-0 px-1"
+          title={t("thread.bar.totalCost", {
+            value: `$${activeThreadCost.toFixed(4)}`,
+          })}
+        >
+          {formatThreadCost(activeThreadCost)}
+        </span>
+      ) : null}
+
+      {onToggleFullModal ? (
+        <button
+          type="button"
+          onClick={onToggleFullModal}
+          className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          title={
+            fullModal
+              ? t("workspace.chat.exitFullModal")
+              : t("workspace.chat.enterFullModal")
+          }
+          aria-label={
+            fullModal
+              ? t("workspace.chat.exitFullModal")
+              : t("workspace.chat.enterFullModal")
+          }
+        >
+          {fullModal ? (
+            <Minimize2 className="size-3.5" />
+          ) : (
+            <Expand className="size-3.5" />
+          )}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+const PANEL_MIN_WIDTH = 320;
+const PANEL_MAX_WIDTH = 1200;
+
+/** Drag handle on the file viewer's left edge. Listeners attach to
+ *  the document so the cursor can wander outside the 6px hot zone
+ *  without dropping the drag. */
+function PanelResizer({
+  width,
+  onChange,
+}: {
+  width: number;
+  onChange: (next: number) => void;
+}) {
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = width;
+    const onMove = (ev: MouseEvent) => {
+      // Cursor moves left → panel grows (chat shrinks).
+      const dx = startX - ev.clientX;
+      const next = Math.min(
+        PANEL_MAX_WIDTH,
+        Math.max(PANEL_MIN_WIDTH, startWidth + dx),
+      );
+      onChange(next);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    // Pin the cursor and kill text selection while dragging so the OS
+    // doesn't try to select content the cursor sweeps over.
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      onMouseDown={onMouseDown}
+      className="absolute left-0 top-0 bottom-0 z-10 w-1.5 -ml-0.5 cursor-col-resize group"
+    >
+      <span
+        aria-hidden
+        className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-transparent group-hover:bg-foreground/25 transition-colors"
+      />
     </div>
   );
 }
@@ -995,107 +902,76 @@ function timeAgo(iso: string): string {
   return `${d}d`;
 }
 
-/** Read a boolean flag from localStorage. Falls back to `def()` —
- *  `def` is a thunk so we can do a viewport check at first read
- *  without paying the lookup cost on every re-render. */
-function readBoolFlag(key: string, def: () => boolean): boolean {
-  if (typeof window === "undefined") return def();
-  const v = window.localStorage.getItem(key);
-  if (v === "1") return true;
-  if (v === "0") return false;
-  return def();
-}
-
-function writeBoolFlag(key: string, value: boolean): void {
-  try {
-    window.localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    // private mode / quota — silently skip
-  }
-}
-
-/** Compact USD for the thread-bar total. Slightly less aggressive
- *  rounding than the per-message display so a thread total of $0.043
- *  doesn't read as "$0" in the bar. */
+/** Three-decimal default avoids a $0.043 total reading as "$0". */
 function formatThreadCost(usd: number): string {
   if (usd < 0.01) return `$${usd.toFixed(4)}`;
   if (usd < 10) return `$${usd.toFixed(3)}`;
   return `$${usd.toFixed(2)}`;
 }
 
-/** Size pill for the thread-bar's context button. Char count for
- *  short bundles, "Nk" for longer ones. Reads at a glance. */
 function compactBundleSize(text: string): string {
   const n = text.length;
   if (n < 1000) return `${n}`;
   return `${(n / 1000).toFixed(1)}k`;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// File tab bar
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * Center-pane tab strip. Files only — chat moved to its own drawer,
- * so the strip's job is now purely "which file am I looking at?"
- *
- * The right edge holds the chat-drawer toggle so opening / closing
- * chat is a one-click operation no matter where you are in the file
- * stack.
- */
+/** File tab strip. Each tab shows a small initials badge of the agent
+ *  currently editing that file (when any) — so the user can see
+ *  "@AD is in main.py *right now*" without leaving the chat. */
 function FileTabBar({
   activeFile,
   openFiles,
+  activeByPath,
+  lineByPath,
+  agents,
   onActivate,
   onClose,
-  chatDrawerOpen,
-  onToggleChatDrawer,
+  onCloseAll,
 }: {
   activeFile: string | null;
   openFiles: string[];
+  activeByPath?: Map<string, string>;
+  lineByPath?: Map<string, number>;
+  agents?: Agent[];
   onActivate: (path: string) => void;
   onClose: (path: string) => void;
-  chatDrawerOpen: boolean;
-  onToggleChatDrawer: () => void;
+  onCloseAll: () => void;
 }) {
   const { t } = useI18n();
   return (
-    <div className="flex items-stretch gap-px border-b bg-muted/10 px-1 shrink-0 overflow-x-auto">
-      {openFiles.map((path) => (
-        <Tab
-          key={path}
-          active={activeFile === path}
-          icon={<FileText className="size-3.5" />}
-          label={basename(path)}
-          title={path}
-          onActivate={() => onActivate(path)}
-          onClose={() => onClose(path)}
-        />
-      ))}
-      <div className="flex-1" />
+    <div className="flex items-stretch border-b border-border bg-muted/30 shrink-0">
+      <div className="flex-1 min-w-0 flex items-stretch gap-px px-1 overflow-x-auto subtle-scrollbar">
+        {openFiles.map((path) => {
+          const liveAgentId = activeByPath?.get(path);
+          const liveAgent = liveAgentId
+            ? agents?.find((a) => a.id === liveAgentId)
+            : undefined;
+          const liveLine = lineByPath?.get(path);
+          return (
+            <Tab
+              key={path}
+              active={activeFile === path}
+              icon={<FileText className="size-3.5" />}
+              label={basename(path)}
+              title={path}
+              liveAgent={liveAgent}
+              liveLine={liveLine}
+              onActivate={() => onActivate(path)}
+              onClose={() => onClose(path)}
+            />
+          );
+        })}
+      </div>
       <button
         type="button"
-        onClick={onToggleChatDrawer}
-        title={
-          chatDrawerOpen
-            ? t("workspace.chat.close")
-            : t("workspace.chat.open")
-        }
-        aria-label={
-          chatDrawerOpen
-            ? t("workspace.chat.close")
-            : t("workspace.chat.open")
-        }
-        className={cn(
-          "inline-flex items-center gap-1 px-2 self-center h-6 rounded text-[11px] transition-colors mr-1",
-          chatDrawerOpen
-            ? "bg-foreground/5 text-foreground"
-            : "text-muted-foreground hover:text-foreground hover:bg-muted",
-        )}
+        onClick={onCloseAll}
+        title={t("workspace.tabs.closeAll")}
+        aria-label={t("workspace.tabs.closeAll")}
+        className="inline-flex items-center gap-1 px-2 self-center h-6 mx-1 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors whitespace-nowrap shrink-0"
       >
-        <MessageCircle className="size-3.5" />
-        <span>{t("workspace.chat.label")}</span>
-        <span className="text-muted-foreground/60 mono ml-1">⌘L</span>
+        <X className="size-3 shrink-0" />
+        <span>{t("workspace.tabs.closeAll")}</span>
+        <span className="text-muted-foreground/60 mono ml-1">⌘\</span>
       </button>
     </div>
   );
@@ -1106,6 +982,8 @@ function Tab({
   icon,
   label,
   title,
+  liveAgent,
+  liveLine,
   onActivate,
   onClose,
 }: {
@@ -1113,6 +991,8 @@ function Tab({
   icon: React.ReactNode;
   label: string;
   title?: string;
+  liveAgent?: Agent;
+  liveLine?: number;
   onActivate: () => void;
   onClose?: () => void;
 }) {
@@ -1125,10 +1005,29 @@ function Tab({
           : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40",
       )}
       onClick={onActivate}
-      title={title}
+      title={
+        liveAgent && title
+          ? `${title}${liveLine ? ":" + liveLine : ""} · @${liveAgent.name} editing now`
+          : title
+      }
     >
       <span className="opacity-70 shrink-0">{icon}</span>
       <span className="truncate">{label}</span>
+      {liveAgent ? (
+        <>
+          <AgentInitialBadge
+            agent={liveAgent}
+            live
+            size="xs"
+            className="ml-0.5"
+          />
+          {liveLine ? (
+            <span className="text-[10px] text-muted-foreground/80 mono shrink-0 ml-0.5">
+              :{liveLine}
+            </span>
+          ) : null}
+        </>
+      ) : null}
       {onClose ? (
         <button
           type="button"
@@ -1156,10 +1055,6 @@ function basename(path: string): string {
   return i >= 0 ? path.slice(i + 1) : path;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Chat panel — extracted so the tab system can swap it in/out
-// ────────────────────────────────────────────────────────────────────────────
-
 function ChatPanel({
   project,
   agentList,
@@ -1183,12 +1078,9 @@ function ChatPanel({
   manifests: import("@loom/core").AdapterManifest[];
   threads: ReturnType<typeof useRoomDerived>["threads"];
   working: Agent[];
-  /** Active thread the chat is filtered to. null = "new conversation",
-   *  in which case the next send creates a thread server-side and the
-   *  parent adopts the returned id via `onAdoptThreadId`. */
+  /** null = the next send creates a fresh thread; we adopt the
+   *  returned id via `onAdoptThreadId`. */
   activeThreadId: string | null;
-  /** Whether the active thread has a non-empty context bundle — drives
-   *  visibility of the composer's "attach context" toggle. */
   threadHasContext: boolean;
   onAdoptThreadId: (id: string) => void;
   agentIds: string[];
@@ -1219,12 +1111,10 @@ function ChatPanel({
     if (el && stickyBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [threads.length, working.length]);
 
-  // Consume pending jumps after layout — same scroll mechanism the
-  // hand-off badges use, so the visual treatment (smooth scroll + flash)
-  // is consistent regardless of where the click came from.
+  // Same scroll-and-flash treatment hand-off badges use, so jumps from
+  // anywhere look identical.
   useEffect(() => {
     if (!pendingJumpRunId) return;
-    // Defer so the chat tab has actually mounted.
     const id = window.setTimeout(() => {
       const el = document.querySelector(
         `[data-run-id="${pendingJumpRunId}"][data-msg-kind="agent"]`,
@@ -1266,11 +1156,11 @@ function ChatPanel({
 
   return (
     <>
-      {/* Drawer-width chat — already constrained by the drawer's width
-       *  (~440px), so we don't apply an extra max-width here. The
-       *  scroll container is the drawer itself; messages flow within. */}
-      <div ref={bodyRef} className="flex-1 overflow-y-auto bg-background">
-        <div className="w-full py-3">
+      <div
+        ref={bodyRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden bg-card subtle-scrollbar"
+      >
+        <div className="mx-auto w-full max-w-3xl py-3 px-4">
           {agentList.length === 0 ? (
             <Empty
               icon={<Users className="size-10 text-muted-foreground" />}
@@ -1284,10 +1174,7 @@ function ChatPanel({
               }
             />
           ) : threads.length === 0 ? (
-            <Empty
-              icon={<MessageCircle className="size-10 text-muted-foreground" />}
-              title={t("chat.empty.firstMessage")}
-            />
+            <ChatStartHint agents={agentList} manifests={manifests} />
           ) : (
             threads.map((thread, ti) => {
               const prevThread = threads[ti - 1];
@@ -1347,25 +1234,66 @@ function ChatPanel({
       <WorkingIndicator workingAgents={working} />
 
       {agentList.length > 0 ? (
-        <div className="border-t bg-background shrink-0">
-          <Composer
-            agents={agentList}
-            manifests={manifests}
-            agentIds={agentIds}
-            onAgentIdsChange={setAgentIds}
-            threadId={activeThreadId}
-            threadHasContext={threadHasContext}
-            onThreadCreated={onAdoptThreadId}
-            initialDraft={draft}
-            draftKey={draftKey}
-            onSent={() => {
-              setDraft(undefined);
-              stickyBottomRef.current = true;
-            }}
-          />
+        <div className="border-t border-border bg-card shrink-0">
+          <div className="mx-auto w-full max-w-3xl px-4">
+            <Composer
+              agents={agentList}
+              manifests={manifests}
+              agentIds={agentIds}
+              onAgentIdsChange={setAgentIds}
+              threadId={activeThreadId}
+              threadHasContext={threadHasContext}
+              onThreadCreated={onAdoptThreadId}
+              initialDraft={draft}
+              draftKey={draftKey}
+              onSent={() => {
+                setDraft(undefined);
+                stickyBottomRef.current = true;
+              }}
+            />
+          </div>
         </div>
       ) : null}
     </>
+  );
+}
+
+/** Greeting shown when a project has agents but no thread has started
+ *  yet. Lists the team so the room feels populated even before the
+ *  first message — "you're walking into a staffed channel, not staring
+ *  at a blank editor." */
+function ChatStartHint({
+  agents,
+  manifests,
+}: {
+  agents: Agent[];
+  manifests: AdapterManifest[];
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="px-4 py-12 text-center">
+      <div className="inline-flex flex-wrap items-center justify-center gap-1.5 mb-4">
+        {agents.slice(0, 6).map((a) => (
+          <span
+            key={a.id}
+            className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 pl-1 pr-2 py-0.5 text-xs"
+          >
+            <AgentAvatar
+              agent={a}
+              manifest={manifests.find((m) => m.kind === a.adapterKind)}
+              size="sm"
+            />
+            <span className="font-medium">@{a.name}</span>
+          </span>
+        ))}
+      </div>
+      <h3 className="text-base font-semibold tracking-tight">
+        {t("chat.empty.firstMessage")}
+      </h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {t("chat.start.hint")}
+      </p>
+    </div>
   );
 }
 
@@ -1387,12 +1315,8 @@ function Empty({
   );
 }
 
-/**
- * Pull persisted tab state. Defensive parse — anything non-conforming
- * (corrupted JSON, schema drift, missing key) reverts to a clean
- * "chat tab only" default. Persistence is a UX nicety, not a
- * correctness requirement, so we never throw.
- */
+/** Defensive parse — corrupted JSON / schema drift falls back to the
+ *  empty default. Persistence is a nicety, not correctness. */
 function readPersistedTabs(
   key: string | null,
 ): {

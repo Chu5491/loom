@@ -5,6 +5,7 @@ import type { Run, RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
 import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js";
 import { PageScroll } from "../components/PageScroll.js";
+import { PageHeader } from "../components/PageHeader.js";
 import { useI18n } from "../context/I18nContext.js";
 
 const ALL_STATUSES: RunStatus[] = [
@@ -76,12 +77,15 @@ export function RunsPage() {
 
   return (
     <PageScroll className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{t("runs.title")}</h1>
-        <Button onClick={() => setShowForm((s) => !s)}>
-          {showForm ? t("common.cancel") : t("runs.new")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("runs.title")}
+        description={t("runs.subtitle")}
+        action={
+          <Button onClick={() => setShowForm((s) => !s)}>
+            {showForm ? t("common.cancel") : t("runs.new")}
+          </Button>
+        }
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <Field label={t("runs.filter.agent")}>

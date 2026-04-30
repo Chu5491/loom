@@ -85,6 +85,29 @@ runsRoute.get("/:id/result", async (c) => {
 });
 
 /**
+ * Last few lines of stderr — what the user wants to see when a run
+ * `failed` with a 1-line summary like "session not found" or "command
+ * not on PATH". Tails the stored log file rather than streaming live so
+ * it works for completed runs that the SSE channel has already closed.
+ */
+runsRoute.get("/:id/error", async (c) => {
+  const run = getRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not_found" }, 404);
+  if (!run.logPath) return c.json({ stderr: null });
+  const events = await readLogFile(run.logPath).catch(() => []);
+  const buf: string[] = [];
+  for (const ev of events) {
+    if (ev.kind !== "chunk" || ev.chunk.stream !== "stderr") continue;
+    buf.push(ev.chunk.data);
+  }
+  // Trim to a sensible tail — runaway processes can spam stderr.
+  const joined = buf.join("");
+  const lines = joined.split("\n").filter((l) => l.length > 0);
+  const tail = lines.slice(-15).join("\n");
+  return c.json({ stderr: tail || null });
+});
+
+/**
  * Per-file change summary for a run. Reads the persisted `run_changes`
  * rows first — those are durable past git gc. Falls back to live `git
  * diff` against the snapshot refs only when the table is empty (legacy

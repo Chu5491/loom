@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type {
   AdapterField,
   AdapterManifest,
@@ -13,8 +13,18 @@ import {
   type CreateAgentBody,
   type UpdateAgentBody,
 } from "../api/client.js";
-import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js";
+import { Button, Card, Field, Input, Textarea } from "../components/ui.js";
 import { PageScroll } from "../components/PageScroll.js";
+import { PageHeader } from "../components/PageHeader.js";
+import { AgentAvatar } from "../components/Chat.js";
+import {
+  AGENT_COLORS,
+  type AgentColor,
+  agentColorOf,
+  classesFor,
+  isAgentColor,
+} from "../components/agentColor.js";
+import { cn } from "../lib/utils.js";
 import { AdapterFieldInput } from "../components/AdapterFields.js";
 import { AdapterIcon } from "../components/AdapterIcon.js";
 import {
@@ -34,6 +44,7 @@ export function AgentsPage() {
   // project scope. There is no flat "all agents" listing in the new
   // navigation model.
   const { id: projectId } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
   const list = useQuery({
@@ -47,6 +58,21 @@ export function AgentsPage() {
     : undefined;
 
   const [formState, setFormState] = useState<FormMode | null>(null);
+
+  // ?edit=:agentId — opens the edit form straight from a deep link
+  // (the side-panel agent rows use this). Strips the param after
+  // consuming so closing the form doesn't bounce back into edit mode.
+  const editParam = searchParams.get("edit");
+  useEffect(() => {
+    if (!editParam) return;
+    const target = list.data?.agents.find((a) => a.id === editParam);
+    if (!target) return;
+    setFormState({ mode: "edit", agent: target });
+    const next = new URLSearchParams(searchParams);
+    next.delete("edit");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editParam, list.data]);
 
   const create = useMutation({
     mutationFn: api.createAgent,
@@ -72,16 +98,22 @@ export function AgentsPage() {
 
   return (
     <PageScroll className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() =>
-            setFormState((s) => (s ? null : { mode: "create" }))
-          }
-          disabled={!activeProject && (projects.data?.projects.length ?? 0) === 0}
-        >
-          {formState ? t("common.cancel") : t("agents.new")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("agents.title")}
+        description={t("agents.subtitle")}
+        action={
+          <Button
+            onClick={() =>
+              setFormState((s) => (s ? null : { mode: "create" }))
+            }
+            disabled={
+              !activeProject && (projects.data?.projects.length ?? 0) === 0
+            }
+          >
+            {formState ? t("common.cancel") : t("agents.new")}
+          </Button>
+        }
+      />
 
       {(projects.data?.projects.length ?? 0) === 0 ? (
         <Card>
@@ -99,6 +131,11 @@ export function AgentsPage() {
 
       {formState ? (
         <AgentForm
+          // Force a fresh form when switching to a different agent —
+          // the inner state is initialised from `state.agent` once
+          // (useState initial values), so React would otherwise keep
+          // the previous agent's name / prompt / config in the inputs.
+          key={formState.mode === "edit" ? formState.agent.id : "create"}
           state={formState}
           manifests={adapters.data?.adapters ?? []}
           loadingManifests={adapters.isLoading}
@@ -133,32 +170,51 @@ export function AgentsPage() {
           </p>
         </Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           {list.data!.agents.map((a) => {
             const manifest = adapters.data?.adapters.find(
               (m) => m.kind === a.adapterKind,
             );
+            const cls = classesFor(agentColorOf(a));
+            const model =
+              typeof a.adapterConfig?.model === "string"
+                ? (a.adapterConfig.model as string)
+                : undefined;
             return (
-              <Card key={a.id} className="space-y-3">
-                <div className="flex items-start gap-3">
-                  {manifest ? <AdapterIcon manifest={manifest} size={32} /> : null}
+              <div
+                key={a.id}
+                className="group rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors"
+              >
+                <div className="flex items-start gap-3 p-3">
+                  <AgentAvatar agent={a} manifest={manifest} size="lg" />
                   <div className="min-w-0 flex-1">
-                    <Link
-                      to={`/runs?agentId=${a.id}`}
-                      className="font-medium hover:underline truncate block"
-                    >
-                      {a.name}
-                    </Link>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-                      <Badge tone="info">
-                        {manifest?.displayName ?? a.adapterKind}
-                      </Badge>
-                      {a.role ? <Badge>{a.role}</Badge> : null}
-                      {typeof a.adapterConfig?.model === "string" ? (
-                        <span className="text-xs text-zinc-500 mono truncate">
-                          {a.adapterConfig.model as string}
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <Link
+                        to={`/runs?agentId=${a.id}`}
+                        className={cn(
+                          "font-semibold tracking-tight hover:underline truncate",
+                          cls.text,
+                        )}
+                      >
+                        @{a.name}
+                      </Link>
+                      {a.role ? (
+                        <span className="text-xs text-muted-foreground/80 shrink-0">
+                          {a.role}
                         </span>
                       ) : null}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                      <span>{manifest?.displayName ?? a.adapterKind}</span>
+                      {model ? (
+                        <>
+                          <span className="text-muted-foreground/30">·</span>
+                          <span className="mono truncate">{model}</span>
+                        </>
+                      ) : null}
+                      <AutonomyChip
+                        autonomy={readAutonomy(a.adapterConfig)}
+                      />
                     </div>
                     <div className="mt-2">
                       <AdapterStatusLive
@@ -171,7 +227,7 @@ export function AgentsPage() {
                       />
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
+                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -192,12 +248,7 @@ export function AgentsPage() {
                     </Button>
                   </div>
                 </div>
-                {a.defaultCwd ? (
-                  <p className="text-xs text-zinc-500 mono truncate" title={a.defaultCwd}>
-                    cwd: {a.defaultCwd}
-                  </p>
-                ) : null}
-              </Card>
+              </div>
             );
           })}
         </div>
@@ -207,6 +258,17 @@ export function AgentsPage() {
 }
 
 const ROLE_OPTIONS = ["engineer", "researcher", "reviewer", "writer", "other"] as const;
+
+type Autonomy = "read-only" | "suggest" | "auto";
+const AUTONOMY_LEVELS: Autonomy[] = ["read-only", "suggest", "auto"];
+
+function readAutonomy(config: Record<string, unknown> | undefined): Autonomy {
+  const v = config?.autonomy;
+  if (v === "read-only" || v === "suggest" || v === "auto") return v;
+  // Existing agents (created before this field existed) keep behaving
+  // exactly as they used to — "auto" matches "agents directly write".
+  return "auto";
+}
 
 function AgentForm({
   state,
@@ -249,6 +311,14 @@ function AgentForm({
   const [config, setConfig] = useState<Record<string, unknown>>(
     editingAgent?.adapterConfig ?? {},
   );
+  const [autonomy, setAutonomy] = useState<Autonomy>(
+    readAutonomy(editingAgent?.adapterConfig),
+  );
+  // Explicit color override. null = pick automatically from agent.id hash.
+  const [color, setColor] = useState<AgentColor | null>(() => {
+    const stored = editingAgent?.adapterConfig?.color;
+    return isAgentColor(stored) ? stored : null;
+  });
   const [showAdvanced, setShowAdvanced] = useState(isEdit);
 
   const skills = useQuery({ queryKey: ["specs"], queryFn: () => api.listSpecs() });
@@ -292,7 +362,12 @@ function AgentForm({
       adapterKind: selectedManifest.kind,
       role: role || null,
       defaultCwd: defaultCwd || null,
-      adapterConfig: stripUndefined(config),
+      adapterConfig: stripUndefined({
+        ...config,
+        autonomy,
+        // null = no override; persisted as undefined so the hash kicks in.
+        color: color ?? undefined,
+      }),
     });
   };
 
@@ -399,7 +474,26 @@ function AgentForm({
                   placeholder={t("agents.placeholder.defaultCwd")}
                 />
               </Field>
+              <Field
+                label={t("agents.field.color")}
+                hint={t("agents.field.colorHint")}
+              >
+                <ColorPicker
+                  value={color}
+                  fallback={
+                    editingAgent ? agentColorOf(editingAgent) : "sky"
+                  }
+                  onChange={setColor}
+                />
+              </Field>
             </div>
+          </section>
+
+          <section className="space-y-3">
+            <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              {t("agents.section.autonomy")}
+            </div>
+            <AutonomySlider value={autonomy} onChange={setAutonomy} />
           </section>
 
           <section className="space-y-3">
@@ -720,6 +814,169 @@ function ModelSourceBadge({
       {source === "live" ? "● " : source === "error" ? "⚠ " : ""}
       {label}
     </span>
+  );
+}
+
+/** Swatch row — palette colors as small dots. The "auto" entry is
+ *  the leftmost option (deselects an explicit choice and lets the
+ *  hash-based default pick kick in). The fallback color is what the
+ *  hash would produce if nothing's set, so the auto swatch previews
+ *  the same dot the user would otherwise see. */
+function ColorPicker({
+  value,
+  fallback,
+  onChange,
+}: {
+  value: AgentColor | null;
+  fallback: AgentColor;
+  onChange: (next: AgentColor | null) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        title={t("agents.field.color.auto")}
+        aria-pressed={value === null}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border px-2 h-6 text-[10px] font-semibold uppercase tracking-wider mono transition-colors",
+          value === null
+            ? "border-foreground/50 bg-foreground/[0.04] text-foreground"
+            : "border-border text-muted-foreground hover:text-foreground hover:bg-muted",
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "size-2 rounded-full",
+            classesFor(fallback).dot,
+          )}
+        />
+        {t("agents.field.color.auto")}
+      </button>
+      {AGENT_COLORS.map((c) => {
+        const isSel = value === c;
+        return (
+          <button
+            key={c}
+            type="button"
+            onClick={() => onChange(c)}
+            title={c}
+            aria-label={c}
+            aria-pressed={isSel}
+            className={cn(
+              "inline-flex size-6 items-center justify-center rounded-full border transition-colors",
+              isSel
+                ? "border-foreground/60 ring-2 ring-foreground/30"
+                : "border-border hover:border-foreground/40",
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn("size-3 rounded-full", classesFor(c).dot)}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Tiny pill rendered next to an agent's adapter / model so a glance
+ *  at the team roster tells you who's allowed to do what. */
+function AutonomyChip({ autonomy }: { autonomy: Autonomy }) {
+  const { t } = useI18n();
+  const tone =
+    autonomy === "auto"
+      ? "text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/25"
+      : autonomy === "suggest"
+        ? "text-sky-700 dark:text-sky-400 bg-sky-500/10 border-sky-500/25"
+        : "text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider mono",
+        tone,
+      )}
+      title={t(`agents.autonomy.${autonomy}.hint`)}
+    >
+      {t(`agents.autonomy.${autonomy}.label`)}
+    </span>
+  );
+}
+
+/** Slider with three discrete stops — read-only, suggest, auto. The
+ *  range input snaps because step=1 and we render a full-width track
+ *  with stop labels below; the badge on the right reads at a glance.
+ *  Persisted into adapterConfig.autonomy so it travels with the agent
+ *  but doesn't require a schema change. */
+function AutonomySlider({
+  value,
+  onChange,
+}: {
+  value: Autonomy;
+  onChange: (next: Autonomy) => void;
+}) {
+  const { t } = useI18n();
+  const idx = AUTONOMY_LEVELS.indexOf(value);
+  const tone =
+    value === "auto"
+      ? "text-amber-700 dark:text-amber-400 bg-amber-500/15"
+      : value === "suggest"
+        ? "text-sky-700 dark:text-sky-400 bg-sky-500/15"
+        : "text-emerald-700 dark:text-emerald-400 bg-emerald-500/15";
+  return (
+    <div className="rounded-md border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50 p-3 space-y-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">
+            {t("agents.autonomy.title")}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {t("agents.autonomy.hint")}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider mono",
+            tone,
+          )}
+        >
+          {t(`agents.autonomy.${value}.label`)}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={AUTONOMY_LEVELS.length - 1}
+        step={1}
+        value={idx}
+        onChange={(e) =>
+          onChange(AUTONOMY_LEVELS[Number(e.target.value)] ?? "auto")
+        }
+        className="w-full accent-foreground/70"
+      />
+      <div className="grid grid-cols-3 gap-2 text-[10px] uppercase tracking-wider mono">
+        {AUTONOMY_LEVELS.map((lvl, i) => (
+          <button
+            key={lvl}
+            type="button"
+            onClick={() => onChange(lvl)}
+            className={cn(
+              "text-center transition-colors",
+              i === 0 && "text-left",
+              i === AUTONOMY_LEVELS.length - 1 && "text-right",
+              lvl === value
+                ? "text-foreground font-semibold"
+                : "text-muted-foreground/70 hover:text-foreground",
+            )}
+          >
+            {t(`agents.autonomy.${lvl}.label`)}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

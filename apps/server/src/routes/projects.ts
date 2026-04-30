@@ -10,6 +10,7 @@ import {
 import { listRunsForPath, listTouchedPaths } from "../db/run-changes.js";
 import { getRun } from "../db/runs.js";
 import { getAgent } from "../db/agents.js";
+import { listForProject as listActiveTouches } from "../services/active-touches.js";
 import { listAllFiles, listTree, readProjectFile } from "../services/project-fs.js";
 
 const createSchema = z.object({
@@ -89,6 +90,22 @@ projectsRoute.get("/:id/touched", (c) => {
   const project = getProject(c.req.param("id"));
   if (!project) return c.json({ error: "not_found" }, 404);
   return c.json({ paths: listTouchedPaths(project.path) });
+});
+
+/**
+ * Files that any currently-running agent is editing right *now*. Backed
+ * by an in-memory store fed from CLI tool_use events; entries vanish
+ * when the run finishes (run_changes takes over for past edits).
+ *
+ * The file tree polls this while a project has active runs and pulses
+ * the matching rows so the user sees ambient progress without having
+ * to scroll the chat.
+ */
+projectsRoute.get("/:id/active-touches", (c) => {
+  const id = c.req.param("id");
+  const project = getProject(id);
+  if (!project) return c.json({ error: "not_found" }, 404);
+  return c.json({ touches: listActiveTouches(id) });
 });
 
 /**

@@ -6,6 +6,7 @@ import type { Spec } from "@loom/core";
 import { api, type CreateSpecBody, type UpdateSpecBody } from "../api/client.js";
 import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js";
 import { PageScroll } from "../components/PageScroll.js";
+import { PageHeader } from "../components/PageHeader.js";
 import { useI18n } from "../context/I18nContext.js";
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -33,11 +34,15 @@ export function SpecsPage() {
 
   return (
     <PageScroll className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={() => navigate(`${baseUrl}/new`)}>
-          {t("specs.new")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("specs.title")}
+        description={t("specs.subtitle")}
+        action={
+          <Button onClick={() => navigate(`${baseUrl}/new`)}>
+            {t("specs.new")}
+          </Button>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-[260px_1fr]">
         <SpecList

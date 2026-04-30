@@ -5,6 +5,7 @@ import { threadNameFromPrompt } from "../db/client.js";
 import { getProject } from "../db/projects.js";
 import {
   createRun,
+  getLatestSessionId,
   getRun,
   markRunFinished,
   markRunRunning,
@@ -12,6 +13,7 @@ import {
   setRunBeforeRef,
   setRunCostUsd,
   setRunLogPath,
+  setRunSessionId,
 } from "../db/runs.js";
 import { replaceRunChanges } from "../db/run-changes.js";
 import { getSpecsByIds } from "../db/specs.js";
@@ -20,6 +22,12 @@ import {
   getThread,
   touchThread,
 } from "../db/threads.js";
+import {
+  recordEdits,
+  recordPaths,
+  startTracking,
+  stopTracking,
+} from "./active-touches.js";
 import { diffStat, snapshotWorkTree } from "./git-snapshot.js";
 import { appendChunk, finishLog, startLog } from "./log-store.js";
 
@@ -228,6 +236,15 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     threadContext,
   );
 
+  // Pull the most recent CLI session id captured in this thread for
+  // this agent. The lookup skips poisoned ids — sessions that some
+  // earlier failed run already tried to resume — so we never hand the
+  // CLI a session it has just rejected.
+  const resumeSessionId = threadId.id
+    ? getLatestSessionId({ threadId: threadId.id, agentId: agent.id }) ??
+      undefined
+    : undefined;
+
   const pendingRun = createRun({
     agentId: agent.id,
     threadId: threadId.id,
@@ -236,6 +253,9 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     // Snapshot every skill that participated in this run for later auditing.
     attachedSpecIds: allSkills.map((s) => s.id),
     cwd,
+    // Persist what we're attempting to resume so getLatestSessionId
+    // can poison this id on a future call if this run ends up failing.
+    resumedSessionId: resumeSessionId ?? null,
   });
   // Bump the thread's updated_at — the sidebar orders by recent
   // activity, not creation time, so the active conversation stays
@@ -248,7 +268,15 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const abort = new AbortController();
   activeRuns.set(pendingRun.id, { abort });
 
-  void executeRun(pendingRun.id, agent, adapter, composedPrompt, cwd, abort);
+  void executeRun(
+    pendingRun.id,
+    agent,
+    adapter,
+    composedPrompt,
+    cwd,
+    resumeSessionId,
+    abort,
+  );
 
   return { ok: true, run: getRun(pendingRun.id)! };
 }
@@ -259,6 +287,7 @@ async function executeRun(
   adapter: NonNullable<ReturnType<typeof getAdapter>>,
   composedPrompt: string,
   cwd: string,
+  resumeSessionId: string | undefined,
   abort: AbortController,
 ): Promise<void> {
   if (!agent) return;
@@ -299,15 +328,60 @@ async function executeRun(
       }
     };
 
+    // Capture the CLI session id once, the first time the adapter
+    // surfaces one. The same id appears in multiple events (init,
+    // assistant, result), so latching on first sight keeps the DB
+    // write count down without needing a debounce.
+    let sessionLatched = false;
+    const tapSessionId = (chunk: string) => {
+      if (sessionLatched || !adapter.extractSessionId) return;
+      const sid = adapter.extractSessionId(chunk);
+      if (sid) {
+        setRunSessionId(runId, sid);
+        sessionLatched = true;
+      }
+    };
+
+    // Live "agent is editing this file" tracking. We feed every stdout
+    // chunk through the adapter's tool-use parser; the in-memory store
+    // surfaces the result via /api/projects/:id/active-touches so the
+    // file tree pulses on the relevant rows in real time.
+    if (agent.projectId) {
+      startTracking({
+        runId,
+        agentId: agent.id,
+        projectId: agent.projectId,
+        cwd,
+      });
+    }
+    const tapTouches = (chunk: string) => {
+      // Prefer the richer "edits" parser when the adapter has one —
+      // it gives us a target string we can grep for, so the file-tree
+      // badge can drill down to "@agent in main.py:42" instead of
+      // just "@agent in main.py".
+      if (adapter.extractTouchedEdits) {
+        const edits = adapter.extractTouchedEdits(chunk);
+        if (edits.length > 0) recordEdits(runId, edits);
+        return;
+      }
+      if (adapter.extractTouchedPaths) {
+        const paths = adapter.extractTouchedPaths(chunk);
+        if (paths.length > 0) recordPaths(runId, paths);
+      }
+    };
+
     const handle = await adapter.spawn(
       {
         prompt: composedPrompt,
         cwd,
         env: {},
         signal: abort.signal,
+        resumeSessionId,
         onStdout: (chunk) => {
           appendChunk(runId, "stdout", chunk);
           tapCost(chunk);
+          tapSessionId(chunk);
+          tapTouches(chunk);
         },
         onStderr: (chunk) => appendChunk(runId, "stderr", chunk),
       },
@@ -371,6 +445,9 @@ async function executeRun(
     } catch {
       // Best-effort. Failing to persist changes shouldn't fail the run.
     }
+    // run_changes now owns the post-mortem record of what was touched,
+    // so we drop the live in-memory map entry here.
+    stopTracking(runId);
     activeRuns.delete(runId);
   }
 }
