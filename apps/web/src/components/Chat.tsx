@@ -42,7 +42,9 @@ import {useI18n} from "../context/I18nContext.js";
 import {useTheme} from "../context/ThemeContext.js";
 import {cn} from "../lib/utils.js";
 import {getHighlighter, isSupportedLang} from "../lib/codeHighlighter.js";
-import {agentColorOf, classesFor} from "./agentColor.js";
+import {agentColorOf, classesFor, type ColorClasses} from "./agentColor.js";
+import {fileToolKind, promoteFileToolKind, type FileToolKind} from "./chat/utils.js";
+import {FileToolChip} from "./chat/FileToolChip.js";
 
 marked.setOptions({breaks: true, gfm: true});
 
@@ -386,13 +388,15 @@ function dayLabel(iso: string, t: (key: string) => string): string {
 
 function DaySeparator({ts}: {ts: string}) {
     const {t} = useI18n();
+    // sticky 제거 — 칩이 메시지 위로 떠다녀 콘텐츠를 가리는 버그가 있었음.
+    // 단순 인라인 가로 구분선 + 가운데 라벨이면 스크롤 위치와 무관하게 항상 명확.
     return (
-        <div className="sticky top-0 z-10 my-3 flex items-center gap-3 px-1">
-            <div className="flex-1 border-t" />
-            <span className="rounded-full border bg-background px-3 py-0.5 text-[11px] font-medium text-muted-foreground shadow-sm">
+        <div className="my-4 flex items-center gap-3 px-5">
+            <div className="flex-1 border-t border-border/70" />
+            <span className="rounded-full border border-border/70 bg-card px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                 {dayLabel(ts, t)}
             </span>
-            <div className="flex-1 border-t" />
+            <div className="flex-1 border-t border-border/70" />
         </div>
     );
 }
@@ -413,6 +417,7 @@ function MessageRow({
     isContinuation,
     actions,
     runId,
+    accent,
     children,
 }: {
     avatar: React.ReactNode;
@@ -425,6 +430,9 @@ function MessageRow({
     /** Stamped on the row so `↳ from @prev` badges elsewhere can scroll
      *  to this exact message via [data-run-id="…"][data-msg-kind="agent"]. */
     runId?: {id: string; kind: "user" | "agent"};
+    /** 발화자 색 — 좌측 4px 컬러 바 + 연속 행의 점선 연결자 색 + 호버 시
+     *  배경 틴트에 사용. 사용자 메시지엔 보통 undefined. */
+    accent?: ColorClasses;
     children: React.ReactNode;
 }) {
     return (
@@ -432,24 +440,30 @@ function MessageRow({
             data-run-id={runId?.id}
             data-msg-kind={runId?.kind}
             className={cn(
-                "group relative flex items-start gap-3 px-5 py-0.5 hover:bg-foreground/[0.03]",
-                !isContinuation && "mt-2 pt-1.5 msg-in"
+                "group relative flex items-start gap-3 pl-3 pr-5 py-0.5 transition-colors",
+                accent
+                    ? "hover:bg-foreground/[0.025]"
+                    : "hover:bg-foreground/[0.03]",
+                !isContinuation && "mt-3 pt-2 msg-in"
             )}
         >
+            {/* 좌측 컬러 레일 — 모든 행에 동일 두께로 깔려 발화자가 한눈에 보임.
+             *  isContinuation이면 살짝 더 흐리게, 첫 행이면 진하게. */}
+            {accent ? (
+                <span
+                    aria-hidden
+                    className={cn(
+                        "absolute left-0 top-0 bottom-0 w-[3px] rounded-r-sm",
+                        accent.dot,
+                        isContinuation ? "opacity-30" : "opacity-90",
+                    )}
+                />
+            ) : null}
             <div className="w-9 shrink-0 mt-0.5 relative">
                 {isContinuation ? (
-                    <>
-                        {/* Faint vertical connector tying continuation rows back to
-                         *  their group's avatar. Keeps the eye moving down a single
-                         *  thread without each row re-introducing the speaker. */}
-                        <span
-                            aria-hidden
-                            className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-foreground/[0.08] group-hover:bg-foreground/[0.15] transition-colors"
-                        />
-                        <span className="invisible group-hover:visible block text-right text-[10px] text-muted-foreground/70 mono leading-9 -mt-2 relative">
-                            {fmtTime(timestamp)}
-                        </span>
-                    </>
+                    <span className="invisible group-hover:visible block text-right text-[10px] text-muted-foreground/70 mono leading-9 -mt-2 relative">
+                        {fmtTime(timestamp)}
+                    </span>
                 ) : (
                     avatar
                 )}
@@ -511,11 +525,16 @@ function setHoverTarget(parentRunId: string, on: boolean) {
 function ParentReference({
     parentAgent,
     parentRunId,
+    toAgent,
 }: {
     parentAgent: Agent;
     parentRunId: string;
+    /** 현재 user message의 타깃 — 핸드오프가 다른 에이전트로 가면 두 색을 모두 표시. */
+    toAgent?: Agent;
 }) {
-    const cls = classesFor(agentColorOf(parentAgent));
+    const fromCls = classesFor(agentColorOf(parentAgent));
+    const toCls = toAgent ? classesFor(agentColorOf(toAgent)) : null;
+    const isHandoff = toAgent && toAgent.id !== parentAgent.id;
     return (
         <button
             type="button"
@@ -523,17 +542,77 @@ function ParentReference({
             onMouseEnter={() => setHoverTarget(parentRunId, true)}
             onMouseLeave={() => setHoverTarget(parentRunId, false)}
             className={cn(
-                "group/parent inline-flex items-center gap-1.5 mb-1.5 rounded-md border bg-muted/40",
+                "group/parent inline-flex items-center gap-1.5 mb-1.5 rounded-full border bg-muted/40",
                 "px-2 py-0.5 text-[11px] hover:bg-muted hover:border-foreground/30",
                 "transition-colors cursor-pointer"
             )}
-            title="Jump to parent message"
+            title={
+                isHandoff
+                    ? `Handoff: @${parentAgent.name} → @${toAgent!.name}`
+                    : "Jump to parent message"
+            }
         >
-            <CornerDownLeft className="size-3 -scale-x-100 opacity-60 group-hover/parent:opacity-100" />
-            <span className="text-muted-foreground">from</span>
-            <span className={cn("font-medium", cls.text)}>
-                @{parentAgent.name}
+            {/* parent agent 점 + 이름 */}
+            <span className="inline-flex items-center gap-1">
+                <span className={cn("size-1.5 rounded-full", fromCls.dot)} />
+                <span className={cn("font-medium", fromCls.text)}>
+                    @{parentAgent.name}
+                </span>
             </span>
+            {isHandoff && toCls ? (
+                <>
+                    {/* 핸드오프 화살표 — 두 색을 잇는 미세한 그라디언트 */}
+                    <svg
+                        width="22"
+                        height="10"
+                        viewBox="0 0 22 10"
+                        aria-hidden
+                        className="opacity-80 group-hover/parent:opacity-100"
+                    >
+                        <defs>
+                            <linearGradient id={`ho-${parentRunId}`} x1="0" x2="1">
+                                <stop
+                                    offset="0%"
+                                    stopColor="currentColor"
+                                    className={fromCls.text}
+                                />
+                                <stop
+                                    offset="100%"
+                                    stopColor="currentColor"
+                                    className={toCls.text}
+                                />
+                            </linearGradient>
+                        </defs>
+                        <path
+                            d="M1 5 C 7 5, 11 1, 18 5"
+                            fill="none"
+                            stroke={`url(#ho-${parentRunId})`}
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                        />
+                        <path
+                            d="M14 2 L 18 5 L 14 8"
+                            fill="none"
+                            stroke="currentColor"
+                            className={toCls.text}
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                    </svg>
+                    <span className="inline-flex items-center gap-1">
+                        <span className={cn("size-1.5 rounded-full", toCls.dot)} />
+                        <span className={cn("font-medium", toCls.text)}>
+                            @{toAgent!.name}
+                        </span>
+                    </span>
+                </>
+            ) : (
+                <>
+                    <CornerDownLeft className="size-3 -scale-x-100 opacity-60 group-hover/parent:opacity-100" />
+                    <span className="text-muted-foreground">continued</span>
+                </>
+            )}
         </button>
     );
 }
@@ -608,6 +687,7 @@ export function UserMessage({
                 <ParentReference
                     parentAgent={parentAgent}
                     parentRunId={run.parentRunId}
+                    toAgent={target}
                 />
             ) : null}
             <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
@@ -755,6 +835,7 @@ export function AgentMessage({
             timestamp={run.createdAt}
             isContinuation={isContinuation}
             runId={{id: run.id, kind: "agent"}}
+            accent={isActive ? undefined : cls ?? undefined}
             tag={
                 <span className="inline-flex items-center gap-1.5">
                     <Badge
@@ -958,6 +1039,7 @@ function ActiveProgress({run, events}: {run: Run; events: TailEvent[]}) {
     }, [run]);
 
     const lastTool = [...events].reverse().find((e) => e.kind === "tool");
+    const liveKind = lastTool ? fileToolKind(lastTool.text) : null;
 
     return (
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground mono min-w-0">
@@ -966,17 +1048,27 @@ function ActiveProgress({run, events}: {run: Run; events: TailEvent[]}) {
             {lastTool ? (
                 <>
                     <span className="text-muted-foreground/40 shrink-0">·</span>
-                    <span className="text-foreground/80 font-medium shrink-0">
-                        {lastTool.text}
-                    </span>
-                    {lastTool.detail ? (
-                        <span
-                            className="truncate text-muted-foreground"
-                            title={lastTool.detail}
-                        >
-                            {lastTool.detail}
-                        </span>
-                    ) : null}
+                    {liveKind && lastTool.detail ? (
+                        <FileToolChip
+                            kind={liveKind}
+                            path={lastTool.detail}
+                            live
+                        />
+                    ) : (
+                        <>
+                            <span className="text-foreground/80 font-medium shrink-0">
+                                {lastTool.text}
+                            </span>
+                            {lastTool.detail ? (
+                                <span
+                                    className="truncate text-muted-foreground"
+                                    title={lastTool.detail}
+                                >
+                                    {lastTool.detail}
+                                </span>
+                            ) : null}
+                        </>
+                    )}
                 </>
             ) : null}
         </div>
@@ -999,31 +1091,49 @@ function formatElapsed(s: number): string {
 }
 
 /**
- * Renders an agent's tool activity as a single muted line:
+ * 에이전트의 도구 활동을 한 줄로:
  *
- *   🔧  Read·8  Edit·4  Bash·2  Glob  Write
+ *   🔧  [👁 foo.ts] [✏️ bar.ts]  Bash·2  Grep
  *
- * Counting per kind keeps the message compact even when the agent ran
- * the same tool dozens of times. Hidden when the agent didn't call any
- * tools (most pure-conversation runs). Order is by first-use so it
- * mirrors the actual flow rather than alphabetizing the noise.
+ * 파일 도구(Read/Write/Edit/...)는 경로별 클릭 가능한 칩 — 클릭 시 그 파일이
+ * 에디터에 열림. 같은 파일에 여러 동작이 있으면 강한 쪽(edit > write > read)으로
+ * 승격된 아이콘만 1개. 파일 외 도구(Bash/Grep/...)는 종전 카운트 표기.
+ * 순서는 처음 등장 순서.
  */
 function ToolStrip({events}: {events: TailEvent[]}) {
-    const order: string[] = [];
-    const counts = new Map<string, number>();
+    // 파일 도구: 경로 키로 한 칩, 동작은 강한 쪽으로 승격.
+    const fileOrder: string[] = [];
+    const fileByPath = new Map<string, FileToolKind>();
+    // 파일 외 도구: 이름별 카운트.
+    const otherOrder: string[] = [];
+    const otherCounts = new Map<string, number>();
+
     for (const ev of events) {
         if (ev.kind !== "tool") continue;
-        if (!counts.has(ev.text)) order.push(ev.text);
-        counts.set(ev.text, (counts.get(ev.text) ?? 0) + 1);
+        const fk = fileToolKind(ev.text);
+        if (fk && ev.detail) {
+            if (!fileByPath.has(ev.detail)) fileOrder.push(ev.detail);
+            fileByPath.set(
+                ev.detail,
+                promoteFileToolKind(fileByPath.get(ev.detail), fk),
+            );
+        } else {
+            if (!otherCounts.has(ev.text)) otherOrder.push(ev.text);
+            otherCounts.set(ev.text, (otherCounts.get(ev.text) ?? 0) + 1);
+        }
     }
-    if (order.length === 0) return null;
+    if (fileOrder.length === 0 && otherOrder.length === 0) return null;
     return (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground mono">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground mono">
             <span aria-hidden className="opacity-70">
                 🔧
             </span>
-            {order.map((name) => {
-                const n = counts.get(name)!;
+            {fileOrder.map((path) => {
+                const kind = fileByPath.get(path)!;
+                return <FileToolChip key={path} kind={kind} path={path} />;
+            })}
+            {otherOrder.map((name) => {
+                const n = otherCounts.get(name)!;
                 return (
                     <span
                         key={name}

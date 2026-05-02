@@ -90,3 +90,25 @@ export function summarizeToolInput(
       return undefined;
   }
 }
+
+/** File-tool 식별. tool 이름이 파일을 만지는 종류이면 동작 카테고리 반환. */
+export type FileToolKind = "read" | "write" | "edit";
+
+export function fileToolKind(name: string): FileToolKind | null {
+  if (name === "Read" || name === "NotebookRead") return "read";
+  if (name === "Write") return "write";
+  if (name === "Edit" || name === "MultiEdit" || name === "NotebookEdit")
+    return "edit";
+  return null;
+}
+
+/** edit > write > read 우선순위. 같은 파일에 여러 동작이 있을 때 강한 쪽으로. */
+const RANK: Record<FileToolKind, number> = { read: 0, write: 1, edit: 2 };
+
+export function promoteFileToolKind(
+  current: FileToolKind | undefined,
+  next: FileToolKind,
+): FileToolKind {
+  if (!current) return next;
+  return RANK[next] > RANK[current] ? next : current;
+}
