@@ -1,9 +1,8 @@
-// 토글 레이아웃의 메인 탭 스트립.
-// 가장 왼쪽은 닫히지 않는 "Chat" 가짜 탭 — 활성 시 채팅 영역으로 전환.
-// 그 옆은 열린 파일들. 활성 에이전트 라이브 배지 + 라인 번호 + 닫기.
-// 탭 추가/삭제는 @formkit/auto-animate가 자동 모핑.
+// 에디터가 메인 캔버스인 새 레이아웃에서의 파일 탭 스트립.
+// 채팅은 floating overlay로 분리됐으므로 가짜 Chat 탭은 제거됨.
+// 활성 에이전트 라이브 배지 + 라인 번호 + 닫기. auto-animate로 추가/삭제 모핑.
 
-import { FileText, MessagesSquare, X } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import type { Agent } from "@loom/core";
 import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 import { useI18n } from "../../context/I18nContext.js";
@@ -17,19 +16,15 @@ export function FileTabBar({
   activeByPath,
   lineByPath,
   agents,
-  onSelectChat,
   onActivate,
   onClose,
   onCloseAll,
 }: {
-  /** null = Chat 탭이 활성. 그 외 = 해당 파일 탭이 활성. */
   activeFile: string | null;
   openFiles: string[];
   activeByPath?: Map<string, string>;
   lineByPath?: Map<string, number>;
   agents?: Agent[];
-  /** 사용자가 Chat 가짜 탭을 클릭했을 때 — 채팅 영역으로 전환. */
-  onSelectChat: () => void;
   onActivate: (path: string) => void;
   onClose: (path: string) => void;
   onCloseAll: () => void;
@@ -46,12 +41,6 @@ export function FileTabBar({
         ref={stripRef}
         className="flex-1 min-w-0 flex items-stretch gap-px px-1 overflow-x-auto subtle-scrollbar"
       >
-        <Tab
-          active={activeFile === null}
-          icon={<MessagesSquare className="size-3.5" />}
-          label={t("workspace.tab.chat")}
-          onActivate={onSelectChat}
-        />
         {openFiles.map((path) => {
           const liveAgentId = activeByPath?.get(path);
           const liveAgent = liveAgentId

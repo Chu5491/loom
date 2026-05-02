@@ -1,6 +1,6 @@
-// 프로젝트 워크스페이스. 채널 배너 + 토글식 단일 컨텐츠 영역.
-// FileTabBar의 "Chat" 가짜 탭과 파일 탭들 중 하나가 활성 — 동시에 보이지 않음.
-// 채팅의 파일 알약을 클릭하면 그 파일 탭으로 자동 전환.
+// 프로젝트 워크스페이스. 에디터를 메인 캔버스로, 채팅은 우측 floating overlay.
+// 우측 가장자리의 아이콘 rail에서 채팅을 토글, 채팅창은 에디터를 밀지 않고
+// 위에 그림자 + border로 떠 있다. 카톡 PC + 챗봇 패턴.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -11,10 +11,12 @@ import type { LayoutOutletContext } from "../components/Layout.js";
 import { api } from "../api/client.js";
 import { useRoomDerived } from "../components/Chat.js";
 import { agentColorOf } from "../components/agentColor.js";
+import { ChatOverlay } from "../components/ChatOverlay.js";
 import { ContextDrawer } from "../components/ContextDrawer.js";
 import { FilePalette } from "../components/FilePalette.js";
 import { FileTab } from "../components/FileTab.js";
-import { LiveActivityRail } from "../components/LiveActivityRail.js";
+import { ParticipantsHeader } from "../components/ParticipantsHeader.js";
+import { RightIconRail } from "../components/RightIconRail.js";
 import { TeamRibbon } from "../components/TeamRibbon.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useLoomEvent } from "../lib/loomEvents.js";
@@ -268,6 +270,44 @@ export function WorkspacePage() {
 
   const [contextOpen, setContextOpen] = useState(false);
 
+  // 채팅 floating overlay 토글. 첫 진입은 열어둠 — 환영 + 메시지 입력 유도.
+  const [chatOpen, setChatOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const raw = window.localStorage.getItem("loom:chatOverlay:open");
+    return raw === null ? true : raw === "1";
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "loom:chatOverlay:open",
+        chatOpen ? "1" : "0",
+      );
+    } catch {
+      // 무시
+    }
+  }, [chatOpen]);
+
+  // 안 읽음 — 채팅이 닫혀있는 동안 들어온 thread 활동을 카운트.
+  // 시간 기반 — chatOpen=true가 될 때 lastSeenAt 갱신, 그 이후 createdAt이
+  // 더 새로운 run을 unread로 계산.
+  const [lastSeenAt, setLastSeenAt] = useState<string>(() => {
+    if (typeof window === "undefined") return new Date().toISOString();
+    return (
+      window.localStorage.getItem("loom:chatOverlay:lastSeen") ??
+      new Date().toISOString()
+    );
+  });
+  useEffect(() => {
+    if (!chatOpen) return;
+    const now = new Date().toISOString();
+    setLastSeenAt(now);
+    try {
+      window.localStorage.setItem("loom:chatOverlay:lastSeen", now);
+    } catch {
+      // 무시
+    }
+  }, [chatOpen, activeThreadId]);
+
   // ⌘P → 파일 팔레트, ⌘\ → 모든 파일 닫기. 입력 중에는 무시.
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
@@ -314,9 +354,24 @@ export function WorkspacePage() {
   const activeThread =
     threadList.find((th) => th.id === activeThreadId) ?? null;
 
-  // 토글 모드 — null: 채팅 활성, string: 해당 파일 탭 활성. 동시 표시 없음.
-  const inEditorMode = activeFile !== null && openFiles.includes(activeFile);
+  // 에디터는 활성 파일이 있으면 코드, 없으면 빈 상태. 채팅은 별도 floating overlay.
+  const showEditor = activeFile !== null && openFiles.includes(activeFile);
   const showFileTabs = !chatFullModal && openFiles.length > 0;
+
+  // 이 thread에 발화한 적 있는 모든 에이전트 — 단톡방 참여자 헤더용.
+  const participantsForThread = useMemo(() => {
+    const ids = new Set(filteredRuns.map((r) => r.agentId));
+    return agentList.filter((a) => ids.has(a.id));
+  }, [filteredRuns, agentList]);
+
+  // chatOpen=false 동안 들어온 새 활동 수.
+  const unreadCount = useMemo(() => {
+    if (chatOpen) return 0;
+    const since = new Date(lastSeenAt).getTime();
+    return filteredRuns.filter(
+      (r) => new Date(r.createdAt).getTime() > since,
+    ).length;
+  }, [chatOpen, lastSeenAt, filteredRuns]);
 
   // Monaco에 넘길 multi-presence — 활성 파일에 떠있는 에이전트들을 색·이름과 함께.
   const editorPresences = useMemo(() => {
@@ -370,16 +425,21 @@ export function WorkspacePage() {
             activeByPath={activeByPath}
             lineByPath={lineByPath}
             agents={agentList}
-            onSelectChat={() => setActiveFile(null)}
             onActivate={(path) => setActiveFile(path)}
             onClose={closeFile}
             onCloseAll={closeAllFiles}
           />
         ) : null}
 
+        <ActivePin
+          touches={activeTouchesQuery.data?.touches ?? []}
+          agents={agentList}
+          onPick={openFile}
+        />
+
         <div className="flex-1 min-h-0 min-w-0 flex">
-          {inEditorMode ? (
-            <section className="flex-1 min-w-0 flex flex-col">
+          <section className="flex-1 min-w-0 flex flex-col">
+            {showEditor ? (
               <FileTab
                 projectId={p.id}
                 path={activeFile}
@@ -388,57 +448,69 @@ export function WorkspacePage() {
                 onJumpToRun={handleJumpToRun}
                 adapterByKind={adapterByKind}
               />
-            </section>
-          ) : (
-            <>
-              <section className="flex-1 min-w-0 flex flex-col bg-card">
-                <ThreadBar
-                  projectId={p.id}
-                  threads={threadList}
-                  activeThread={activeThread}
-                  activeThreadCost={threadCost}
-                  fullModal={chatFullModal}
-                  onToggleFullModal={() => setChatFullModal(!chatFullModal)}
-                  onOpenContext={() => setContextOpen(true)}
-                  onPickThread={(id) => setActiveThreadId(id)}
-                  onNewThread={() => setActiveThreadId(null)}
-                  onNewIsolatedThread={newIsolatedThread}
-                />
-                <ActivePin
-                  touches={activeTouchesQuery.data?.touches ?? []}
-                  agents={agentList}
-                  onPick={openFile}
-                />
-                <ChatPanel
-                  project={p}
-                  agentList={agentList}
-                  manifests={manifests}
-                  threads={threads}
-                  working={working}
-                  activeThreadId={activeThreadId}
-                  threadHasContext={!!activeThread?.contextBundle}
-                  onAdoptThreadId={setActiveThreadId}
-                  agentIds={agentIds}
-                  setAgentIds={setAgentIds}
-                  draft={draft}
-                  setDraft={setDraft}
-                  draftKey={draftKey}
-                  setDraftKey={setDraftKey}
-                  pendingJumpRunId={pendingJumpRunId}
-                  onConsumedJump={() => setPendingJumpRunId(null)}
-                />
-              </section>
-              {!chatFullModal ? (
-                <LiveActivityRail
-                  agents={agentList}
-                  manifests={manifests}
-                  runs={projectRuns}
-                />
-              ) : null}
-            </>
-          )}
+            ) : (
+              <EditorEmpty
+                onOpenPalette={() => setPaletteOpen(true)}
+                onOpenChat={() => setChatOpen(true)}
+                hint={t("workspace.empty.hint")}
+              />
+            )}
+          </section>
+
+          {!chatFullModal ? (
+            <RightIconRail
+              chatOpen={chatOpen}
+              unreadCount={unreadCount}
+              onToggleChat={() => setChatOpen((v) => !v)}
+            />
+          ) : null}
         </div>
       </div>
+
+      <ChatOverlay
+        open={chatOpen && !chatFullModal}
+        onClose={() => setChatOpen(false)}
+        title={
+          activeThread?.name ??
+          (p ? `# ${p.name}` : t("chat.overlay.title"))
+        }
+      >
+        <ParticipantsHeader
+          participants={participantsForThread}
+          workingIds={workingIds}
+          touchingIds={touchingIds}
+        />
+        <ThreadBar
+          projectId={p.id}
+          threads={threadList}
+          activeThread={activeThread}
+          activeThreadCost={threadCost}
+          fullModal={chatFullModal}
+          onToggleFullModal={() => setChatFullModal(!chatFullModal)}
+          onOpenContext={() => setContextOpen(true)}
+          onPickThread={(id) => setActiveThreadId(id)}
+          onNewThread={() => setActiveThreadId(null)}
+          onNewIsolatedThread={newIsolatedThread}
+        />
+        <ChatPanel
+          project={p}
+          agentList={agentList}
+          manifests={manifests}
+          threads={threads}
+          working={working}
+          activeThreadId={activeThreadId}
+          threadHasContext={!!activeThread?.contextBundle}
+          onAdoptThreadId={setActiveThreadId}
+          agentIds={agentIds}
+          setAgentIds={setAgentIds}
+          draft={draft}
+          setDraft={setDraft}
+          draftKey={draftKey}
+          setDraftKey={setDraftKey}
+          pendingJumpRunId={pendingJumpRunId}
+          onConsumedJump={() => setPendingJumpRunId(null)}
+        />
+      </ChatOverlay>
 
       <FilePalette
         projectId={p.id}
@@ -453,5 +525,38 @@ export function WorkspacePage() {
         onClose={() => setContextOpen(false)}
       />
     </>
+  );
+}
+
+function EditorEmpty({
+  hint,
+  onOpenPalette,
+  onOpenChat,
+}: {
+  hint: string;
+  onOpenPalette: () => void;
+  onOpenChat: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
+      <p className="text-sm text-muted-foreground/70 max-w-md">{hint}</p>
+      <div className="flex items-center gap-2 mono text-[11px] text-muted-foreground/60">
+        <button
+          type="button"
+          onClick={onOpenPalette}
+          className="px-2 h-7 rounded border border-border hover:bg-muted hover:border-foreground/30 transition-colors"
+        >
+          ⌘P · {t("workspace.empty.openFile")}
+        </button>
+        <button
+          type="button"
+          onClick={onOpenChat}
+          className="px-2 h-7 rounded border border-border hover:bg-muted hover:border-foreground/30 transition-colors"
+        >
+          💬 {t("workspace.empty.openChat")}
+        </button>
+      </div>
+    </div>
   );
 }
