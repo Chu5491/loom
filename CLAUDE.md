@@ -7,9 +7,11 @@
 
 ## 1. 프로젝트 한 줄 요약
 
-**여러 CLI 에이전트(claude / gemini / codex / opencode …)를 웹 UI에서 통합 호출하는 얇은 dispatcher.**
+**여러 CLI 에이전트(claude / gemini / codex / opencode …)를 한 워크스페이스에서 같이 부리는 협업 도구.**
 
-핵심 신념: 자동 주입은 죄. 사용자가 적은 prompt + 사용자가 명시적으로 첨부한 spec — 그게 CLI에 도달하는 입력의 전부다.
+시작은 얇은 dispatcher였고, thread / worktree / 핸드오프 / 비용 표시까지 더해지면서 "에이전트들이 같이 일하는 방"의 모습으로 자라남. 단, dispatcher 시절의 핵심 신념은 그대로:
+
+**자동 주입은 죄.** 사용자가 적은 prompt + 사용자가 명시적으로 첨부한 spec — 그게 CLI에 도달하는 입력의 전부다. 시스템 프롬프트 / AGENTS.md / skill bundle을 어댑터가 몰래 끼워넣지 말 것.
 
 ---
 
@@ -21,32 +23,36 @@
 
 | # | 기능 | 위치 |
 | - | --- | --- |
-| 1 | 에이전트 CRUD | `apps/server/src/db/agents.ts` + `routes/agents.ts` + `apps/web/src/pages/AgentsPage.tsx` |
+| 1 | 에이전트 CRUD (+ 색상 / autonomy) | `apps/server/src/db/agents.ts` + `routes/agents.ts` + `apps/web/src/pages/agents/*` |
 | 2 | Spec(MD) CRUD + 에디터 | `db/specs.ts` + `routes/specs.ts` + `pages/SpecsPage.tsx` |
-| 3 | Run 라이프사이클 (start / cancel / status) | `services/run-service.ts` |
+| 3 | Run 라이프사이클 (start / cancel / status) | `services/run-service.ts` + `services/run/*` |
 | 4 | SSE 실시간 로그 | `routes/runs.ts` (`/:id/logs`) + `services/log-store.ts` |
-| 5 | Spec 첨부 (composePrompt 합성) | `services/run-service.ts` |
+| 5 | Spec 첨부 (composePrompt 합성) | `services/run/prompt-composer.ts` |
 | 6 | claude-code 어댑터 | `packages/adapters/claude-code/` |
 | 7 | i18n (en/ko) + 테마 (system/light/dark) | `apps/web/src/context/` |
-| 8 | **통합 UI + 파일 관리** | Workspace 페이지 + ChangedFiles 컴포넌트 + Git 스냅샷 |
+| 8 | 통합 UI + 파일 관리 | `pages/WorkspacePage.tsx` + `pages/workspace/*` + `ChangedFiles` + Git 스냅샷 |
+| 9 | **Threads** — 대화 단위 컨테이너, parent run 핸드오프 추적 | `db/threads.ts` + `pages/workspace/ThreadBar.tsx` |
+| 10 | **Worktree 격리** — thread별 분리된 git worktree (옵션) | `services/worktree.ts` + `threads.worktree_path` |
+| 11 | **Cost 표시** — CLI가 보고하는 cost_usd 그대로 보여줌 (자체 추정 X) | `runs.cost_usd` |
+| 12 | **Session resume** — 같은 thread/agent의 직전 session_id를 다음 run에 feed | `runs.session_id` + `runs.resumed_session_id` |
+| 13 | **구조화 로깅** — pino 기반 `runLogger(runId)` 자식 로거 | `apps/server/src/logger.ts` |
 
-### To do — 이번 작업 범위
+### To do — 다음 작업 범위
 
 | # | 기능 | 비고 |
 | - | --- | --- |
-| 9 | **공유 어댑터 유틸** (`@loom/adapter-utils`) | `spawnProcess` + `defineCliAdapter` factory |
-| 10 | **gemini 어댑터** | 구글 gemini CLI |
-| 11 | **codex 어댑터** | OpenAI codex CLI (`codex exec`) |
-| 12 | **opencode 어댑터** | SST opencode CLI (`opencode run`) |
-| 13 | 모든 어댑터 server registry 등록 | `apps/server/src/adapters/registry.ts` |
+| 14 | **공유 어댑터 유틸** (`@loom/adapter-utils`) | `spawnProcess` + `defineCliAdapter` factory |
+| 15 | **gemini 어댑터** | 구글 gemini CLI |
+| 16 | **codex 어댑터** | OpenAI codex CLI (`codex exec`) |
+| 17 | **opencode 어댑터** | SST opencode CLI (`opencode run`) |
+| 18 | 모든 어댑터 server registry 등록 | `apps/server/src/adapters/registry.ts` |
 
-### 이번엔 절대 안 함
+### 여전히 안 함
 
 - 인증 / 멀티 테넌트
-- 비용 추적 (LLM 응답에 비용이 있으면 표시만 — 별도 추적 시스템 X)
-- worktree 격리 (Day 10에서)
-- sub-agent 위임 트리 (Day 9에서)
+- 비용을 자체 추정 / 외부 시스템에 적재 (CLI가 주는 값만 표시)
 - 어댑터 자동 발견 / 플러그인 마켓
+- skill bundle / system prompt 자동 합성
 - 추가 의존성 — 정말 꼭 필요한 게 아니면 추가 금지
 
 ---
@@ -249,10 +255,10 @@ export const xxxAdapter = defineCliAdapter({
 
 ---
 
-## 6. 작업 흐름 (이번 작업)
+## 6. 작업 흐름 (다음 작업 = 어댑터 4종)
 
-1. ✅ 통합 UI + 파일 관리 구현 완료 (`WorkspacePage`, `ChangedFiles`, git snapshot)
-2. ✅ 이 CLAUDE.md를 읽고 동의 (또는 사용자에게 확인)
+1. ✅ 통합 UI + 파일 관리 구현 완료
+2. ✅ Threads / worktree / session resume / cost 표시 / 구조화 로깅 완료
 3. paperclip의 gemini-local / codex-local 인자 빌드만 빠르게 훑기
 4. `@loom/adapter-utils` 패키지 생성 — `spawnProcess` + `defineCliAdapter`
 5. `@loom/adapter-claude-code`를 새 추상화로 리팩토 (테스트 그대로 통과해야 함)
