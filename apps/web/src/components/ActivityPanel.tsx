@@ -9,6 +9,7 @@ import { AgentsTab } from "./activity/AgentsTab.js";
 import { SkillsTab } from "./activity/SkillsTab.js";
 import { ReviewTab } from "./activity/ReviewTab.js";
 import { HistoryTab } from "./activity/HistoryTab.js";
+import { GitTab } from "./activity/GitTab.js";
 import { SettingsTab } from "./activity/SettingsTab.js";
 
 const PANEL_MIN_WIDTH = 200;
@@ -27,7 +28,7 @@ export function ActivityPanel({
 
   return (
     <aside
-      className="hidden md:flex shrink-0 flex-col border-r border-border bg-muted/40 relative"
+      className="hidden md:flex shrink-0 flex-col border-r border-border bg-card relative"
       style={{ width }}
     >
       <ActivityContent activity={activity} />
@@ -52,6 +53,8 @@ function ActivityContent({ activity }: { activity: ActivityKind }) {
       return <ReviewTab />;
     case "history":
       return <HistoryTab />;
+    case "git":
+      return <GitTab />;
     case "settings":
       return <SettingsTab />;
     default:
@@ -96,11 +99,11 @@ function PanelResizer({
       role="separator"
       aria-orientation="vertical"
       onMouseDown={onMouseDown}
-      className="absolute right-0 top-0 bottom-0 z-10 w-1.5 -mr-0.5 cursor-col-resize group"
+      className="absolute right-0 top-0 bottom-0 z-10 w-2 -mr-1 cursor-col-resize group"
     >
       <span
         aria-hidden
-        className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-transparent group-hover:bg-foreground/25 transition-colors"
+        className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-transparent group-hover:bg-foreground/30 transition-colors"
       />
     </div>
   );

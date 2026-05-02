@@ -7,6 +7,7 @@ import { logger } from "./logger.js";
 import { adaptersRoute } from "./routes/adapters.js";
 import { agentsRoute } from "./routes/agents.js";
 import { healthRoute } from "./routes/health.js";
+import { gitRoute } from "./routes/git.js";
 import { projectsRoute } from "./routes/projects.js";
 import { runsRoute } from "./routes/runs.js";
 import { specsRoute } from "./routes/specs.js";
@@ -28,6 +29,7 @@ app.route("/api/agents", agentsRoute);
 app.route("/api/specs", specsRoute);
 app.route("/api/runs", runsRoute);
 app.route("/api/threads", threadsRoute);
+app.route("/api", gitRoute);
 
 app.onError((err, c) => {
   logger.error({ err }, "unhandled request error");

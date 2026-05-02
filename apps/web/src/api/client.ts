@@ -18,6 +18,40 @@ import type {
   TreeEntry,
 } from "@loom/core";
 
+// 서버의 services/git.ts 와 1:1 대응. 변경 시 양쪽 동시 수정.
+export interface GitWorkingChange {
+  path: string;
+  fromPath?: string;
+  status: string;
+}
+export interface GitStatus {
+  branch: string | null;
+  head: string | null;
+  ahead: number | null;
+  behind: number | null;
+  staged: GitWorkingChange[];
+  unstaged: GitWorkingChange[];
+  untracked: string[];
+  conflicted: string[];
+  clean: boolean;
+}
+export interface GitLogEntry {
+  sha: string;
+  shortSha: string;
+  parents: string[];
+  authorName: string;
+  authorEmail: string;
+  authoredAt: string;
+  subject: string;
+  refs: string[];
+}
+export interface GitBranchInfo {
+  name: string;
+  current: boolean;
+  upstream: string | null;
+  head: string;
+}
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
@@ -171,6 +205,55 @@ export const api = {
     request<{ touches: ActiveTouch[] }>(`/api/projects/${id}/active-touches`),
   getProjectFilesFlat: (id: string) =>
     request<{ paths: string[] }>(`/api/projects/${id}/files-flat`),
+
+  // ── Git
+  getGitStatus: (id: string) =>
+    request<{ status: GitStatus }>(`/api/projects/${id}/git/status`),
+  getGitDiff: (
+    id: string,
+    path: string,
+    opts: { staged?: boolean; untracked?: boolean } = {},
+  ) => {
+    const qs = new URLSearchParams({ path });
+    if (opts.staged) qs.set("staged", "1");
+    if (opts.untracked) qs.set("untracked", "1");
+    return request<{ diff: string }>(
+      `/api/projects/${id}/git/diff?${qs.toString()}`,
+    );
+  },
+  gitStage: (id: string, paths: string[]) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/stage`, {
+      method: "POST",
+      body: JSON.stringify({ paths }),
+    }),
+  gitUnstage: (id: string, paths: string[]) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/unstage`, {
+      method: "POST",
+      body: JSON.stringify({ paths }),
+    }),
+  gitCommit: (id: string, message: string) =>
+    request<{ sha: string }>(`/api/projects/${id}/git/commit`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+  getGitLog: (id: string, opts: { limit?: number; all?: boolean } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.limit) qs.set("limit", String(opts.limit));
+    if (opts.all) qs.set("all", "1");
+    const tail = qs.toString();
+    return request<{ entries: GitLogEntry[] }>(
+      `/api/projects/${id}/git/log${tail ? `?${tail}` : ""}`,
+    );
+  },
+  getGitBranches: (id: string) =>
+    request<{ branches: GitBranchInfo[] }>(
+      `/api/projects/${id}/git/branches`,
+    ),
+  gitCheckout: (id: string, branch: string) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/checkout`, {
+      method: "POST",
+      body: JSON.stringify({ branch }),
+    }),
 
   listAgents: (filter: { projectId?: string } = {}) => {
     const qs = filter.projectId ? `?projectId=${filter.projectId}` : "";

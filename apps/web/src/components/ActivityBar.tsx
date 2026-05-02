@@ -6,11 +6,13 @@ import {
   FileText,
   Folder,
   FolderTree,
+  GitBranch,
   MessagesSquare,
   Settings as SettingsIcon,
   Users,
 } from "lucide-react";
 import { LoomLogo } from "./LoomLogo.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
@@ -22,14 +24,15 @@ export type ActivityKind =
   | "skills"
   | "review"
   | "history"
+  | "git"
   | "settings"
   | null;
 
 /**
- * Left rail — logo, then a stack of activity buttons (each: icon + label),
- * then settings pinned to the bottom. Project-scoped activities only show
- * when the URL is inside a project, so there is no "open a project" empty
- * drawer to apologize for.
+ * Left rail — logo, then a stack of activity buttons (icon-only with
+ * hover tooltip), then settings pinned to the bottom. Project-scoped
+ * activities only show when the URL is inside a project so there is no
+ * empty-drawer apology.
  */
 export function ActivityBar({
   active,
@@ -64,6 +67,8 @@ export function ActivityBar({
         return `/projects/${projectId}/review`;
       case "history":
         return `/projects/${projectId}/runs`;
+      case "git":
+        return `/projects/${projectId}`;
       default:
         return null;
     }
@@ -92,7 +97,8 @@ export function ActivityBar({
         active === "agents" ||
         active === "skills" ||
         active === "review" ||
-        active === "history")
+        active === "history" ||
+        active === "git")
     ) {
       onSelect("projects");
     }
@@ -106,69 +112,72 @@ export function ActivityBar({
   }> = [
     {
       kind: "projects",
-      icon: <Folder className="size-[18px]" />,
+      icon: <Folder className="size-5" />,
       label: t("activity.projects"),
       requiresProject: false,
     },
     {
       kind: "files",
-      icon: <FolderTree className="size-[18px]" />,
+      icon: <FolderTree className="size-5" />,
       label: t("activity.files"),
       requiresProject: true,
     },
     {
       kind: "threads",
-      icon: <MessagesSquare className="size-[18px]" />,
+      icon: <MessagesSquare className="size-5" />,
       label: t("activity.threads"),
       requiresProject: true,
     },
     {
       kind: "agents",
-      icon: <Users className="size-[18px]" />,
+      icon: <Users className="size-5" />,
       label: t("activity.agents"),
       requiresProject: true,
     },
     {
       kind: "skills",
-      icon: <FileText className="size-[18px]" />,
+      icon: <FileText className="size-5" />,
       label: t("activity.skills"),
       requiresProject: true,
     },
     {
       kind: "review",
-      icon: <ClipboardCheck className="size-[18px]" />,
+      icon: <ClipboardCheck className="size-5" />,
       label: t("activity.review"),
       requiresProject: true,
     },
     {
       kind: "history",
-      icon: <Activity className="size-[18px]" />,
+      icon: <Activity className="size-5" />,
       label: t("activity.history"),
+      requiresProject: true,
+    },
+    {
+      kind: "git",
+      icon: <GitBranch className="size-5" />,
+      label: t("activity.git"),
       requiresProject: true,
     },
   ];
   const visible = items.filter((it) => !it.requiresProject || inProject);
 
   return (
-    <aside className="flex w-[68px] shrink-0 flex-col items-stretch border-r border-border bg-card">
+    <aside className="flex w-12 shrink-0 flex-col items-stretch border-r border-border bg-card">
       <NavLink
         to="/"
         end
         className={({ isActive }) =>
           cn(
-            "flex flex-col items-center justify-center gap-0.5 py-3 transition-colors",
-            isActive ? "bg-foreground/[0.04]" : "hover:bg-muted/60",
+            "flex items-center justify-center h-12 border-b border-border transition-colors",
+            isActive ? "bg-foreground/[0.06]" : "hover:bg-muted/60",
           )
         }
         title="loom"
       >
         <LoomLogo className="size-6 dark:invert" />
-        <span className="text-[10px] font-medium tracking-tight text-muted-foreground">
-          loom
-        </span>
       </NavLink>
 
-      <nav className="flex-1 flex flex-col gap-px px-1 pt-1 pb-1">
+      <nav className="flex-1 flex flex-col items-stretch px-1.5 py-2 gap-0.5">
         {visible.map((it) => (
           <ActivityButton
             key={it.kind}
@@ -180,12 +189,13 @@ export function ActivityBar({
           </ActivityButton>
         ))}
         <div className="flex-1" />
+        <div className="my-1 mx-1 h-px bg-border/70" aria-hidden />
         <ActivityButton
           active={active === "settings"}
           label={t("activity.settings")}
           onClick={() => onSelect(active === "settings" ? null : "settings")}
         >
-          <SettingsIcon className="size-[18px]" />
+          <SettingsIcon className="size-5" />
         </ActivityButton>
       </nav>
     </aside>
@@ -204,27 +214,32 @@ function ActivityButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      aria-pressed={active}
-      className={cn(
-        "relative flex flex-col items-center justify-center gap-1 rounded-md py-2 text-[10.5px] tracking-tight transition-colors",
-        active
-          ? "bg-foreground/[0.06] text-foreground"
-          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-      )}
-    >
-      {active ? (
-        <span
-          aria-hidden
-          className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r"
-          style={{ background: "var(--accent-strong)" }}
-        />
-      ) : null}
-      {children}
-      <span className="leading-none">{label}</span>
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={label}
+          aria-pressed={active}
+          className={cn(
+            "relative flex items-center justify-center h-9 rounded-md transition-colors",
+            active
+              ? "bg-foreground/[0.08] text-foreground"
+              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+          )}
+        >
+          {active ? (
+            <span
+              aria-hidden
+              className="absolute -left-1.5 top-1.5 bottom-1.5 w-[2px] rounded-r-full bg-foreground"
+            />
+          ) : null}
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }

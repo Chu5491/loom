@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { ActivityBar, type ActivityKind } from "./ActivityBar.js";
 import { ActivityPanel } from "./ActivityPanel.js";
+import { TooltipProvider } from "./ui/tooltip.js";
 
 const ACTIVITY_KEY = "loom:layout:activity";
 const PANEL_WIDTH_KEY = "loom:layout:activityPanelWidth";
@@ -29,6 +30,7 @@ export function Layout() {
       raw === "skills" ||
       raw === "review" ||
       raw === "history" ||
+      raw === "git" ||
       raw === "settings"
     ) {
       return raw;
@@ -118,28 +120,30 @@ export function Layout() {
   const showActivityPanel = !chatFullModal && activity !== null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <ActivityBar
-        active={activity}
-        onSelect={(next) => {
-          if (chatFullModal) setChatFullModalState(false);
-          selectActivity(next);
-        }}
-      />
-      {showActivityPanel ? (
-        <ActivityPanel
-          activity={activity}
-          width={panelWidth}
-          onResize={setPanelWidth}
+    <TooltipProvider delayDuration={300}>
+      <div className="flex h-screen overflow-hidden bg-background">
+        <ActivityBar
+          active={activity}
+          onSelect={(next) => {
+            if (chatFullModal) setChatFullModalState(false);
+            selectActivity(next);
+          }}
         />
-      ) : null}
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <Outlet
-          context={
-            { chatFullModal, setChatFullModal } satisfies LayoutOutletContext
-          }
-        />
-      </main>
-    </div>
+        {showActivityPanel ? (
+          <ActivityPanel
+            activity={activity}
+            width={panelWidth}
+            onResize={setPanelWidth}
+          />
+        ) : null}
+        <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <Outlet
+            context={
+              { chatFullModal, setChatFullModal } satisfies LayoutOutletContext
+            }
+          />
+        </main>
+      </div>
+    </TooltipProvider>
   );
 }
