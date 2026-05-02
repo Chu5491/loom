@@ -20,6 +20,8 @@ import { Button } from "../components/ui/button.js";
 import { useI18n } from "../context/I18nContext.js";
 import { agentColorOf, classesFor } from "../components/agentColor.js";
 import { cn } from "../lib/utils.js";
+import { formatTimeAgo } from "../lib/timeAgo.js";
+import { emit } from "../lib/loomEvents.js";
 
 /**
  * Pulls every recent run that produced file changes and lets the user
@@ -192,6 +194,7 @@ function ReviewRow({
   active: boolean;
   onSelect: () => void;
 }) {
+  const { t } = useI18n();
   const cls = agent ? classesFor(agentColorOf(agent)) : null;
   const totals = changes.reduce(
     (acc, c) => ({ add: acc.add + c.additions, del: acc.del + c.deletions }),
@@ -223,7 +226,7 @@ function ReviewRow({
               @{agent?.name ?? "unknown"}
             </span>
             <span className="text-[10px] text-muted-foreground/70 mono shrink-0">
-              {timeAgo(run.createdAt)}
+              {formatTimeAgo(run.createdAt, t)}
             </span>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2 break-words">
@@ -231,9 +234,14 @@ function ReviewRow({
           </p>
           <div className="mt-1 flex items-center gap-2 text-[10px] mono">
             <span className="text-muted-foreground/80">
-              {changes.length} {changes.length === 1 ? "file" : "files"}
+              {t(
+                changes.length === 1
+                  ? "review.fileCount.one"
+                  : "review.fileCount.many",
+                { count: changes.length },
+              )}
             </span>
-            <span className="text-emerald-600 dark:text-emerald-400">
+            <span className="text-success">
               +{totals.add}
             </span>
             <span className="text-rose-600 dark:text-rose-400">
@@ -268,17 +276,11 @@ function ReviewDetail({
     { add: 0, del: 0 },
   );
 
-  const discuss = () => {
-    window.dispatchEvent(
-      new CustomEvent("loom:jumpToRun", { detail: { runId: run.id } }),
-    );
-  };
+  const discuss = () => emit("jumpToRun", { runId: run.id });
   const openFirst = () => {
     const first = changes[0];
     if (!first) return;
-    window.dispatchEvent(
-      new CustomEvent("loom:openFile", { detail: { path: first.path } }),
-    );
+    emit("openFile", { path: first.path });
   };
 
   return (
@@ -301,14 +303,20 @@ function ReviewDetail({
                 @{agent?.name ?? "unknown"}
               </span>
               <span className="text-xs text-muted-foreground/70 mono">
-                {timeAgo(run.createdAt)}
+                {formatTimeAgo(run.createdAt, t)}
               </span>
               <Badge variant="success" className="h-4 px-1.5 text-[9px]">
                 {run.status}
               </Badge>
               <span className="text-[11px] text-muted-foreground mono ml-auto">
-                {changes.length} files ·
-                <span className="text-emerald-600 dark:text-emerald-400 ml-1">
+                {t(
+                  changes.length === 1
+                    ? "review.fileCount.one"
+                    : "review.fileCount.many",
+                  { count: changes.length },
+                )}
+                {" · "}
+                <span className="text-success ml-1">
                   +{totals.add}
                 </span>
                 <span className="text-rose-600 dark:text-rose-400 ml-1">
@@ -356,11 +364,7 @@ function ChangeBlock({ runId, change }: { runId: string; change: RunChange }) {
     staleTime: 60_000,
   });
 
-  const openInViewer = () => {
-    window.dispatchEvent(
-      new CustomEvent("loom:openFile", { detail: { path: change.path } }),
-    );
-  };
+  const openInViewer = () => emit("openFile", { path: change.path });
 
   return (
     <div className="rounded-md border border-border/60 overflow-hidden">
@@ -388,7 +392,7 @@ function ChangeBlock({ runId, change }: { runId: string; change: RunChange }) {
             )}
           </span>
         </button>
-        <span className="text-emerald-600 dark:text-emerald-400 mono text-xs shrink-0">
+        <span className="text-success mono text-xs shrink-0">
           +{change.additions}
         </span>
         <span className="text-rose-600 dark:text-rose-400 mono text-xs shrink-0">
@@ -425,7 +429,7 @@ function StatusIcon({ status }: { status: RunChange["status"] }) {
   switch (status) {
     case "added":
       return (
-        <FilePlus className={cn(cls, "text-emerald-600 dark:text-emerald-400")} />
+        <FilePlus className={cn(cls, "text-success")} />
       );
     case "deleted":
       return <FileX className={cn(cls, "text-rose-600 dark:text-rose-400")} />;
@@ -433,17 +437,18 @@ function StatusIcon({ status }: { status: RunChange["status"] }) {
       return <Replace className={cn(cls, "text-sky-600 dark:text-sky-400")} />;
     case "modified":
     default:
-      return <FileEdit className={cn(cls, "text-amber-600 dark:text-amber-400")} />;
+      return <FileEdit className={cn(cls, "text-warning")} />;
   }
 }
 
 function DiffView({ text }: { text: string }) {
+  const { t } = useI18n();
   const hunkStart = text.indexOf("\n@@");
   const body = hunkStart >= 0 ? text.slice(hunkStart + 1) : "";
   if (!body.trim()) {
     return (
       <p className="px-2 py-1 text-xs text-muted-foreground italic">
-        no text diff
+        {t("review.noTextDiff")}
       </p>
     );
   }
@@ -457,7 +462,7 @@ function DiffView({ text }: { text: string }) {
           let className = "block px-2 py-px";
           if (ch === "+") {
             className +=
-              " bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+              " bg-emerald-500/10 text-success";
           } else if (ch === "-") {
             className += " bg-rose-500/10 text-rose-700 dark:text-rose-300";
           } else if (ch === "@") {
@@ -476,13 +481,3 @@ function DiffView({ text }: { text: string }) {
   );
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return "now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
-}

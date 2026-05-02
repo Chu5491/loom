@@ -13,6 +13,7 @@ import type { RunChange } from "@loom/core";
 import { api } from "../api/client.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
+import { emit } from "../lib/loomEvents.js";
 
 /**
  * Action card hanging off an agent message — surfaces what the run
@@ -61,9 +62,7 @@ export function ChangedFiles({
   const openFirst = () => {
     const first = list[0];
     if (!first) return;
-    window.dispatchEvent(
-      new CustomEvent("loom:openFile", { detail: { path: first.path } }),
-    );
+    emit("openFile", { path: first.path });
   };
 
   return (
@@ -84,7 +83,7 @@ export function ChangedFiles({
             {t("changes.summary", { n: list.length })}
           </span>
         </button>
-        <span className="text-emerald-600 dark:text-emerald-400 mono text-xs">
+        <span className="text-success mono text-xs">
           +{totals.add}
         </span>
         <span className="text-rose-600 dark:text-rose-400 mono text-xs">
@@ -125,9 +124,7 @@ function FileRow({ runId, change }: { runId: string; change: RunChange }) {
 
   const openInViewer = (e: React.MouseEvent) => {
     e.stopPropagation();
-    window.dispatchEvent(
-      new CustomEvent("loom:openFile", { detail: { path: change.path } }),
-    );
+    emit("openFile", { path: change.path });
   };
 
   return (
@@ -156,7 +153,7 @@ function FileRow({ runId, change }: { runId: string; change: RunChange }) {
             )}
           </span>
         </button>
-        <span className="text-emerald-600 dark:text-emerald-400 mono text-xs shrink-0">
+        <span className="text-success mono text-xs shrink-0">
           +{change.additions}
         </span>
         <span className="text-rose-600 dark:text-rose-400 mono text-xs shrink-0">
@@ -194,7 +191,7 @@ function StatusIcon({ status }: { status: RunChange["status"] }) {
   switch (status) {
     case "added":
       return (
-        <FilePlus className={cn(cls, "text-emerald-600 dark:text-emerald-400")} />
+        <FilePlus className={cn(cls, "text-success")} />
       );
     case "deleted":
       return <FileX className={cn(cls, "text-rose-600 dark:text-rose-400")} />;
@@ -202,19 +199,20 @@ function StatusIcon({ status }: { status: RunChange["status"] }) {
       return <Replace className={cn(cls, "text-sky-600 dark:text-sky-400")} />;
     case "modified":
     default:
-      return <FileEdit className={cn(cls, "text-amber-600 dark:text-amber-400")} />;
+      return <FileEdit className={cn(cls, "text-warning")} />;
   }
 }
 
 /** Strip the per-file `diff --git` preamble (path is already in the row
  *  above) and color lines by their first character. */
 function DiffView({ text }: { text: string }) {
+  const { t } = useI18n();
   const hunkStart = text.indexOf("\n@@");
   const body = hunkStart >= 0 ? text.slice(hunkStart + 1) : "";
   if (!body.trim()) {
     return (
       <p className="px-2 py-1 text-xs text-muted-foreground italic">
-        no text diff
+        {t("review.noTextDiff")}
       </p>
     );
   }
@@ -228,7 +226,7 @@ function DiffView({ text }: { text: string }) {
           let className = "block px-2 py-px";
           if (ch === "+") {
             className +=
-              " bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+              " bg-emerald-500/10 text-success";
           } else if (ch === "-") {
             className += " bg-rose-500/10 text-rose-700 dark:text-rose-300";
           } else if (ch === "@") {

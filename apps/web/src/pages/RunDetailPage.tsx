@@ -5,6 +5,7 @@ import type { RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
 import { Badge, Button, Card } from "../components/ui.js";
 import { PageScroll } from "../components/PageScroll.js";
+import { useConfirm } from "../components/ConfirmDialog.js";
 import { useI18n } from "../context/I18nContext.js";
 
 interface ChunkPayload {
@@ -44,6 +45,7 @@ function statusTone(s: RunStatus) {
 
 export function RunDetailPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   // Nested under /projects/:id/runs/:runId — pull both.
   const { id: projectId, runId } = useParams<{ id?: string; runId?: string }>();
   const id = runId;
@@ -177,8 +179,8 @@ export function RunDetailPage() {
       );
   }, [lines]);
 
-  if (run.isLoading) return <p className="text-zinc-500 text-sm">{t("common.loading")}</p>;
-  if (run.isError) return <p className="text-red-500 dark:text-red-400 text-sm">{run.error.message}</p>;
+  if (run.isLoading) return <p className="text-muted-foreground text-sm">{t("common.loading")}</p>;
+  if (run.isError) return <p className="text-destructive text-sm">{run.error.message}</p>;
   if (!r) return null;
 
   const isActive = r.status === "queued" || r.status === "running";
@@ -188,12 +190,12 @@ export function RunDetailPage() {
       <div className="flex items-center gap-3 text-sm">
         <Link
           to={runsListPath}
-          className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          className="text-muted-foreground hover:text-foreground"
         >
           {t("runDetail.back")}
         </Link>
-        <span className="text-zinc-400 dark:text-zinc-600">/</span>
-        <span className="mono text-zinc-500 truncate">{r.id}</span>
+        <span className="text-muted-foreground/60">/</span>
+        <span className="mono text-muted-foreground truncate">{r.id}</span>
       </div>
 
       <Card className="space-y-3">
@@ -201,12 +203,12 @@ export function RunDetailPage() {
           <div className="flex items-center gap-2">
             <Badge tone={statusTone(r.status)}>{t(`status.${r.status}`)}</Badge>
             {r.exitCode !== null ? (
-              <span className="text-xs text-zinc-500 mono">
+              <span className="text-xs text-muted-foreground mono">
                 {t("runDetail.tag.exit", { code: r.exitCode })}
               </span>
             ) : null}
             {r.pid ? (
-              <span className="text-xs text-zinc-500 mono">
+              <span className="text-xs text-muted-foreground mono">
                 {t("runDetail.tag.pid", { pid: r.pid })}
               </span>
             ) : null}
@@ -216,8 +218,12 @@ export function RunDetailPage() {
               variant="danger"
               size="sm"
               disabled={cancel.isPending}
-              onClick={() => {
-                if (confirm(t("runDetail.cancelConfirm"))) cancel.mutate();
+              onClick={async () => {
+                const ok = await confirm({
+                  title: t("runDetail.cancelConfirm"),
+                  destructive: true,
+                });
+                if (ok) cancel.mutate();
               }}
             >
               {cancel.isPending ? t("common.cancelling") : t("runDetail.button.cancel")}
@@ -225,16 +231,16 @@ export function RunDetailPage() {
           ) : null}
         </div>
         <div>
-          <p className="text-xs uppercase tracking-wide text-zinc-500 mb-1">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
             {t("runDetail.section.prompt")}
           </p>
-          <pre className="text-sm mono rounded p-3 whitespace-pre-wrap break-words bg-zinc-100 dark:bg-zinc-950">
+          <pre className="text-sm mono rounded p-3 whitespace-pre-wrap break-words bg-muted">
             {r.prompt}
           </pre>
         </div>
         {attachedSpecIds.length > 0 ? (
           <div>
-            <p className="text-xs uppercase tracking-wide text-zinc-500 mb-1">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
               {t("runDetail.section.attachedSpecs", { count: attachedSpecIds.length })}
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -252,7 +258,7 @@ export function RunDetailPage() {
                 .map((sid) => (
                   <span
                     key={sid}
-                    className="inline-flex items-center rounded border px-2 py-0.5 text-xs mono line-through border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500"
+                    className="inline-flex items-center rounded border px-2 py-0.5 text-xs mono line-through border-border bg-muted text-muted-foreground"
                     title={t("runDetail.specDeleted")}
                   >
                     {sid.slice(0, 8)}
@@ -278,15 +284,15 @@ export function RunDetailPage() {
           <Meta label={t("runDetail.meta.logFile")} value={r.logPath ?? "—"} mono />
         </dl>
         {result?.result ? (
-          <div className="rounded border p-3 border-emerald-300 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/30">
-            <p className="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-400 mb-1">
+          <div className="rounded border p-3 border-success/40 bg-success/10">
+            <p className="text-xs uppercase tracking-wide text-success mb-1">
               {t("runDetail.section.result")}
             </p>
             <p className="text-sm mono whitespace-pre-wrap break-words">
               {result.result}
             </p>
             {typeof result.total_cost_usd === "number" ? (
-              <p className="mt-1 text-xs text-emerald-700/70 dark:text-emerald-500/70 mono">
+              <p className="mt-1 text-xs text-success/70 mono">
                 {t("runDetail.tag.cost", {
                   cost: result.total_cost_usd.toFixed(5),
                 })}
@@ -299,7 +305,7 @@ export function RunDetailPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium">{t("runDetail.section.logs")}</h2>
         <div className="flex items-center gap-2 text-xs">
-          <label className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
+          <label className="flex items-center gap-1 text-muted-foreground">
             <input
               type="checkbox"
               checked={autoscroll}
@@ -307,15 +313,15 @@ export function RunDetailPage() {
             />
             {t("runDetail.autoscroll")}
           </label>
-          <div className="flex rounded-md border overflow-hidden border-zinc-300 dark:border-zinc-800">
+          <div className="flex rounded-md border overflow-hidden border-border">
             {(["pretty", "raw"] as const).map((v) => (
               <button
                 key={v}
                 className={
                   "px-2 py-1 transition-colors " +
                   (view === v
-                    ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100")
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground")
                 }
                 onClick={() => setView(v)}
               >
@@ -328,10 +334,10 @@ export function RunDetailPage() {
 
       <div
         ref={containerRef}
-        className="rounded-md border max-h-[60vh] overflow-y-auto p-2 space-y-1.5 border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-950"
+        className="rounded-md border max-h-[60vh] overflow-y-auto p-2 space-y-1.5 border-border bg-muted/30"
       >
         {lines.length === 0 ? (
-          <p className="text-zinc-500 text-xs px-2 py-4">
+          <p className="text-muted-foreground text-xs px-2 py-4">
             {isActive
               ? t("runDetail.empty.waiting")
               : t("runDetail.empty.noOutput")}
@@ -339,12 +345,12 @@ export function RunDetailPage() {
         ) : view === "pretty" ? (
           lines.map((l) => <PrettyLine key={l.id} line={l} />)
         ) : (
-          <pre className="text-xs mono whitespace-pre-wrap break-words text-zinc-800 dark:text-zinc-300">
+          <pre className="text-xs mono whitespace-pre-wrap break-words text-foreground/90">
             {lines.map((l) => l.raw).join("\n")}
           </pre>
         )}
         {streamDone ? (
-          <div className="px-2 py-1 text-xs text-zinc-500 mono">
+          <div className="px-2 py-1 text-xs text-muted-foreground mono">
             {t("runDetail.streamEnded", {
               status: t(`status.${streamDone.status}`),
               code: streamDone.exitCode ?? "—",
@@ -352,7 +358,7 @@ export function RunDetailPage() {
           </div>
         ) : null}
         {streamError ? (
-          <div className="px-2 py-1 text-xs text-red-500 dark:text-red-400">
+          <div className="px-2 py-1 text-xs text-destructive">
             {t("runDetail.streamError", { message: streamError })}
           </div>
         ) : null}
@@ -376,10 +382,10 @@ function Meta({
 }) {
   return (
     <div>
-      <dt className="text-zinc-500 uppercase tracking-wide">{label}</dt>
+      <dt className="text-muted-foreground uppercase tracking-wide">{label}</dt>
       <dd
         className={
-          "break-all text-zinc-800 dark:text-zinc-300 " + (mono ? "mono text-xs" : "")
+          "break-all text-foreground/90 " + (mono ? "mono text-xs" : "")
         }
         title={value}
       >
@@ -405,15 +411,15 @@ function PrettyLine({ line }: { line: ParsedLine }) {
 
   if (line.stream === "stderr") {
     return (
-      <div className="text-xs text-red-500 dark:text-red-400 mono px-2">
-        <span className="text-zinc-500">{t("runDetail.stderr")}</span> {line.raw}
+      <div className="text-xs text-destructive mono px-2">
+        <span className="text-muted-foreground">{t("runDetail.stderr")}</span> {line.raw}
       </div>
     );
   }
 
   if (!j || typeof j !== "object") {
     return (
-      <div className="text-xs text-zinc-700 dark:text-zinc-300 mono px-2 whitespace-pre-wrap break-words">
+      <div className="text-xs text-foreground/90 mono px-2 whitespace-pre-wrap break-words">
         {line.raw}
       </div>
     );
@@ -424,7 +430,7 @@ function PrettyLine({ line }: { line: ParsedLine }) {
 
   if (type === "system") {
     return (
-      <div className="text-xs text-zinc-500 px-2 mono">
+      <div className="text-xs text-muted-foreground px-2 mono">
         <Badge tone="neutral">{t("runDetail.event.system")}</Badge>{" "}
         <span>{subtype ?? ""}</span>
       </div>
@@ -440,7 +446,7 @@ function PrettyLine({ line }: { line: ParsedLine }) {
             return (
               <div
                 key={i}
-                className="text-sm whitespace-pre-wrap break-words text-zinc-900 dark:text-zinc-100"
+                className="text-sm whitespace-pre-wrap break-words text-foreground"
               >
                 {c.text}
               </div>
@@ -450,8 +456,8 @@ function PrettyLine({ line }: { line: ParsedLine }) {
             return (
               <div key={i} className="text-xs">
                 <Badge tone="warn">{t("runDetail.event.tool")}</Badge>{" "}
-                <span className="mono text-zinc-700 dark:text-zinc-300">{c.name}</span>
-                <pre className="mt-1 text-xs mono rounded p-2 overflow-x-auto bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-500">
+                <span className="mono text-foreground/90">{c.name}</span>
+                <pre className="mt-1 text-xs mono rounded p-2 overflow-x-auto bg-muted text-muted-foreground">
                   {JSON.stringify(c.input, null, 2)}
                 </pre>
               </div>
@@ -475,7 +481,7 @@ function PrettyLine({ line }: { line: ParsedLine }) {
                 <Badge tone={c.is_error ? "danger" : "neutral"}>
                   {t("runDetail.event.toolResult")}
                 </Badge>
-                <pre className="mt-1 text-xs mono rounded p-2 overflow-x-auto whitespace-pre-wrap break-words bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+                <pre className="mt-1 text-xs mono rounded p-2 overflow-x-auto whitespace-pre-wrap break-words bg-muted text-foreground/80">
                   {typeof c.content === "string"
                     ? c.content
                     : JSON.stringify(c.content, null, 2)}
@@ -495,18 +501,18 @@ function PrettyLine({ line }: { line: ParsedLine }) {
         <Badge tone={j.is_error ? "danger" : "success"}>
           {t("runDetail.event.result")}
         </Badge>
-        <span className="ml-2 text-xs text-zinc-500 mono">{subtype ?? ""}</span>
+        <span className="ml-2 text-xs text-muted-foreground mono">{subtype ?? ""}</span>
       </div>
     );
   }
 
   return (
     <details className="px-2">
-      <summary className="text-xs text-zinc-500 cursor-pointer mono">
+      <summary className="text-xs text-muted-foreground cursor-pointer mono">
         {type ?? "?"}
         {subtype ? ` / ${subtype}` : ""}
       </summary>
-      <pre className="mt-1 text-xs mono rounded p-2 overflow-x-auto bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+      <pre className="mt-1 text-xs mono rounded p-2 overflow-x-auto bg-muted text-foreground/80">
         {JSON.stringify(j, null, 2)}
       </pre>
     </details>

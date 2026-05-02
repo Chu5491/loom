@@ -8,6 +8,7 @@ import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js
 import { PageScroll } from "../components/PageScroll.js";
 import { PageHeader } from "../components/PageHeader.js";
 import { useI18n } from "../context/I18nContext.js";
+import { useConfirm } from "../components/ConfirmDialog.js";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -57,7 +58,7 @@ export function SpecsPage() {
           ) : selectedId ? (
             <SpecEditorById key={selectedId} id={selectedId} baseUrl={baseUrl} />
           ) : (
-            <Card className="text-sm text-zinc-600 dark:text-zinc-400">
+            <Card className="text-sm text-muted-foreground">
               {t("specs.helpUnselected")}
             </Card>
           )}
@@ -80,11 +81,11 @@ function SpecList({
 }) {
   const { t } = useI18n();
   if (loading) {
-    return <p className="text-zinc-500 text-sm">{t("common.loading")}</p>;
+    return <p className="text-muted-foreground text-sm">{t("common.loading")}</p>;
   }
   if (specs.length === 0) {
     return (
-      <Card className="text-sm text-zinc-600 dark:text-zinc-400">
+      <Card className="text-sm text-muted-foreground">
         {t("specs.empty")}
       </Card>
     );
@@ -114,7 +115,7 @@ function SpecList({
               ))}
             </div>
           ) : null}
-          <div className="mt-1 text-[10px] text-zinc-500 mono">
+          <div className="mt-1 text-[10px] text-muted-foreground mono">
             {new Date(s.updatedAt).toLocaleString()}
           </div>
         </Link>
@@ -126,8 +127,8 @@ function SpecList({
 function SpecEditorById({ id, baseUrl }: { id: string; baseUrl: string }) {
   const { t } = useI18n();
   const q = useQuery({ queryKey: ["spec", id], queryFn: () => api.getSpec(id) });
-  if (q.isLoading) return <p className="text-zinc-500 text-sm">{t("common.loading")}</p>;
-  if (q.isError) return <p className="text-red-500 dark:text-red-400 text-sm">{q.error.message}</p>;
+  if (q.isLoading) return <p className="text-muted-foreground text-sm">{t("common.loading")}</p>;
+  if (q.isError) return <p className="text-destructive text-sm">{q.error.message}</p>;
   if (!q.data) return null;
   return <SpecEditor spec={q.data.spec} baseUrl={baseUrl} />;
 }
@@ -135,6 +136,7 @@ function SpecEditorById({ id, baseUrl }: { id: string; baseUrl: string }) {
 function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
   const { t } = useI18n();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const agents = useQuery({ queryKey: ["agents"], queryFn: () => api.listAgents() });
 
@@ -249,7 +251,7 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
                 "px-2 py-1 transition-colors " +
                 (view === v
                   ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100")
+                  : "text-muted-foreground hover:text-zinc-900 dark:text-muted-foreground/80 dark:hover:text-zinc-100")
               }
             >
               {v === "edit"
@@ -285,7 +287,7 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
       </div>
 
       {(create.error || update.error || remove.error) && (
-        <p className="text-xs text-red-500 dark:text-red-400">
+        <p className="text-xs text-destructive">
           {(create.error ?? update.error ?? remove.error)?.message}
         </p>
       )}
@@ -296,10 +298,12 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
-                if (confirm(t("specs.deleteConfirm", { name: spec.name }))) {
-                  remove.mutate();
-                }
+              onClick={async () => {
+                const ok = await confirm({
+                  title: t("specs.deleteConfirm", { name: spec.name }),
+                  destructive: true,
+                });
+                if (ok) remove.mutate();
               }}
               disabled={remove.isPending}
             >
@@ -307,7 +311,7 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
             </Button>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {isDirty ? <span>{t("common.unsaved")}</span> : <span>{t("common.saved")}</span>}
           <Button
             disabled={

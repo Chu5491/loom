@@ -22,6 +22,7 @@ import {
 } from "./ui/dropdown-menu.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
+import { formatTimeAgo } from "../lib/timeAgo.js";
 import { agentColorFor, classesFor } from "./agentColor.js";
 
 /**
@@ -108,23 +109,24 @@ export function FileTab({
  *  (claude-code's old_string matched), we show ":42" so the user knows
  *  exactly *where* in the file the change is landing. */
 function EditingNowBanner({ agent, line }: { agent: Agent; line?: number }) {
+  const { t } = useI18n();
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/40 shrink-0">
       <AgentInitialBadge agent={agent} live size="sm" />
       <span className="text-xs">
         <span className="font-semibold">@{agent.name}</span>
-        <span className="text-muted-foreground ml-1.5">is editing</span>
+        <span className="text-muted-foreground ml-1.5">{t("editing.is")}</span>
         {line ? (
           <span className="ml-1 mono text-foreground/80">
-            line <span className="font-semibold">{line}</span>
+            {t("editing.line")} <span className="font-semibold">{line}</span>
           </span>
         ) : (
-          <span className="text-muted-foreground ml-1">now</span>
+          <span className="text-muted-foreground ml-1">{t("editing.now")}</span>
         )}
       </span>
-      <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 mono">
+      <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-success mono">
         <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        live
+        {t("editing.live")}
       </span>
     </div>
   );
@@ -383,7 +385,7 @@ function CodeView({
               aria-hidden
               className={cn(
                 "select-none shrink-0 text-right pr-3 pl-4 text-muted-foreground/60 tabular-nums border-r border-border/40",
-                isActive && "text-amber-700 dark:text-amber-400 font-semibold",
+                isActive && "text-warning font-semibold",
               )}
               style={{ minWidth: `${gutterChars + 1}ch` }}
             >
@@ -463,7 +465,7 @@ function DiffContent({
           let className = "block px-3 py-px";
           if (ch === "+") {
             className +=
-              " bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+              " bg-emerald-500/10 text-success";
           } else if (ch === "-") {
             className += " bg-rose-500/10 text-rose-700 dark:text-rose-300";
           } else if (ch === "@") {
@@ -636,14 +638,14 @@ function HistoryRow({
             </Badge>
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[10px] mono">
-            <span className="text-emerald-600 dark:text-emerald-400">
+            <span className="text-success">
               +{entry.additions}
             </span>
             <span className="text-rose-600 dark:text-rose-400">
               −{entry.deletions}
             </span>
             <span className="text-muted-foreground/60 ml-auto">
-              {timeAgo(entry.createdAt)}
+              {formatTimeAgo(entry.createdAt, t)}
             </span>
           </div>
         </div>
@@ -683,13 +685,3 @@ function statusVariant(
   }
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
-}

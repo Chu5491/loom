@@ -6,17 +6,17 @@ import { useI18n } from "../context/I18nContext.js";
 export type StatusTone = "ok" | "warn" | "danger" | "muted";
 
 const TONE_DOT: Record<StatusTone, string> = {
-  ok: "bg-emerald-500",
-  warn: "bg-amber-500",
-  danger: "bg-red-500",
-  muted: "bg-zinc-400 dark:bg-zinc-600",
+  ok: "bg-success",
+  warn: "bg-warning",
+  danger: "bg-destructive",
+  muted: "bg-muted-foreground/40",
 };
 
 const TONE_TEXT: Record<StatusTone, string> = {
-  ok: "text-emerald-700 dark:text-emerald-400",
-  warn: "text-amber-700 dark:text-amber-400",
-  danger: "text-red-700 dark:text-red-400",
-  muted: "text-zinc-500 dark:text-zinc-400",
+  ok: "text-success",
+  warn: "text-warning",
+  danger: "text-destructive",
+  muted: "text-muted-foreground",
 };
 
 export function StatusDot({
@@ -108,7 +108,9 @@ export function AdapterStatusLive({
 
   const title = [
     desc.label,
-    result?.binary?.version ? `version ${result.binary.version}` : null,
+    result?.binary?.version
+      ? t("adapter.probe.versionPrefix", { version: result.binary.version })
+      : null,
     desc.hint,
   ]
     .filter(Boolean)
@@ -149,7 +151,7 @@ export function AdapterRefreshButton({
       type="button"
       onClick={refresh}
       title={t("adapter.refresh")}
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:text-zinc-100 dark:hover:bg-zinc-800"
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-zinc-900 hover:bg-zinc-100 dark:hover:text-zinc-100 dark:hover:bg-zinc-800"
     >
       <RefreshIcon />
       <span>{t("adapter.refresh")}</span>
@@ -189,13 +191,13 @@ export function AdapterStatusDetails({
   return (
     <dl className="text-xs space-y-1">
       <div className="flex gap-2">
-        <dt className="w-16 shrink-0 text-zinc-500 uppercase tracking-wide">
+        <dt className="w-16 shrink-0 text-muted-foreground uppercase tracking-wide">
           {t("adapter.probe.binary")}
         </dt>
         <dd className="mono break-all">
           {binary.available ? (
             <>
-              <span className="text-emerald-700 dark:text-emerald-400">
+              <span className="text-success">
                 ✓ {binary.command}
               </span>
               {binary.version ? (
@@ -203,30 +205,30 @@ export function AdapterStatusDetails({
               ) : null}
             </>
           ) : (
-            <span className="text-red-700 dark:text-red-400">
+            <span className="text-destructive">
               ✗ {binary.error ?? t("adapter.probe.notInstalled")}
             </span>
           )}
         </dd>
       </div>
       <div className="flex gap-2">
-        <dt className="w-16 shrink-0 text-zinc-500 uppercase tracking-wide">
+        <dt className="w-16 shrink-0 text-muted-foreground uppercase tracking-wide">
           {t("adapter.probe.auth")}
         </dt>
         <dd>
           {auth.state === "authenticated" ? (
-            <span className="text-emerald-700 dark:text-emerald-400">
+            <span className="text-success">
               ✓ {t("adapter.probe.authenticated")}
             </span>
           ) : auth.state === "unauthenticated" ? (
-            <span className="text-amber-700 dark:text-amber-400">
+            <span className="text-warning">
               ⚠ {t("adapter.probe.signInNeeded")}
             </span>
           ) : (
             <span className="text-zinc-500">— {t("adapter.probe.unknown")}</span>
           )}
           {auth.hint ? (
-            <span className="ml-1 text-zinc-500 mono">({auth.hint})</span>
+            <span className="ml-1 text-muted-foreground mono">({auth.hint})</span>
           ) : null}
         </dd>
       </div>

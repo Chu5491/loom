@@ -54,7 +54,7 @@ export function AdapterTestButton({
         >
           {running ? t("adapter.test.running") : t("adapter.test.button")}
         </Button>
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-muted-foreground">
           {t("adapter.test.hint")}
         </span>
       </div>
@@ -72,8 +72,8 @@ function TestResult({ result }: { result: TestAdapterResult }) {
 
   const icon = ok ? "✓" : "✗";
   const iconColor = ok
-    ? "text-emerald-700 dark:text-emerald-400"
-    : "text-red-700 dark:text-red-400";
+    ? "text-success"
+    : "text-destructive";
 
   return (
     <div className={`rounded-md border p-3 text-xs space-y-2 ${tone}`}>
@@ -86,35 +86,35 @@ function TestResult({ result }: { result: TestAdapterResult }) {
               ? t("adapter.test.passed")
               : t("adapter.test.failed")}
         </span>
-        <span className="text-zinc-500 mono">
+        <span className="text-muted-foreground mono">
           {(result.durationMs / 1000).toFixed(2)}s
           {result.exitCode !== null ? ` · exit ${result.exitCode}` : ""}
         </span>
       </div>
       {result.output ? (
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500 mb-0.5">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
             {t("adapter.test.response")}
           </div>
-          <pre className="mono whitespace-pre-wrap break-words bg-zinc-100 dark:bg-zinc-900 rounded p-2 text-zinc-800 dark:text-zinc-200 max-h-32 overflow-y-auto">
+          <pre className="mono whitespace-pre-wrap break-words bg-muted rounded p-2 text-foreground/90 max-h-32 overflow-y-auto">
             {result.output}
           </pre>
         </div>
       ) : null}
       {result.error ? (
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500 mb-0.5">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
             {t("adapter.test.error")}
           </div>
-          <pre className="mono whitespace-pre-wrap break-words text-red-700 dark:text-red-400">
+          <pre className="mono whitespace-pre-wrap break-words text-destructive">
             {result.error}
           </pre>
         </div>
       ) : null}
       {result.stderr && !ok ? (
         <details>
-          <summary className="cursor-pointer text-zinc-500">stderr</summary>
-          <pre className="mono whitespace-pre-wrap break-words bg-zinc-100 dark:bg-zinc-900 rounded p-2 mt-1 text-zinc-700 dark:text-zinc-300 max-h-40 overflow-y-auto">
+          <summary className="cursor-pointer text-muted-foreground">{t("adapter.test.stderr")}</summary>
+          <pre className="mono whitespace-pre-wrap break-words bg-muted rounded p-2 mt-1 text-foreground/90 max-h-40 overflow-y-auto">
             {result.stderr}
           </pre>
         </details>

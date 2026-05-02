@@ -1,30 +1,44 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
+import { celebrate } from "../lib/celebrate.js";
+import { useConfirm } from "../components/ConfirmDialog.js";
 import type { Project } from "@loom/core";
 import { api, type CreateProjectBody } from "../api/client.js";
 import { Button, Card, Field, Input, Textarea } from "../components/ui.js";
+import { Skeleton } from "../components/ui/skeleton.js";
 import { PageScroll } from "../components/PageScroll.js";
 import { useI18n } from "../context/I18nContext.js";
 
 export function ProjectsPage() {
   const { t } = useI18n();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const list = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
 
   const [showForm, setShowForm] = useState(false);
 
   const create = useMutation({
     mutationFn: api.createProject,
-    onSuccess: () => {
+    onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       setShowForm(false);
+      toast.success(t("projects.toast.created", { name: r.project.name }));
+      celebrate("firstProject");
     },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : String(err)),
   });
 
   const remove = useMutation({
     mutationFn: api.deleteProject,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success(t("projects.toast.deleted"));
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : String(err)),
   });
 
   return (
@@ -40,20 +54,30 @@ export function ProjectsPage() {
         <CreateProjectForm
           onSubmit={(body) => create.mutate(body)}
           submitting={create.isPending}
-          error={create.error?.message ?? null}
           onCancel={() => setShowForm(false)}
         />
       ) : null}
 
       {list.isLoading ? (
-        <p className="text-zinc-500 text-sm">{t("common.loading")}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-border bg-card p-4 space-y-2"
+            >
+              <Skeleton className="h-5 w-44" />
+              <Skeleton className="h-3 w-64 max-w-full" />
+              <Skeleton className="h-3 w-28" />
+            </div>
+          ))}
+        </div>
       ) : list.isError ? (
-        <p className="text-red-500 dark:text-red-400 text-sm">
+        <p className="text-destructive text-sm">
           {list.error.message}
         </p>
       ) : list.data!.projects.length === 0 ? (
         <Card>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             {t("projects.empty")}
           </p>
         </Card>
@@ -63,14 +87,12 @@ export function ProjectsPage() {
             <ProjectCard
               key={p.id}
               project={p}
-              onDelete={() => {
-                if (
-                  confirm(
-                    t("projects.deleteConfirm", { name: p.name }),
-                  )
-                ) {
-                  remove.mutate(p.id);
-                }
+              onDelete={async () => {
+                const ok = await confirm({
+                  title: t("projects.deleteConfirm", { name: p.name }),
+                  destructive: true,
+                });
+                if (ok) remove.mutate(p.id);
               }}
             />
           ))}
@@ -104,7 +126,7 @@ function ProjectCard({
           >
             {project.name}
           </Link>
-          <p className="text-xs text-zinc-500 mono truncate" title={project.path}>
+          <p className="text-xs text-muted-foreground mono truncate" title={project.path}>
             {project.path}
           </p>
         </div>
@@ -113,11 +135,11 @@ function ProjectCard({
         </Button>
       </div>
       {project.description ? (
-        <p className="text-xs text-zinc-600 dark:text-zinc-400 line-clamp-2">
+        <p className="text-xs text-muted-foreground line-clamp-2">
           {project.description}
         </p>
       ) : null}
-      <div className="flex items-center gap-3 text-xs text-zinc-500">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <Link
           to={`/projects/${project.id}`}
           className="hover:underline"
@@ -132,12 +154,10 @@ function ProjectCard({
 function CreateProjectForm({
   onSubmit,
   submitting,
-  error,
   onCancel,
 }: {
   onSubmit: (body: CreateProjectBody) => void;
   submitting: boolean;
-  error: string | null;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
@@ -163,7 +183,7 @@ function CreateProjectForm({
           <Input
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            placeholder="/Users/me/projects/foo"
+            placeholder={t("projects.placeholder.path")}
             className="mono"
           />
         </Field>
@@ -176,9 +196,6 @@ function CreateProjectForm({
           placeholder={t("projects.placeholder.description")}
         />
       </Field>
-      {error ? (
-        <p className="text-xs text-red-500 dark:text-red-400">{error}</p>
-      ) : null}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>
           {t("common.cancel")}

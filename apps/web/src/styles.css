@@ -38,6 +38,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -67,6 +69,8 @@
   --accent-foreground: oklch(0.22 0.01 60);
   --destructive: oklch(0.52 0.18 25);
   --destructive-foreground: oklch(0.985 0.005 75);
+  --success: oklch(0.55 0.14 155);             /* emerald 700 */
+  --warning: oklch(0.62 0.15 75);              /* amber 600 */
   --border: oklch(0.88 0.008 70);
   --input: oklch(0.88 0.008 70);
   --ring: oklch(0.55 0.13 35);              /* terracotta */
@@ -96,6 +100,8 @@
   --accent-foreground: oklch(0.93 0.006 70);
   --destructive: oklch(0.72 0.16 25);
   --destructive-foreground: oklch(0.18 0.008 70);
+  --success: oklch(0.74 0.16 155);             /* emerald 400 */
+  --warning: oklch(0.78 0.16 75);              /* amber 400 */
   --border: oklch(0.30 0.012 70);
   --input: oklch(0.30 0.012 70);
   --ring: oklch(0.72 0.12 45);              /* warm amber */
@@ -291,14 +297,7 @@ body {
 }
 .prose-loom em { font-style: italic; }
 
-/* Chat micro-animations. */
-@keyframes msg-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.msg-in {
-  animation: msg-in 240ms ease-out both;
-}
+/* msg-in CSS 키프레임은 motion 라이브러리로 대체됨 (chat/MessageRow.tsx). */
 
 @keyframes breath {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -328,4 +327,13 @@ body {
   background-color: color-mix(in oklch, var(--muted) 60%, transparent);
   transition: background-color 120ms ease;
   border-radius: 6px;
+}
+
+/* Skeleton 로더 시머 — `before` 의사 요소가 좌→우로 슬라이드. */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.animate-shimmer {
+  animation: shimmer 1.4s ease-in-out infinite;
 }

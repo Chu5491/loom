@@ -1,5 +1,6 @@
 import type { Agent } from "@loom/core";
 import { agentColorOf, initialFor } from "./agentColor.js";
+import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
 const SOLID_BG: Record<string, string> = {
@@ -35,6 +36,7 @@ export function AgentInitialBadge({
   size?: "xs" | "sm" | "md";
   className?: string;
 }) {
+  const { t } = useI18n();
   const color = agentColorOf(agent);
   const dim =
     size === "xs"
@@ -50,7 +52,7 @@ export function AgentInitialBadge({
         "relative inline-flex items-center justify-center rounded shrink-0",
         className,
       )}
-      title={`@${agent.name}${live ? " · editing now" : ""}`}
+      title={`@${agent.name}${live ? ` · ${t("editing.tooltipSuffix")}` : ""}`}
     >
       {live ? (
         <span

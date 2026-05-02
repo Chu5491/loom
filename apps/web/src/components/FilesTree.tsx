@@ -255,6 +255,7 @@ function FileLeaf({
   agents?: Agent[];
   onPick: (path: string) => void;
 }) {
+  const { t } = useI18n();
   const isSelected = selectedPath === entry.path;
   const lastAgent = touchedByAgentId
     ? agents?.find((a) => a.id === touchedByAgentId)
@@ -271,7 +272,7 @@ function FileLeaf({
       title={
         lastAgent
           ? isActive
-            ? `${entry.name} · @${lastAgent.name} editing now`
+            ? `${entry.name} · @${lastAgent.name} ${t("editing.tooltipSuffix")}`
             : `${entry.name} · @${lastAgent.name}`
           : entry.name
       }

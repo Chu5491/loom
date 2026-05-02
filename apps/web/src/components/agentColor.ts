@@ -61,6 +61,12 @@ export interface ColorClasses {
   dot: string;
   /** Soft ring for hover/focus states. */
   ring: string;
+  /** working 펄스 링용 — bg/40 페이드. */
+  ringPulse: string;
+  /** running run 그라디언트 보더의 from/via/to. */
+  gradientFrom: string;
+  gradientVia: string;
+  gradientTo: string;
 }
 
 const CLASSES: Record<AgentColor, ColorClasses> = {
@@ -70,6 +76,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-sky-400 dark:border-sky-700",
     dot: "bg-sky-500",
     ring: "ring-sky-200 dark:ring-sky-900/50",
+    ringPulse: "bg-sky-400/40 dark:bg-sky-500/40",
+    gradientFrom: "from-sky-500",
+    gradientVia: "via-cyan-400",
+    gradientTo: "to-blue-500",
   },
   emerald: {
     bgSoft: "bg-emerald-100 dark:bg-emerald-950/50",
@@ -77,6 +87,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-emerald-400 dark:border-emerald-700",
     dot: "bg-emerald-500",
     ring: "ring-emerald-200 dark:ring-emerald-900/50",
+    ringPulse: "bg-emerald-400/40 dark:bg-emerald-500/40",
+    gradientFrom: "from-emerald-500",
+    gradientVia: "via-teal-400",
+    gradientTo: "to-green-500",
   },
   amber: {
     bgSoft: "bg-amber-100 dark:bg-amber-950/50",
@@ -84,6 +98,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-amber-400 dark:border-amber-700",
     dot: "bg-amber-500",
     ring: "ring-amber-200 dark:ring-amber-900/50",
+    ringPulse: "bg-amber-400/40 dark:bg-amber-500/40",
+    gradientFrom: "from-amber-500",
+    gradientVia: "via-yellow-400",
+    gradientTo: "to-orange-500",
   },
   rose: {
     bgSoft: "bg-rose-100 dark:bg-rose-950/50",
@@ -91,6 +109,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-rose-400 dark:border-rose-700",
     dot: "bg-rose-500",
     ring: "ring-rose-200 dark:ring-rose-900/50",
+    ringPulse: "bg-rose-400/40 dark:bg-rose-500/40",
+    gradientFrom: "from-rose-500",
+    gradientVia: "via-pink-400",
+    gradientTo: "to-red-500",
   },
   violet: {
     bgSoft: "bg-violet-100 dark:bg-violet-950/50",
@@ -98,6 +120,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-violet-400 dark:border-violet-700",
     dot: "bg-violet-500",
     ring: "ring-violet-200 dark:ring-violet-900/50",
+    ringPulse: "bg-violet-400/40 dark:bg-violet-500/40",
+    gradientFrom: "from-violet-500",
+    gradientVia: "via-purple-400",
+    gradientTo: "to-indigo-500",
   },
   teal: {
     bgSoft: "bg-teal-100 dark:bg-teal-950/50",
@@ -105,6 +131,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-teal-400 dark:border-teal-700",
     dot: "bg-teal-500",
     ring: "ring-teal-200 dark:ring-teal-900/50",
+    ringPulse: "bg-teal-400/40 dark:bg-teal-500/40",
+    gradientFrom: "from-teal-500",
+    gradientVia: "via-cyan-400",
+    gradientTo: "to-emerald-500",
   },
   fuchsia: {
     bgSoft: "bg-fuchsia-100 dark:bg-fuchsia-950/50",
@@ -112,6 +142,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-fuchsia-400 dark:border-fuchsia-700",
     dot: "bg-fuchsia-500",
     ring: "ring-fuchsia-200 dark:ring-fuchsia-900/50",
+    ringPulse: "bg-fuchsia-400/40 dark:bg-fuchsia-500/40",
+    gradientFrom: "from-fuchsia-500",
+    gradientVia: "via-pink-400",
+    gradientTo: "to-purple-500",
   },
   lime: {
     bgSoft: "bg-lime-100 dark:bg-lime-950/50",
@@ -119,6 +153,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-lime-400 dark:border-lime-700",
     dot: "bg-lime-500",
     ring: "ring-lime-200 dark:ring-lime-900/50",
+    ringPulse: "bg-lime-400/40 dark:bg-lime-500/40",
+    gradientFrom: "from-lime-500",
+    gradientVia: "via-green-400",
+    gradientTo: "to-yellow-500",
   },
   orange: {
     bgSoft: "bg-orange-100 dark:bg-orange-950/50",
@@ -126,6 +164,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-orange-400 dark:border-orange-700",
     dot: "bg-orange-500",
     ring: "ring-orange-200 dark:ring-orange-900/50",
+    ringPulse: "bg-orange-400/40 dark:bg-orange-500/40",
+    gradientFrom: "from-orange-500",
+    gradientVia: "via-amber-400",
+    gradientTo: "to-red-500",
   },
   cyan: {
     bgSoft: "bg-cyan-100 dark:bg-cyan-950/50",
@@ -133,6 +175,10 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     border: "border-cyan-400 dark:border-cyan-700",
     dot: "bg-cyan-500",
     ring: "ring-cyan-200 dark:ring-cyan-900/50",
+    ringPulse: "bg-cyan-400/40 dark:bg-cyan-500/40",
+    gradientFrom: "from-cyan-500",
+    gradientVia: "via-sky-400",
+    gradientTo: "to-blue-500",
   },
 };
 

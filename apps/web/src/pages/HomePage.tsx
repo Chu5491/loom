@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { motion } from "motion/react";
+import NumberFlow from "@number-flow/react";
 import { ArrowRight, Plus } from "lucide-react";
 import type { Run } from "@loom/core";
 import { api } from "../api/client.js";
@@ -11,6 +13,8 @@ import { Button } from "../components/ui/button.js";
 import { PageScroll } from "../components/PageScroll.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
+import { formatTimeAgo } from "../lib/timeAgo.js";
+import { runStatusVariant } from "../lib/runStatus.js";
 
 /**
  * Workspace landing page. Lives at `/`. Gives a quick read on the
@@ -152,22 +156,44 @@ function StatCard({
   accent?: boolean;
 }) {
   return (
-    <div className="rounded-lg border bg-card px-4 py-3">
+    <motion.div
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.12 }}
+      className={cn(
+        "relative rounded-lg border bg-card px-4 py-3 overflow-hidden",
+        accent &&
+          "ring-1 ring-sky-300/60 dark:ring-sky-700/60 shadow-[0_0_24px_-12px_rgb(14_165_233/0.6)]",
+      )}
+    >
+      {/* accent 카드 — 우상단 컬러 글로우. 다른 정적 카드들과 시각적 위계 분리. */}
+      {accent ? (
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute -top-6 -right-6 size-24 rounded-full bg-sky-400/30 blur-2xl"
+          animate={{ opacity: [0.35, 0.65, 0.35] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+        />
+      ) : null}
       <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
       <div
         className={cn(
-          "mt-1 text-2xl font-semibold tabular-nums",
+          "mt-1 text-2xl font-semibold tabular-nums inline-flex items-baseline",
           accent && "text-sky-600 dark:text-sky-400",
         )}
       >
-        {value}
+        <NumberFlow value={value} />
         {accent ? (
-          <span className="ml-2 inline-block size-1.5 rounded-full bg-sky-500 animate-pulse align-middle" />
+          <motion.span
+            aria-hidden
+            className="ml-2 inline-block size-1.5 rounded-full bg-sky-500 align-middle"
+            animate={{ opacity: [1, 0.4, 1], scale: [1, 1.3, 1] }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+          />
         ) : null}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -236,11 +262,11 @@ function RecentActivity({
                       {r.prompt.slice(0, 100)}
                     </p>
                   </div>
-                  <Badge variant={statusVariant(r.status)} className="h-5 px-1.5 text-[10px]">
+                  <Badge variant={runStatusVariant(r.status)} className="h-5 px-1.5 text-[10px]">
                     {r.status}
                   </Badge>
                   <span className="text-[10px] text-muted-foreground/70 mono shrink-0 hidden sm:inline">
-                    {timeAgo(r.createdAt)}
+                    {formatTimeAgo(r.createdAt, t, "long")}
                   </span>
                 </Link>
               </li>
@@ -250,34 +276,6 @@ function RecentActivity({
       )}
     </section>
   );
-}
-
-function statusVariant(s: string): "info" | "success" | "destructive" | "warning" | "secondary" {
-  switch (s) {
-    case "succeeded":
-      return "success";
-    case "failed":
-      return "destructive";
-    case "cancelled":
-      return "warning";
-    case "running":
-    case "queued":
-      return "info";
-    default:
-      return "secondary";
-  }
-}
-
-/** Quick relative-time formatter — good enough for the homepage. */
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

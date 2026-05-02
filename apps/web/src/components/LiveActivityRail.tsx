@@ -1,10 +1,15 @@
 import { useMemo } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import NumberFlow from "@number-flow/react";
 import type { AdapterManifest, Agent, Run } from "@loom/core";
 import { AgentAvatar } from "./Chat.js";
 import { Badge } from "./ui/badge.js";
 import { useI18n } from "../context/I18nContext.js";
 import { agentColorOf, classesFor } from "./agentColor.js";
 import { cn } from "../lib/utils.js";
+import { formatTimeAgo } from "../lib/timeAgo.js";
+import { useAutoAnimate } from "../lib/useAutoAnimate.js";
+import { emit } from "../lib/loomEvents.js";
 
 /**
  * Always-visible right rail showing every recent run in the project,
@@ -40,6 +45,11 @@ export function LiveActivityRail({
     (r) => r.status === "running" || r.status === "queued",
   ).length;
 
+  const listRef = useAutoAnimate<HTMLUListElement>({
+    duration: 240,
+    easing: "ease-out",
+  });
+
   return (
     <aside className="hidden lg:flex w-72 shrink-0 flex-col border-l border-border bg-card">
       <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border shrink-0">
@@ -47,12 +57,28 @@ export function LiveActivityRail({
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             {t("liveActivity.title")}
           </span>
-          {workingCount > 0 ? (
-            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 mono">
-              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {workingCount}
-            </span>
-          ) : null}
+          <AnimatePresence>
+            {workingCount > 0 ? (
+              <motion.span
+                key="working-count"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="inline-flex items-center gap-1 text-[10px] font-medium text-success mono"
+              >
+                <motion.span
+                  className="size-1.5 rounded-full bg-emerald-500"
+                  animate={{ opacity: [1, 0.4, 1], scale: [1, 1.25, 1] }}
+                  transition={{
+                    duration: 1.4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
+                />
+                <NumberFlow value={workingCount} />
+              </motion.span>
+            ) : null}
+          </AnimatePresence>
         </div>
       </header>
 
@@ -62,7 +88,7 @@ export function LiveActivityRail({
             {t("liveActivity.empty")}
           </p>
         ) : (
-          <ul className="divide-y divide-border/40">
+          <ul ref={listRef} className="divide-y divide-border/40">
             {sorted.slice(0, 50).map((r) => {
               const a = agents.find((x) => x.id === r.agentId);
               const m = a
@@ -95,18 +121,33 @@ function ActivityItem({
   const working = run.status === "running" || run.status === "queued";
   const summary = run.prompt.length > 90 ? run.prompt.slice(0, 90) + "…" : run.prompt;
 
-  const onClick = () => {
-    window.dispatchEvent(
-      new CustomEvent("loom:jumpToRun", { detail: { runId: run.id } }),
-    );
-  };
+  const onClick = () => emit("jumpToRun", { runId: run.id });
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left px-3 py-2 hover:bg-muted/50 transition-colors group"
+      className="relative w-full text-left px-3 py-2 hover:bg-muted/50 transition-colors group"
     >
+      {/* 활성 항목 좌측 글로우 — 레일을 빠르게 훑어도 working 줄이 시각적으로 튐. */}
+      <AnimatePresence>
+        {working && cls ? (
+          <motion.span
+            key="rail-glow"
+            aria-hidden
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className={cn(
+              "pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-gradient-to-b",
+              cls.gradientFrom,
+              cls.gradientVia,
+              cls.gradientTo,
+            )}
+          />
+        ) : null}
+      </AnimatePresence>
       <div className="flex items-start gap-2">
         {agent ? (
           <AgentAvatar
@@ -129,7 +170,7 @@ function ActivityItem({
               @{agent?.name ?? "unknown"}
             </span>
             <span className="text-[10px] text-muted-foreground/70 mono shrink-0">
-              {timeAgo(run.createdAt)}
+              {formatTimeAgo(run.createdAt, t)}
             </span>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2 break-words">
@@ -174,13 +215,3 @@ function StatusChip({ status }: { status: Run["status"] }) {
   );
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return "now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
-}

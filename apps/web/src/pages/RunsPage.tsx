@@ -133,11 +133,11 @@ export function RunsPage() {
           projectAgentIds.has(r.agentId),
         );
         if (runs.isLoading) {
-          return <p className="text-zinc-500 text-sm">{t("common.loading")}</p>;
+          return <p className="text-muted-foreground text-sm">{t("common.loading")}</p>;
         }
         if (runs.isError) {
           return (
-            <p className="text-red-500 dark:text-red-400 text-sm">
+            <p className="text-destructive text-sm">
               {runs.error.message}
             </p>
           );
@@ -145,7 +145,7 @@ export function RunsPage() {
         if (visible.length === 0) {
           return (
             <Card>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              <p className="text-sm text-muted-foreground">
                 {t("runs.empty")}
               </p>
             </Card>
@@ -193,12 +193,12 @@ function RunRow({
     >
       <div className="flex items-center gap-3">
         <Badge tone={statusTone(run.status)}>{t(`status.${run.status}`)}</Badge>
-        <span className="text-sm truncate flex-1 text-zinc-700 dark:text-zinc-300">
+        <span className="text-sm truncate flex-1 text-foreground/90">
           {run.prompt.slice(0, 100)}
         </span>
-        <span className="text-xs text-zinc-500 mono shrink-0">{dur}</span>
+        <span className="text-xs text-muted-foreground mono shrink-0">{dur}</span>
       </div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
+      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
         <span>{agent?.name ?? run.agentId.slice(0, 8)}</span>
         <span>·</span>
         <span className="mono">{new Date(run.createdAt).toLocaleString()}</span>
@@ -289,7 +289,7 @@ function NewRunForm({
                   className={
                     "flex items-center gap-2 rounded px-2 py-1.5 text-sm cursor-pointer " +
                     (checked
-                      ? "bg-zinc-200 dark:bg-zinc-800/60"
+                      ? "bg-muted/60"
                       : "hover:bg-zinc-100 dark:hover:bg-zinc-800/40")
                   }
                 >
@@ -299,7 +299,7 @@ function NewRunForm({
                     onChange={() => toggleSpec(s.id)}
                   />
                   <span className="flex-1 truncate">{s.name}</span>
-                  <span className="text-xs text-zinc-500 mono">
+                  <span className="text-xs text-muted-foreground mono">
                     {(s.content.length / 1024).toFixed(1)}KB
                   </span>
                 </label>
@@ -316,7 +316,7 @@ function NewRunForm({
         />
       </Field>
       {create.error ? (
-        <p className="text-xs text-red-500 dark:text-red-400">{create.error.message}</p>
+        <p className="text-xs text-destructive">{create.error.message}</p>
       ) : null}
       <div className="flex justify-end">
         <Button
