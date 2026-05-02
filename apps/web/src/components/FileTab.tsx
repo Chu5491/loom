@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -14,6 +14,7 @@ import type { AdapterManifest, Agent, FileHistoryEntry } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "./AdapterIcon.js";
 import { AgentInitialBadge } from "./AgentInitialBadge.js";
+import { MonacoView, type AgentPresence } from "./MonacoView.js";
 import { Badge } from "./ui/badge.js";
 import {
   DropdownMenu,
@@ -42,21 +43,16 @@ import { agentColorFor, classesFor } from "./agentColor.js";
 export function FileTab({
   projectId,
   path,
-  activeAgentId,
-  activeLine,
+  presences,
   agents,
   onJumpToRun,
   adapterByKind,
 }: {
   projectId: string;
   path: string;
-  /** Set when an agent is currently editing this file. The viewer
-   *  hangs a "X is editing now" banner on top so the user knows the
-   *  content under their eyes is in flight. */
-  activeAgentId?: string;
-  /** Latest line number the active agent has been editing, when the
-   *  server could pin one. Surfaces as ":42" in the banner. */
-  activeLine?: number;
+  /** 이 파일에 떠있는 모든 에이전트 presence — Monaco가 라인 데코+라벨로 표시.
+   *  presences[0]가 가장 최근(primary) 활동. 비어있으면 데코 없음. */
+  presences?: AgentPresence[];
   agents?: Agent[];
   onJumpToRun: (runId: string) => void;
   /** Map of adapter kind → manifest, used to render correct brand icon
@@ -78,21 +74,22 @@ export function FileTab({
     if (view.kind !== "current") setView({ kind: "current" });
   }
 
-  const activeAgent = activeAgentId
-    ? agents?.find((a) => a.id === activeAgentId)
+  const primary = presences?.[0];
+  const primaryAgent = primary
+    ? agents?.find((a) => a.id === primary.agentId)
     : undefined;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0">
-      {activeAgent ? (
-        <EditingNowBanner agent={activeAgent} line={activeLine} />
+      {primaryAgent && primary ? (
+        <EditingNowBanner agent={primaryAgent} line={primary.line} />
       ) : null}
       <ContentPane
         projectId={projectId}
         path={path}
         view={view}
         wrap={wrap}
-        activeLine={activeLine}
+        presences={presences}
         onToggleWrap={() => setWrap((v) => !v)}
         onResetView={() => setView({ kind: "current" })}
         onSelectDiff={(runId) => setView({ kind: "diff", runId })}
@@ -141,7 +138,7 @@ function ContentPane({
   path,
   view,
   wrap,
-  activeLine,
+  presences,
   onToggleWrap,
   onResetView,
   onSelectDiff,
@@ -153,7 +150,7 @@ function ContentPane({
   path: string;
   view: { kind: "current" } | { kind: "diff"; runId: string };
   wrap: boolean;
-  activeLine?: number;
+  presences?: AgentPresence[];
   onToggleWrap: () => void;
   onResetView: () => void;
   onSelectDiff: (runId: string) => void;
@@ -175,16 +172,21 @@ function ContentPane({
         activeRunId={activeRunId}
         adapterByKind={adapterByKind}
       />
-      {/* Both axes scroll with a visible thumb so the user knows the
-       *  content extends — `subtle-scrollbar` was hiding even the
-       *  needed horizontal bar when long lines didn't wrap. */}
-      <div className="flex-1 min-h-0 min-w-0 overflow-auto">
+      {/* current 모드는 Monaco가 자체 스크롤(미니맵·가로/세로 스크롤바 포함)
+       *  하므로 부모는 relative로 자리만 잡아준다. diff 모드는 평문 렌더라
+       *  부모 컨테이너 overflow-auto가 필요. */}
+      <div
+        className={cn(
+          "flex-1 min-h-0 min-w-0",
+          view.kind === "current" ? "relative" : "overflow-auto",
+        )}
+      >
         {view.kind === "current" ? (
           <CurrentContent
             projectId={projectId}
             path={path}
             wrap={wrap}
-            activeLine={activeLine}
+            presences={presences}
           />
         ) : (
           <DiffContent path={path} runId={view.runId} wrap={wrap} />
@@ -288,120 +290,54 @@ function CurrentContent({
   projectId,
   path,
   wrap,
-  activeLine,
+  presences,
 }: {
   projectId: string;
   path: string;
   wrap: boolean;
-  activeLine?: number;
+  presences?: AgentPresence[];
 }) {
   const { t } = useI18n();
+  const hasActive = !!presences?.length;
   const file = useQuery({
     queryKey: ["projectFile", projectId, path],
     queryFn: () => api.getProjectFile(projectId, path),
     staleTime: 30_000,
-    // Re-fetch every 1.5s while an agent is editing so the viewer keeps
-    // pace with the live edit. The line gutter / active highlight only
-    // move when the file is actually re-read; without this the viewer
-    // shows stale text under a "live" badge.
-    refetchInterval: activeLine ? 1500 : false,
+    // 에이전트가 만지고 있는 동안 1.5초 폴링 — 화면이 라이브 편집에 맞춰 갱신.
+    refetchInterval: hasActive ? 1500 : false,
   });
+  // 부모가 relative라서 자식은 absolute inset-0으로 영역을 꽉 채운다.
+  // Monaco가 본인 스크롤·미니맵을 가지므로 컨테이너에 overflow-auto는 X.
   if (file.isLoading) {
     return (
-      <div className="px-5 py-4 text-sm text-muted-foreground">
+      <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
         {t("common.loading")}
       </div>
     );
   }
   if (file.isError) {
-    return <FileError error={(file.error as Error).message} />;
+    return (
+      <div className="absolute inset-0 flex items-center justify-center px-5">
+        <FileError error={(file.error as Error).message} />
+      </div>
+    );
   }
   if (file.data?.file.text === null) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground gap-2">
+      <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground gap-2">
         <File className="size-4" />
         {t("files.viewer.binary")}
       </div>
     );
   }
   return (
-    <CodeView
-      text={file.data?.file.text ?? ""}
-      wrap={wrap}
-      activeLine={activeLine}
-    />
-  );
-}
-
-/** Read-only code view with a line-number gutter and an active-line
- *  highlight. Looks like a pared-down editor so users intuit "I can
- *  see exactly where the agent is working" without thinking it's
- *  editable. We render plain divs (not a textarea / contentEditable)
- *  so there's no chance of accidental edits. */
-function CodeView({
-  text,
-  wrap,
-  activeLine,
-}: {
-  text: string;
-  wrap: boolean;
-  activeLine?: number;
-}) {
-  const lines = text.split("\n");
-  // Drop a trailing empty line that splitting on a final "\n" creates,
-  // so the gutter doesn't show a phantom number under the last line.
-  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-
-  // Right-align the gutter to the widest line number — keeps the
-  // numbers visually anchored even on big files.
-  const gutterDigits = String(lines.length).length;
-  const gutterChars = Math.max(2, gutterDigits);
-
-  const activeRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!activeLine) return;
-    activeRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
-  }, [activeLine]);
-
-  return (
-    <div className="mono text-[12px] leading-relaxed py-2">
-      {lines.map((raw, i) => {
-        const ln = i + 1;
-        const isActive = ln === activeLine;
-        return (
-          <div
-            key={i}
-            ref={isActive ? activeRef : undefined}
-            className={cn(
-              "flex items-stretch group",
-              isActive &&
-                "bg-amber-500/15 dark:bg-amber-500/10 ring-1 ring-amber-500/30",
-            )}
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "select-none shrink-0 text-right pr-3 pl-4 text-muted-foreground/60 tabular-nums border-r border-border/40",
-                isActive && "text-warning font-semibold",
-              )}
-              style={{ minWidth: `${gutterChars + 1}ch` }}
-            >
-              {ln}
-            </span>
-            <span
-              className={cn(
-                "flex-1 pl-4 pr-5",
-                wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
-              )}
-            >
-              {raw}
-            </span>
-          </div>
-        );
-      })}
+    <div className="absolute inset-0">
+      <MonacoView
+        text={file.data?.file.text ?? ""}
+        path={path}
+        wrap={wrap}
+        presences={presences}
+      />
     </div>
   );
 }

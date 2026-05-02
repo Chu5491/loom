@@ -51,9 +51,8 @@ export function FilePalette({
         if (!v) onClose();
       }}
       label={t("palette.title")}
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
-      overlayClassName="absolute inset-0 bg-foreground/30 backdrop-blur-sm"
-      contentClassName="relative w-[min(640px,90vw)] rounded-lg border bg-popover shadow-xl overflow-hidden"
+      overlayClassName="fixed inset-0 z-40 bg-foreground/30 backdrop-blur-sm"
+      contentClassName="fixed left-1/2 top-[15vh] -translate-x-1/2 z-50 w-[min(640px,90vw)] rounded-lg border border-border bg-popover shadow-xl overflow-hidden"
     >
       <div className="flex items-center gap-2 px-3 py-2 border-b">
         <Search className="size-4 text-muted-foreground shrink-0" />

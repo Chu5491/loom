@@ -337,3 +337,74 @@ body {
 .animate-shimmer {
   animation: shimmer 1.4s ease-in-out infinite;
 }
+
+/* Monaco 에디터 — 에이전트 presence 데코레이션 (18색 팔레트).
+ * - .loom-pres-{c} : isWholeLine 라인 배경 틴트
+ * - .loom-pres-mk-{c} : linesDecorationsClassName (거터 좌측 컬러 바)
+ * 라벨(@agent)은 Monaco IContentWidget이 인라인 스타일로 직접 색칠한다. */
+.loom-pres-sky      { background-color: rgba(14, 165, 233, 0.12); }
+.loom-pres-emerald  { background-color: rgba(16, 185, 129, 0.12); }
+.loom-pres-amber    { background-color: rgba(245, 158, 11, 0.12); }
+.loom-pres-rose     { background-color: rgba(244,  63,  94, 0.12); }
+.loom-pres-violet   { background-color: rgba(139,  92, 246, 0.12); }
+.loom-pres-teal     { background-color: rgba( 20, 184, 166, 0.12); }
+.loom-pres-fuchsia  { background-color: rgba(217,  70, 239, 0.12); }
+.loom-pres-lime     { background-color: rgba(132, 204,  22, 0.12); }
+.loom-pres-orange   { background-color: rgba(249, 115,  22, 0.12); }
+.loom-pres-cyan     { background-color: rgba(  6, 182, 212, 0.12); }
+.loom-pres-red      { background-color: rgba(239,  68,  68, 0.12); }
+.loom-pres-yellow   { background-color: rgba(234, 179,   8, 0.12); }
+.loom-pres-green    { background-color: rgba( 34, 197,  94, 0.12); }
+.loom-pres-blue     { background-color: rgba( 59, 130, 246, 0.12); }
+.loom-pres-indigo   { background-color: rgba( 99, 102, 241, 0.12); }
+.loom-pres-purple   { background-color: rgba(168,  85, 247, 0.12); }
+.loom-pres-pink     { background-color: rgba(236,  72, 153, 0.12); }
+.loom-pres-slate    { background-color: rgba(100, 116, 139, 0.12); }
+
+.loom-pres-mk-sky      { background-color: #0ea5e9; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-emerald  { background-color: #10b981; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-amber    { background-color: #f59e0b; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-rose     { background-color: #f43f5e; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-violet   { background-color: #8b5cf6; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-teal     { background-color: #14b8a6; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-fuchsia  { background-color: #d946ef; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-lime     { background-color: #84cc16; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-orange   { background-color: #f97316; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-cyan     { background-color: #06b6d4; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-red      { background-color: #ef4444; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-yellow   { background-color: #eab308; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-green    { background-color: #22c55e; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-blue     { background-color: #3b82f6; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-indigo   { background-color: #6366f1; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-purple   { background-color: #a855f7; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-pink     { background-color: #ec4899; width: 3px !important; margin-left: 3px; }
+.loom-pres-mk-slate    { background-color: #64748b; width: 3px !important; margin-left: 3px; }
+
+/* Presence 라벨(@agent) — 라인 끝에 떠다니는 작은 칩.
+ * 각 칩은 IContentWidget으로 DOM에 직접 박혀 inline style로 색을 가짐. */
+.loom-pres-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  margin-left: 16px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+.loom-pres-label::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: loom-pres-pulse 1.6s ease-in-out infinite;
+}
+@keyframes loom-pres-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
