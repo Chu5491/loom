@@ -11,12 +11,12 @@ import type { LayoutOutletContext } from "../components/Layout.js";
 import { api } from "../api/client.js";
 import { useRoomDerived } from "../components/Chat.js";
 import { agentColorOf } from "../components/agentColor.js";
+import { ChatLauncher } from "../components/ChatLauncher.js";
 import { ChatOverlay } from "../components/ChatOverlay.js";
 import { ContextDrawer } from "../components/ContextDrawer.js";
 import { FilePalette } from "../components/FilePalette.js";
 import { FileTab } from "../components/FileTab.js";
 import { ParticipantsHeader } from "../components/ParticipantsHeader.js";
-import { RightIconRail } from "../components/RightIconRail.js";
 import { TeamRibbon } from "../components/TeamRibbon.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useLoomEvent } from "../lib/loomEvents.js";
@@ -457,15 +457,14 @@ export function WorkspacePage() {
             )}
           </section>
 
-          {!chatFullModal ? (
-            <RightIconRail
-              chatOpen={chatOpen}
-              unreadCount={unreadCount}
-              onToggleChat={() => setChatOpen((v) => !v)}
-            />
-          ) : null}
         </div>
       </div>
+
+      <ChatLauncher
+        visible={!chatOpen && !chatFullModal}
+        unreadCount={unreadCount}
+        onOpen={() => setChatOpen(true)}
+      />
 
       <ChatOverlay
         open={chatOpen && !chatFullModal}

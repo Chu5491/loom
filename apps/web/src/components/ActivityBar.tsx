@@ -104,59 +104,70 @@ export function ActivityBar({
     }
   }, [inProject, active, onSelect]);
 
+  // group을 사용해 시각적으로 묶음 — 같은 그룹은 붙여서, 다른 그룹 사이는
+  // 얇은 구분선. 1: 네비, 2: 워크스페이스 아티팩트, 3: 구성, 4: 인사이트.
   const items: ReadonlyArray<{
     kind: ActivityKind;
     icon: React.ReactNode;
     label: string;
     requiresProject: boolean;
+    group: 1 | 2 | 3 | 4;
   }> = [
     {
       kind: "projects",
       icon: <Folder className="size-5" />,
       label: t("activity.projects"),
       requiresProject: false,
+      group: 1,
     },
     {
       kind: "files",
       icon: <FolderTree className="size-5" />,
       label: t("activity.files"),
       requiresProject: true,
+      group: 2,
     },
     {
       kind: "threads",
       icon: <MessagesSquare className="size-5" />,
       label: t("activity.threads"),
       requiresProject: true,
-    },
-    {
-      kind: "agents",
-      icon: <Users className="size-5" />,
-      label: t("activity.agents"),
-      requiresProject: true,
-    },
-    {
-      kind: "skills",
-      icon: <FileText className="size-5" />,
-      label: t("activity.skills"),
-      requiresProject: true,
-    },
-    {
-      kind: "review",
-      icon: <ClipboardCheck className="size-5" />,
-      label: t("activity.review"),
-      requiresProject: true,
-    },
-    {
-      kind: "history",
-      icon: <Activity className="size-5" />,
-      label: t("activity.history"),
-      requiresProject: true,
+      group: 2,
     },
     {
       kind: "git",
       icon: <GitBranch className="size-5" />,
       label: t("activity.git"),
       requiresProject: true,
+      group: 2,
+    },
+    {
+      kind: "agents",
+      icon: <Users className="size-5" />,
+      label: t("activity.agents"),
+      requiresProject: true,
+      group: 3,
+    },
+    {
+      kind: "skills",
+      icon: <FileText className="size-5" />,
+      label: t("activity.skills"),
+      requiresProject: true,
+      group: 3,
+    },
+    {
+      kind: "review",
+      icon: <ClipboardCheck className="size-5" />,
+      label: t("activity.review"),
+      requiresProject: true,
+      group: 4,
+    },
+    {
+      kind: "history",
+      icon: <Activity className="size-5" />,
+      label: t("activity.history"),
+      requiresProject: true,
+      group: 4,
     },
   ];
   const visible = items.filter((it) => !it.requiresProject || inProject);
@@ -178,18 +189,29 @@ export function ActivityBar({
       </NavLink>
 
       <nav className="flex-1 flex flex-col items-stretch px-1.5 py-2 gap-0.5">
-        {visible.map((it) => (
-          <ActivityButton
-            key={it.kind}
-            active={active === it.kind}
-            label={it.label}
-            onClick={() => handleClick(it.kind)}
-          >
-            {it.icon}
-          </ActivityButton>
-        ))}
+        {visible.map((it, i) => {
+          const prev = visible[i - 1];
+          const showDivider = prev && prev.group !== it.group;
+          return (
+            <div key={it.kind} className="contents">
+              {showDivider ? (
+                <div
+                  aria-hidden
+                  className="my-1 mx-1.5 h-px bg-border/60"
+                />
+              ) : null}
+              <ActivityButton
+                active={active === it.kind}
+                label={it.label}
+                onClick={() => handleClick(it.kind)}
+              >
+                {it.icon}
+              </ActivityButton>
+            </div>
+          );
+        })}
         <div className="flex-1" />
-        <div className="my-1 mx-1 h-px bg-border/70" aria-hidden />
+        <div className="my-1 mx-1.5 h-px bg-border/70" aria-hidden />
         <ActivityButton
           active={active === "settings"}
           label={t("activity.settings")}
