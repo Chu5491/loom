@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @loom/server --filter @loom/web run dev",
+    "dev": "bash scripts/dev.sh",
     "dev:server": "pnpm --filter @loom/server run dev",
     "dev:web": "pnpm --filter @loom/web run dev",
     "build": "pnpm -r build",
