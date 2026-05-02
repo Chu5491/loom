@@ -18,8 +18,10 @@ import {
   Network,
   Paperclip,
   Plus,
+  Trash2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { AdapterManifest, Agent, Thread } from "@loom/core";
 import { api } from "../../api/client.js";
 import {
@@ -86,6 +88,22 @@ export function ThreadBar({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["threads", { projectId }] });
     },
+  });
+
+  const removeThread = useMutation({
+    mutationFn: (id: string) => api.deleteThread(id),
+    onSuccess: (_data, deletedId) => {
+      // 삭제된 thread가 활성이었으면 다음으로 자동 전환 — 가장 최근 thread,
+      // 없으면 null(새 thread). emit 으로 부모(WorkspacePage)에 위임.
+      if (activeThread && activeThread.id === deletedId) {
+        const next = threads.find((t) => t.id !== deletedId);
+        if (next) onPickThread(next.id);
+        else onNewThread();
+      }
+      qc.invalidateQueries({ queryKey: ["threads", { projectId }] });
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : String(err)),
   });
 
   // ⌘⇧A 토글 아카이브. 입력 중에는 무시.
@@ -263,6 +281,22 @@ export function ThreadBar({
                   </span>
                 </DropdownMenuItem>
               )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  if (!activeThread) return;
+                  const ok = window.confirm(
+                    t("thread.bar.deleteConfirm", {
+                      name: activeThread.name,
+                    }),
+                  );
+                  if (ok) removeThread.mutate(activeThread.id);
+                }}
+                className="gap-2 text-sm text-destructive focus:text-destructive"
+              >
+                <Trash2 className="size-3.5" />
+                {t("thread.bar.delete")}
+              </DropdownMenuItem>
             </>
           ) : null}
         </DropdownMenuContent>

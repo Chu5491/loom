@@ -7,7 +7,6 @@ import {
   Folder,
   FolderTree,
   GitBranch,
-  MessagesSquare,
   Settings as SettingsIcon,
   Users,
 } from "lucide-react";
@@ -19,7 +18,6 @@ import { cn } from "../lib/utils.js";
 export type ActivityKind =
   | "projects"
   | "files"
-  | "threads"
   | "agents"
   | "skills"
   | "review"
@@ -57,7 +55,6 @@ export function ActivityBar({
     if (!projectId) return null;
     switch (kind) {
       case "files":
-      case "threads":
         return `/projects/${projectId}`;
       case "agents":
         return `/projects/${projectId}/agents`;
@@ -93,7 +90,6 @@ export function ActivityBar({
     if (
       !inProject &&
       (active === "files" ||
-        active === "threads" ||
         active === "agents" ||
         active === "skills" ||
         active === "review" ||
@@ -124,13 +120,6 @@ export function ActivityBar({
       kind: "files",
       icon: <FolderTree className="size-5" />,
       label: t("activity.files"),
-      requiresProject: true,
-      group: 2,
-    },
-    {
-      kind: "threads",
-      icon: <MessagesSquare className="size-5" />,
-      label: t("activity.threads"),
       requiresProject: true,
       group: 2,
     },
