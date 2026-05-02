@@ -41,11 +41,35 @@ export function LiveActivityRail({
     [runs],
   );
 
-  const workingCount = sorted.filter(
-    (r) => r.status === "running" || r.status === "queued",
-  ).length;
+  // 시간대별 버킷 — "Live > 방금 > 오늘 > 이전" 헤더로 끊으면 단조로운
+  // 리스트가 흐름 있는 타임라인처럼 보임. running은 시간 무관하게 항상 Live.
+  const groups = useMemo(() => {
+    const live: Run[] = [];
+    const recent: Run[] = [];
+    const today: Run[] = [];
+    const earlier: Run[] = [];
+    const now = Date.now();
+    for (const r of sorted) {
+      if (r.status === "running" || r.status === "queued") {
+        live.push(r);
+        continue;
+      }
+      const age = now - new Date(r.createdAt).getTime();
+      if (age < 5 * 60 * 1000) recent.push(r);
+      else if (age < 24 * 60 * 60 * 1000) today.push(r);
+      else earlier.push(r);
+    }
+    return [
+      { key: "live", label: t("liveActivity.bucket.live"), runs: live },
+      { key: "recent", label: t("liveActivity.bucket.recent"), runs: recent },
+      { key: "today", label: t("liveActivity.bucket.today"), runs: today },
+      { key: "earlier", label: t("liveActivity.bucket.earlier"), runs: earlier },
+    ].filter((g) => g.runs.length > 0);
+  }, [sorted, t]);
 
-  const listRef = useAutoAnimate<HTMLUListElement>({
+  const workingCount = groups.find((g) => g.key === "live")?.runs.length ?? 0;
+
+  const listRef = useAutoAnimate<HTMLDivElement>({
     duration: 240,
     easing: "ease-out",
   });
@@ -88,19 +112,45 @@ export function LiveActivityRail({
             {t("liveActivity.empty")}
           </p>
         ) : (
-          <ul ref={listRef} className="divide-y divide-border/40">
-            {sorted.slice(0, 50).map((r) => {
-              const a = agents.find((x) => x.id === r.agentId);
-              const m = a
-                ? manifests.find((mm) => mm.kind === a.adapterKind)
-                : undefined;
-              return (
-                <li key={r.id}>
-                  <ActivityItem run={r} agent={a} manifest={m} />
-                </li>
-              );
-            })}
-          </ul>
+          <div ref={listRef}>
+            {groups.map((g) => (
+              <section key={g.key}>
+                <header className="sticky top-0 z-[1] bg-card/95 backdrop-blur-sm flex items-center gap-1.5 px-3 h-6 border-b border-border/40">
+                  {g.key === "live" ? (
+                    <motion.span
+                      aria-hidden
+                      className="size-1.5 rounded-full bg-emerald-500"
+                      animate={{ opacity: [1, 0.4, 1] }}
+                      transition={{
+                        duration: 1.4,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    />
+                  ) : null}
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                    {g.label}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground/60 mono ml-auto">
+                    {g.runs.length}
+                  </span>
+                </header>
+                <ul className="divide-y divide-border/40">
+                  {g.runs.slice(0, 50).map((r) => {
+                    const a = agents.find((x) => x.id === r.agentId);
+                    const m = a
+                      ? manifests.find((mm) => mm.kind === a.adapterKind)
+                      : undefined;
+                    return (
+                      <li key={r.id}>
+                        <ActivityItem run={r} agent={a} manifest={m} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+          </div>
         )}
       </div>
     </aside>
