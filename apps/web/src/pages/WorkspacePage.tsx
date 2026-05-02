@@ -1,16 +1,16 @@
-// 프로젝트 워크스페이스. 채널 배너 + 중앙 채팅 + 우측 파일 뷰어 패널.
-// 채팅의 파일 알약을 클릭하면 우측에 탭으로 열림. 파일 history rail에서
-// run을 클릭하면 채팅의 해당 메시지로 점프.
+// 프로젝트 워크스페이스. 채널 배너 + 토글식 단일 컨텐츠 영역.
+// FileTabBar의 "Chat" 가짜 탭과 파일 탭들 중 하나가 활성 — 동시에 보이지 않음.
+// 채팅의 파일 알약을 클릭하면 그 파일 탭으로 자동 전환.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useOutletContext, useParams } from "react-router-dom";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { toast } from "sonner";
 import type { AdapterManifest } from "@loom/core";
 import type { LayoutOutletContext } from "../components/Layout.js";
 import { api } from "../api/client.js";
-import { TooltipProvider, useRoomDerived } from "../components/Chat.js";
+import { useRoomDerived } from "../components/Chat.js";
+import { agentColorOf } from "../components/agentColor.js";
 import { ContextDrawer } from "../components/ContextDrawer.js";
 import { FilePalette } from "../components/FilePalette.js";
 import { FileTab } from "../components/FileTab.js";
@@ -18,6 +18,7 @@ import { LiveActivityRail } from "../components/LiveActivityRail.js";
 import { TeamRibbon } from "../components/TeamRibbon.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useLoomEvent } from "../lib/loomEvents.js";
+import { ActivePin } from "./workspace/ActivePin.js";
 import { ChatPanel } from "./workspace/ChatPanel.js";
 import { FileTabBar } from "./workspace/FileTabBar.js";
 import { ThreadBar } from "./workspace/ThreadBar.js";
@@ -88,6 +89,29 @@ export function WorkspacePage() {
       for (const loc of tch.locations) m.set(loc.path, loc.line);
     }
     return m;
+  }, [activeTouchesQuery.data]);
+  // FileTabBar 단일 표시는 activeByPath/lineByPath로 충분하지만, Monaco는
+  // 한 파일에 떠있는 모든 에이전트를 동시에 표시하므로 path → presence[] 맵을
+  // 별도로 만든다. 첫 항목이 가장 최근(primary).
+  const presencesByPath = useMemo(() => {
+    const m = new Map<string, Array<{ agentId: string; line: number }>>();
+    for (const tch of activeTouchesQuery.data?.touches ?? []) {
+      const lineFor = new Map(tch.locations.map((l) => [l.path, l.line]));
+      for (const p of tch.paths) {
+        const list = m.get(p) ?? [];
+        list.push({ agentId: tch.agentId, line: lineFor.get(p) ?? 1 });
+        m.set(p, list);
+      }
+    }
+    return m;
+  }, [activeTouchesQuery.data]);
+  // TeamRibbon presence dot용 — 어떤 파일이든 만지고 있는 에이전트면 working.
+  const touchingIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const tch of activeTouchesQuery.data?.touches ?? []) {
+      s.add(tch.agentId);
+    }
+    return s;
   }, [activeTouchesQuery.data]);
 
   // 서버는 updated_at 내림차순 정렬 — 가장 최근 thread가 항상 위.
@@ -290,113 +314,82 @@ export function WorkspacePage() {
   const activeThread =
     threadList.find((th) => th.id === activeThreadId) ?? null;
 
-  // 파일이 하나라도 열려 있고 focus mode가 아닐 때만 우측 뷰어 패널 노출.
-  const fileViewerVisible = openFiles.length > 0 && !chatFullModal;
+  // 토글 모드 — null: 채팅 활성, string: 해당 파일 탭 활성. 동시 표시 없음.
+  const inEditorMode = activeFile !== null && openFiles.includes(activeFile);
+  const showFileTabs = !chatFullModal && openFiles.length > 0;
+
+  // Monaco에 넘길 multi-presence — 활성 파일에 떠있는 에이전트들을 색·이름과 함께.
+  const editorPresences = useMemo(() => {
+    if (!activeFile) return [];
+    const raw = presencesByPath.get(activeFile) ?? [];
+    return raw
+      .map((it, idx) => {
+        const a = agentList.find((ag) => ag.id === it.agentId);
+        if (!a) return null;
+        return {
+          agentId: a.id,
+          agentName: a.name,
+          color: agentColorOf(a),
+          line: it.line,
+          primary: idx === 0,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }, [activeFile, presencesByPath, agentList]);
+
+  const newIsolatedThread = async () => {
+    try {
+      const r = await api.createThread({
+        projectId: p.id,
+        name: t("thread.isolated.defaultName"),
+        isolate: true,
+      });
+      setActiveThreadId(r.thread.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <>
       <div className="flex h-full min-w-0 flex-col">
         {chatFullModal ? null : (
           <TeamRibbon
             project={p}
             agents={agentList}
             workingIds={workingIds}
+            touchingIds={touchingIds}
             activeThread={activeThread}
           />
         )}
 
+        {showFileTabs ? (
+          <FileTabBar
+            activeFile={activeFile}
+            openFiles={openFiles}
+            activeByPath={activeByPath}
+            lineByPath={lineByPath}
+            agents={agentList}
+            onSelectChat={() => setActiveFile(null)}
+            onActivate={(path) => setActiveFile(path)}
+            onClose={closeFile}
+            onCloseAll={closeAllFiles}
+          />
+        ) : null}
+
         <div className="flex-1 min-h-0 min-w-0 flex">
-          {fileViewerVisible ? (
-            // 파일 뷰어가 열린 경우: react-resizable-panels로 가로 분할.
-            // 키보드 접근성·스냅·리사이즈 핸들 hover 효과는 라이브러리가 무료 제공.
-            <PanelGroup
-              direction="horizontal"
-              autoSaveId={`loom:workspace:${p.id}:split`}
-              className="flex-1 min-w-0"
-            >
-              <Panel defaultSize={62} minSize={30}>
-                <section className="h-full min-w-0 flex flex-col bg-card">
-                  <ThreadBar
-                    projectId={p.id}
-                    threads={threadList}
-                    activeThread={activeThread}
-                    activeThreadCost={threadCost}
-                    fullModal={chatFullModal}
-                    onToggleFullModal={() => setChatFullModal(!chatFullModal)}
-                    onOpenContext={() => setContextOpen(true)}
-                    onPickThread={(id) => setActiveThreadId(id)}
-                    onNewThread={() => setActiveThreadId(null)}
-                    onNewIsolatedThread={async () => {
-                      try {
-                        const r = await api.createThread({
-                          projectId: p.id,
-                          name: t("thread.isolated.defaultName"),
-                          isolate: true,
-                        });
-                        setActiveThreadId(r.thread.id);
-                      } catch (err) {
-                        toast.error(
-                          err instanceof Error ? err.message : String(err),
-                        );
-                      }
-                    }}
-                  />
-                  <ChatPanel
-                    project={p}
-                    agentList={agentList}
-                    manifests={manifests}
-                    threads={threads}
-                    working={working}
-                    activeThreadId={activeThreadId}
-                    threadHasContext={!!activeThread?.contextBundle}
-                    onAdoptThreadId={setActiveThreadId}
-                    agentIds={agentIds}
-                    setAgentIds={setAgentIds}
-                    draft={draft}
-                    setDraft={setDraft}
-                    draftKey={draftKey}
-                    setDraftKey={setDraftKey}
-                    pendingJumpRunId={pendingJumpRunId}
-                    onConsumedJump={() => setPendingJumpRunId(null)}
-                  />
-                </section>
-              </Panel>
-              <PanelResizeHandle className="w-px bg-border data-[resize-handle-state=hover]:bg-foreground/25 data-[resize-handle-state=drag]:bg-foreground/40 transition-colors" />
-              <Panel
-                defaultSize={38}
-                minSize={20}
-                maxSize={70}
-                className="hidden lg:flex"
-              >
-                <aside className="flex h-full w-full flex-col border-l border-border bg-background">
-                  <FileTabBar
-                    activeFile={activeFile}
-                    openFiles={openFiles}
-                    activeByPath={activeByPath}
-                    lineByPath={lineByPath}
-                    agents={agentList}
-                    onActivate={(path) => setActiveFile(path)}
-                    onClose={closeFile}
-                    onCloseAll={closeAllFiles}
-                  />
-                  <div className="flex-1 min-h-0 flex flex-col">
-                    {activeFile && openFiles.includes(activeFile) ? (
-                      <FileTab
-                        projectId={p.id}
-                        path={activeFile}
-                        activeAgentId={activeByPath.get(activeFile)}
-                        activeLine={lineByPath.get(activeFile)}
-                        agents={agentList}
-                        onJumpToRun={handleJumpToRun}
-                        adapterByKind={adapterByKind}
-                      />
-                    ) : null}
-                  </div>
-                </aside>
-              </Panel>
-            </PanelGroup>
+          {inEditorMode ? (
+            <section className="flex-1 min-w-0 flex flex-col">
+              <FileTab
+                projectId={p.id}
+                path={activeFile}
+                presences={editorPresences}
+                agents={agentList}
+                onJumpToRun={handleJumpToRun}
+                adapterByKind={adapterByKind}
+              />
+            </section>
           ) : (
-            // 파일 뷰어 닫힘: 채팅 풀폭 + 우측에 좁은 활동 레일.
             <>
               <section className="flex-1 min-w-0 flex flex-col bg-card">
                 <ThreadBar
@@ -409,20 +402,12 @@ export function WorkspacePage() {
                   onOpenContext={() => setContextOpen(true)}
                   onPickThread={(id) => setActiveThreadId(id)}
                   onNewThread={() => setActiveThreadId(null)}
-                  onNewIsolatedThread={async () => {
-                    try {
-                      const r = await api.createThread({
-                        projectId: p.id,
-                        name: t("thread.isolated.defaultName"),
-                        isolate: true,
-                      });
-                      setActiveThreadId(r.thread.id);
-                    } catch (err) {
-                      toast.error(
-                        err instanceof Error ? err.message : String(err),
-                      );
-                    }
-                  }}
+                  onNewIsolatedThread={newIsolatedThread}
+                />
+                <ActivePin
+                  touches={activeTouchesQuery.data?.touches ?? []}
+                  agents={agentList}
+                  onPick={openFile}
                 />
                 <ChatPanel
                   project={p}
@@ -467,6 +452,6 @@ export function WorkspacePage() {
         thread={activeThread}
         onClose={() => setContextOpen(false)}
       />
-    </TooltipProvider>
+    </>
   );
 }

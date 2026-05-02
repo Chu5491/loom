@@ -13,11 +13,11 @@ export function PanelHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b shrink-0">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="flex items-center justify-between gap-2 h-10 px-3 border-b border-border/70 shrink-0">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/70">
         {title}
       </span>
-      {action}
+      {action ? <div className="flex items-center gap-1">{action}</div> : null}
     </div>
   );
 }
