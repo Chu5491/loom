@@ -336,29 +336,8 @@ export function WorkspacePage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [closeAllFiles]);
 
-  if (project.isLoading || agents.isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-        {t("common.loading")}
-      </div>
-    );
-  }
-  if (project.isError || !project.data) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-sm text-destructive">
-        {project.error?.message ?? t("common.notFound")}
-      </div>
-    );
-  }
-  const p = project.data.project;
-  const activeThread =
-    threadList.find((th) => th.id === activeThreadId) ?? null;
-
-  // 에디터는 활성 파일이 있으면 코드, 없으면 빈 상태. 채팅은 별도 floating overlay.
-  const showEditor = activeFile !== null && openFiles.includes(activeFile);
-  const showFileTabs = !chatFullModal && openFiles.length > 0;
-
   // 이 thread에 발화한 적 있는 모든 에이전트 — 단톡방 참여자 헤더용.
+  // 모든 useMemo는 early return 전에 위치해야 React 훅 순서가 안정적.
   const participantsForThread = useMemo(() => {
     const ids = new Set(filteredRuns.map((r) => r.agentId));
     return agentList.filter((a) => ids.has(a.id));
@@ -391,6 +370,27 @@ export function WorkspacePage() {
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [activeFile, presencesByPath, agentList]);
+
+  // 이 시점부터는 훅 호출 없음 — early return 안전.
+  if (project.isLoading || agents.isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+        {t("common.loading")}
+      </div>
+    );
+  }
+  if (project.isError || !project.data) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-sm text-destructive">
+        {project.error?.message ?? t("common.notFound")}
+      </div>
+    );
+  }
+  const p = project.data.project;
+  const activeThread =
+    threadList.find((th) => th.id === activeThreadId) ?? null;
+  const showEditor = activeFile !== null && openFiles.includes(activeFile);
+  const showFileTabs = !chatFullModal && openFiles.length > 0;
 
   const newIsolatedThread = async () => {
     try {
