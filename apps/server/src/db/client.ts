@@ -38,155 +38,168 @@ function columnExists(db: DB, table: string, column: string): boolean {
   return rows.some((r) => r.name === column);
 }
 
-function applyMigrations(db: DB): void {
-  // 0001: add runs.attached_spec_ids (v0.6).
-  if (!columnExists(db, "runs", "attached_spec_ids")) {
-    db.exec(
-      `ALTER TABLE runs ADD COLUMN attached_spec_ids TEXT NOT NULL DEFAULT '[]'`,
-    );
-  }
+// schema_migrations 테이블이 적용된 마이그레이션 버전을 기록.
+// 컬럼-존재 가드는 belt-and-suspenders로 유지 — 기존 DB는 가드가 no-op으로 통과시키고
+// 새 DB는 실제로 ALTER 실행. 어느 쪽이든 끝나면 schema_migrations에 기록.
+function ensureMigrationsTable(db: DB): void {
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS schema_migrations (
+       version    INTEGER PRIMARY KEY,
+       name       TEXT NOT NULL,
+       applied_at TEXT NOT NULL
+     )`,
+  );
+}
 
-  // 0002a: add projects + agents.project_id column (v0.8).
-  if (!columnExists(db, "agents", "project_id")) {
-    db.exec(
-      `ALTER TABLE agents ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE`,
-    );
-  }
-
-  // 0002b: any agent rows with NULL project_id (from a previous failed
-  // migration or pre-existing data) get gathered under an auto-created
-  // "Default" project. Idempotent — a no-op once nothing is null.
-  const orphan = db
-    .prepare<[], { count: number }>(
-      "SELECT COUNT(*) as count FROM agents WHERE project_id IS NULL",
+function hasMigration(db: DB, version: number): boolean {
+  const row = db
+    .prepare<[number], { version: number }>(
+      `SELECT version FROM schema_migrations WHERE version = ?`,
     )
-    .get();
-  if (orphan && orphan.count > 0) {
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO projects (id, name, path, description, created_at, updated_at)
-       VALUES (?, 'Default', ?, 'Auto-created during the project migration', ?, ?)`,
-    ).run(id, os.homedir(), now, now);
-    db.prepare(`UPDATE agents SET project_id = ? WHERE project_id IS NULL`).run(id);
-  }
+    .get(version);
+  return !!row;
+}
 
-  // Always ensure index exists — handles both fresh installs and upgrades.
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id)`);
+function recordMigration(db: DB, version: number, name: string): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`,
+  ).run(version, name, new Date().toISOString());
+}
 
-  // 0003: agents.prompt (v0.9). Empty default keeps existing behavior.
-  if (!columnExists(db, "agents", "prompt")) {
-    db.exec(`ALTER TABLE agents ADD COLUMN prompt TEXT NOT NULL DEFAULT ''`);
-  }
+function migration(db: DB, version: number, name: string, fn: () => void): void {
+  if (hasMigration(db, version)) return;
+  fn();
+  recordMigration(db, version, name);
+}
 
-  // 0004: agent_skills join table (v0.9).
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS agent_skills (
-       agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-       skill_id    TEXT NOT NULL REFERENCES specs(id) ON DELETE CASCADE,
-       created_at  TEXT NOT NULL,
-       PRIMARY KEY (agent_id, skill_id)
-     )`,
-  );
+function applyMigrations(db: DB): void {
+  ensureMigrationsTable(db);
 
-  // 0005: runs.before_ref / after_ref (v0.10) — working-tree snapshot
-  // commit SHAs used to render per-run file diffs. NULLable; runs that
-  // failed to snapshot or ran in non-git cwds simply skip diff tracking.
-  if (!columnExists(db, "runs", "before_ref")) {
-    db.exec(`ALTER TABLE runs ADD COLUMN before_ref TEXT`);
-  }
-  if (!columnExists(db, "runs", "after_ref")) {
-    db.exec(`ALTER TABLE runs ADD COLUMN after_ref TEXT`);
-  }
+  migration(db, 1, "runs.attached_spec_ids", () => {
+    if (!columnExists(db, "runs", "attached_spec_ids")) {
+      db.exec(
+        `ALTER TABLE runs ADD COLUMN attached_spec_ids TEXT NOT NULL DEFAULT '[]'`,
+      );
+    }
+  });
 
-  // 0006: run_changes — per-run per-file diff stats persisted at finish
-  // time so file-history queries don't need live git access and survive
-  // git gc reaping the dangling snapshot commits.
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS run_changes (
-       run_id      TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-       path        TEXT NOT NULL,
-       from_path   TEXT,
-       status      TEXT NOT NULL,
-       additions   INTEGER NOT NULL DEFAULT 0,
-       deletions   INTEGER NOT NULL DEFAULT 0,
-       PRIMARY KEY (run_id, path)
-     )`,
-  );
-  db.exec(
-    `CREATE INDEX IF NOT EXISTS idx_run_changes_path ON run_changes(path)`,
-  );
-
-  // 0007: threads as first-class containers. Migration has three pieces:
-  //
-  //   a) the threads table itself
-  //   b) runs.thread_id FK
-  //   c) backfill — every existing run gets attached to a thread, with
-  //      runs that share a parent_run_id chain rolled into the same
-  //      thread (preserves the implicit grouping the chat already used)
-  //
-  // The backfill walks parent chains in JS rather than SQL — recursive
-  // CTEs work but are awkward for "find the chain root and group", and
-  // the data volume here is small enough that a JS pass is the simpler
-  // bet.
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS threads (
-       id              TEXT PRIMARY KEY,
-       project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-       name            TEXT NOT NULL,
-       status          TEXT NOT NULL DEFAULT 'active',
-       context_bundle  TEXT NOT NULL DEFAULT '',
-       created_at      TEXT NOT NULL,
-       updated_at      TEXT NOT NULL
-     )`,
-  );
-  db.exec(
-    `CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_id)`,
-  );
-  db.exec(
-    `CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status)`,
-  );
-  if (!columnExists(db, "runs", "thread_id")) {
+  migration(db, 2, "projects + agents.project_id", () => {
+    if (!columnExists(db, "agents", "project_id")) {
+      db.exec(
+        `ALTER TABLE agents ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE`,
+      );
+    }
+    // NULL project_id 백필 — 이전 실패 마이그레이션 / 사전 데이터를 "Default" 프로젝트에 묶음.
+    const orphan = db
+      .prepare<[], { count: number }>(
+        "SELECT COUNT(*) as count FROM agents WHERE project_id IS NULL",
+      )
+      .get();
+    if (orphan && orphan.count > 0) {
+      const id = randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO projects (id, name, path, description, created_at, updated_at)
+         VALUES (?, 'Default', ?, 'Auto-created during the project migration', ?, ?)`,
+      ).run(id, os.homedir(), now, now);
+      db.prepare(`UPDATE agents SET project_id = ? WHERE project_id IS NULL`).run(id);
+    }
     db.exec(
-      `ALTER TABLE runs ADD COLUMN thread_id TEXT REFERENCES threads(id) ON DELETE SET NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id)`,
     );
-  }
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_runs_thread ON runs(thread_id)`);
-  backfillThreadsForOrphanedRuns(db);
+  });
 
-  // 0008: runs.cost_usd — populated from the CLI's result event when the
-  // adapter surfaces it (claude-code's stream-json carries
-  // total_cost_usd). Stays NULL for adapters that don't report cost,
-  // and we never fabricate estimates client-side from token counts.
-  if (!columnExists(db, "runs", "cost_usd")) {
-    db.exec(`ALTER TABLE runs ADD COLUMN cost_usd REAL`);
-  }
+  migration(db, 3, "agents.prompt", () => {
+    if (!columnExists(db, "agents", "prompt")) {
+      db.exec(`ALTER TABLE agents ADD COLUMN prompt TEXT NOT NULL DEFAULT ''`);
+    }
+  });
 
-  // 0009: threads.worktree_path — optional isolated git worktree per
-  // thread. Lets users branch off the project's main checkout for
-  // parallel-safe experimentation (multiple threads working on
-  // conflicting files at the same time without stepping on each
-  // other). NULL = "share the project's path," which is the default.
-  if (!columnExists(db, "threads", "worktree_path")) {
-    db.exec(`ALTER TABLE threads ADD COLUMN worktree_path TEXT`);
-  }
+  migration(db, 4, "agent_skills join table", () => {
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS agent_skills (
+         agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+         skill_id    TEXT NOT NULL REFERENCES specs(id) ON DELETE CASCADE,
+         created_at  TEXT NOT NULL,
+         PRIMARY KEY (agent_id, skill_id)
+       )`,
+    );
+  });
 
-  // 0010: runs.session_id — captured during the run from the CLI's
-  // output (stream-json `session_id` for claude-code, equivalents for
-  // others). The next run in the same thread/agent looks up the most
-  // recent non-null session id and feeds it back as a resume token so
-  // the conversation memory survives across turns.
-  if (!columnExists(db, "runs", "session_id")) {
-    db.exec(`ALTER TABLE runs ADD COLUMN session_id TEXT`);
-  }
+  migration(db, 5, "runs.before_ref + after_ref", () => {
+    if (!columnExists(db, "runs", "before_ref")) {
+      db.exec(`ALTER TABLE runs ADD COLUMN before_ref TEXT`);
+    }
+    if (!columnExists(db, "runs", "after_ref")) {
+      db.exec(`ALTER TABLE runs ADD COLUMN after_ref TEXT`);
+    }
+  });
 
-  // 0011: runs.resumed_session_id — the session this run *tried* to
-  // resume from at start. Lets us detect "this session is now stale"
-  // when a resume attempt fails, and skip it forever after instead of
-  // crashing every subsequent run with "no conversation found".
-  if (!columnExists(db, "runs", "resumed_session_id")) {
-    db.exec(`ALTER TABLE runs ADD COLUMN resumed_session_id TEXT`);
-  }
+  migration(db, 6, "run_changes table", () => {
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS run_changes (
+         run_id      TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+         path        TEXT NOT NULL,
+         from_path   TEXT,
+         status      TEXT NOT NULL,
+         additions   INTEGER NOT NULL DEFAULT 0,
+         deletions   INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (run_id, path)
+       )`,
+    );
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_run_changes_path ON run_changes(path)`,
+    );
+  });
+
+  migration(db, 7, "threads + runs.thread_id", () => {
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS threads (
+         id              TEXT PRIMARY KEY,
+         project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+         name            TEXT NOT NULL,
+         status          TEXT NOT NULL DEFAULT 'active',
+         context_bundle  TEXT NOT NULL DEFAULT '',
+         created_at      TEXT NOT NULL,
+         updated_at      TEXT NOT NULL
+       )`,
+    );
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_id)`,
+    );
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status)`);
+    if (!columnExists(db, "runs", "thread_id")) {
+      db.exec(
+        `ALTER TABLE runs ADD COLUMN thread_id TEXT REFERENCES threads(id) ON DELETE SET NULL`,
+      );
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_runs_thread ON runs(thread_id)`);
+    backfillThreadsForOrphanedRuns(db);
+  });
+
+  migration(db, 8, "runs.cost_usd", () => {
+    if (!columnExists(db, "runs", "cost_usd")) {
+      db.exec(`ALTER TABLE runs ADD COLUMN cost_usd REAL`);
+    }
+  });
+
+  migration(db, 9, "threads.worktree_path", () => {
+    if (!columnExists(db, "threads", "worktree_path")) {
+      db.exec(`ALTER TABLE threads ADD COLUMN worktree_path TEXT`);
+    }
+  });
+
+  migration(db, 10, "runs.session_id", () => {
+    if (!columnExists(db, "runs", "session_id")) {
+      db.exec(`ALTER TABLE runs ADD COLUMN session_id TEXT`);
+    }
+  });
+
+  migration(db, 11, "runs.resumed_session_id", () => {
+    if (!columnExists(db, "runs", "resumed_session_id")) {
+      db.exec(`ALTER TABLE runs ADD COLUMN resumed_session_id TEXT`);
+    }
+  });
 }
 
 interface OrphanRunRow {
@@ -197,13 +210,7 @@ interface OrphanRunRow {
   created_at: string;
 }
 
-/**
- * Group every thread-less run into one thread per parent_run_id chain.
- * Each chain becomes a single Thread named after the root run's prompt.
- * Runs whose agent no longer exists are skipped — their project is
- * unrecoverable, and we'd rather drop a dangling row than fabricate a
- * placeholder project.
- */
+// 매 parent_run_id 체인을 한 thread로 묶음. 체인 루트의 prompt가 thread 이름이 됨.
 function backfillThreadsForOrphanedRuns(db: DB): void {
   const orphans = db
     .prepare<[], OrphanRunRow>(
@@ -217,8 +224,7 @@ function backfillThreadsForOrphanedRuns(db: DB): void {
 
   const byId = new Map<string, OrphanRunRow>(orphans.map((r) => [r.id, r]));
 
-  // Walk every run's parent chain to a root. Cap the walk to defend
-  // against accidental cycles in legacy data.
+  // 50단계 cap — 레거시 데이터의 우발적 cycle 방어.
   const rootOf = new Map<string, string>();
   for (const r of orphans) {
     let cur: OrphanRunRow = r;
@@ -230,17 +236,14 @@ function backfillThreadsForOrphanedRuns(db: DB): void {
     rootOf.set(r.id, cur.id);
   }
 
-  const projectStmt = db.prepare<
-    [string],
-    { project_id: string }
-  >("SELECT project_id FROM agents WHERE id = ?");
+  const projectStmt = db.prepare<[string], { project_id: string }>(
+    "SELECT project_id FROM agents WHERE id = ?",
+  );
   const insertThread = db.prepare(
     `INSERT INTO threads (id, project_id, name, status, context_bundle, created_at, updated_at)
      VALUES (?, ?, ?, 'active', '', ?, ?)`,
   );
-  const updateRun = db.prepare(
-    `UPDATE runs SET thread_id = ? WHERE id = ?`,
-  );
+  const updateRun = db.prepare(`UPDATE runs SET thread_id = ? WHERE id = ?`);
 
   const threadByRoot = new Map<string, string>();
   for (const rootId of new Set(rootOf.values())) {
@@ -265,10 +268,7 @@ function backfillThreadsForOrphanedRuns(db: DB): void {
   }
 }
 
-/** Build a thread name from a run's prompt: collapse whitespace, trim,
- *  cap at 60 chars. Empty / pathological prompts get a "Untitled"
- *  fallback so we never insert NULL. Exported because new-thread
- *  creation in run-service uses the exact same convention. */
+// run-service의 새 thread 생성에서도 같은 컨벤션 사용.
 export function threadNameFromPrompt(prompt: string): string {
   const cleaned = prompt.replace(/\s+/g, " ").trim();
   if (!cleaned) return "Untitled";

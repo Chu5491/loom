@@ -7,9 +7,7 @@ import {
   listProjects,
   updateProject,
 } from "../db/projects.js";
-import { listRunsForPath, listTouchedPaths } from "../db/run-changes.js";
-import { getRun } from "../db/runs.js";
-import { getAgent } from "../db/agents.js";
+import { listFileHistoryHydrated, listTouchedPaths } from "../db/run-changes.js";
 import { listForProject as listActiveTouches } from "../services/active-touches.js";
 import { listAllFiles, listTree, readProjectFile } from "../services/project-fs.js";
 
@@ -120,30 +118,8 @@ projectsRoute.get("/:id/file-history", (c) => {
   const path = c.req.query("path");
   if (!path) return c.json({ error: "path_required" }, 400);
 
-  const raw = listRunsForPath(project.path, path);
-  // Hydrate with the run + agent so the UI doesn't need a second round
-  // trip per row. Skip rows where the run is missing (cascade delete
-  // race or manual cleanup).
-  const entries = [];
-  for (const row of raw) {
-    const run = getRun(row.runId);
-    if (!run) continue;
-    const agent = getAgent(run.agentId);
-    entries.push({
-      runId: row.runId,
-      agentId: run.agentId,
-      agentName: agent?.name ?? null,
-      adapterKind: agent?.adapterKind ?? null,
-      status: row.status,
-      additions: row.additions,
-      deletions: row.deletions,
-      fromPath: row.fromPath,
-      runStatus: run.status,
-      createdAt: run.createdAt,
-      endedAt: run.endedAt,
-    });
-  }
-  return c.json({ entries });
+  // 단일 JOIN 쿼리 — 이전엔 N+1로 row마다 getRun+getAgent를 별도 호출했음.
+  return c.json({ entries: listFileHistoryHydrated(project.path, path) });
 });
 
 /**

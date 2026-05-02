@@ -139,3 +139,62 @@ export function listRunsForPath(
     fromPath: row.from_path ?? undefined,
   }));
 }
+
+export interface FileHistoryHydratedEntry {
+  runId: string;
+  agentId: string;
+  agentName: string | null;
+  adapterKind: string | null;
+  status: RunChange["status"];
+  additions: number;
+  deletions: number;
+  fromPath: string | undefined;
+  runStatus: string;
+  createdAt: string;
+  endedAt: string | null;
+}
+
+interface HydratedRow extends RunChangeRow {
+  run_status: string;
+  created_at: string;
+  ended_at: string | null;
+  agent_id: string;
+  agent_name: string | null;
+  adapter_kind: string | null;
+}
+
+// runs + agents 조인된 단일 쿼리. route 핸들러의 N+1을 제거.
+export function listFileHistoryHydrated(
+  projectPath: string,
+  filePath: string,
+): FileHistoryHydratedEntry[] {
+  const rows = getDb()
+    .prepare<[string, string], HydratedRow>(
+      `SELECT rc.*,
+              r.status     AS run_status,
+              r.created_at AS created_at,
+              r.ended_at   AS ended_at,
+              r.agent_id   AS agent_id,
+              a.name       AS agent_name,
+              a.adapter_kind AS adapter_kind
+       FROM run_changes rc
+       JOIN runs r ON r.id = rc.run_id
+       LEFT JOIN agents a ON a.id = r.agent_id
+       WHERE rc.path = ? AND r.cwd = ?
+       ORDER BY r.created_at DESC`,
+    )
+    .all(filePath, projectPath);
+  return rows.map((row) => ({
+    runId: row.run_id,
+    agentId: row.agent_id,
+    agentName: row.agent_name,
+    adapterKind: row.adapter_kind,
+    status: row.status as RunChange["status"],
+    additions: row.additions,
+    deletions: row.deletions,
+    fromPath: row.from_path ?? undefined,
+    runStatus: row.run_status,
+    createdAt: row.created_at,
+    endedAt: row.ended_at,
+  }));
+}

@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { config } from "./config.js";
 import { getDb, closeDb } from "./db/client.js";
 import { markOrphanedRunsFailed } from "./db/runs.js";
+import { logger } from "./logger.js";
 import { adaptersRoute } from "./routes/adapters.js";
 import { agentsRoute } from "./routes/agents.js";
 import { healthRoute } from "./routes/health.js";
@@ -15,7 +16,7 @@ getDb();
 
 const orphans = markOrphanedRunsFailed();
 if (orphans > 0) {
-  console.warn(`[loom] marked ${orphans} orphaned run(s) as failed`);
+  logger.warn({ orphans }, "marked orphaned runs as failed");
 }
 
 const app = new Hono();
@@ -29,20 +30,22 @@ app.route("/api/runs", runsRoute);
 app.route("/api/threads", threadsRoute);
 
 app.onError((err, c) => {
-  console.error("[loom] unhandled error:", err);
+  logger.error({ err }, "unhandled request error");
   return c.json({ error: "internal", message: err.message }, 500);
 });
 
 const server = serve(
   { fetch: app.fetch, port: config.port, hostname: config.host },
   (info) => {
-    console.log(`[loom] listening on http://${info.address}:${info.port}`);
-    console.log(`[loom] data dir: ${config.dataDir}`);
+    logger.info(
+      { addr: `http://${info.address}:${info.port}`, dataDir: config.dataDir },
+      "listening",
+    );
   },
 );
 
 const shutdown = () => {
-  console.log("\n[loom] shutting down...");
+  logger.info("shutting down");
   server.close(() => {
     closeDb();
     process.exit(0);

@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import type { RunStatus } from "@loom/core";
 import { getRun, listRuns } from "../db/runs.js";
 import { listChangesForRun } from "../db/run-changes.js";
 import { cancelRun, startRun } from "../services/run-service.js";
@@ -22,16 +21,36 @@ const createSchema = z.object({
   includeContext: z.boolean().optional(),
 });
 
+const runStatusSchema = z.enum([
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+]);
+
+const listQuerySchema = z.object({
+  agentId: z.string().min(1).optional(),
+  threadId: z.string().min(1).optional(),
+  parentRunId: z.string().min(1).optional(),
+  status: runStatusSchema.optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+
 export const runsRoute = new Hono();
 
 runsRoute.get("/", (c) => {
-  const agentId = c.req.query("agentId") ?? undefined;
-  const threadId = c.req.query("threadId") ?? undefined;
-  const parentRunId = c.req.query("parentRunId") ?? undefined;
-  const status = c.req.query("status") as RunStatus | undefined;
-  const limitRaw = c.req.query("limit");
-  const limit = limitRaw ? Number(limitRaw) : undefined;
-  const runs = listRuns({ agentId, threadId, parentRunId, status, limit });
+  const parsed = listQuerySchema.safeParse({
+    agentId: c.req.query("agentId"),
+    threadId: c.req.query("threadId"),
+    parentRunId: c.req.query("parentRunId"),
+    status: c.req.query("status"),
+    limit: c.req.query("limit"),
+  });
+  if (!parsed.success) {
+    return c.json({ error: "invalid_query", issues: parsed.error.issues }, 400);
+  }
+  const runs = listRuns(parsed.data);
   return c.json({ runs });
 });
 
