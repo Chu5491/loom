@@ -36,9 +36,15 @@ export function buildCodexCommand(config: CodexConfig = {}): BuiltCommand {
   return { command, args };
 }
 
-/** McpServer → codex `-c` 오버라이드 인자들. codex는 `-c key=value`로 TOML
- *  설정 단일 키를 덮어쓸 수 있어, 한 서버의 모든 항목을 dot-path로 풀어 넘김.
- *  값은 JSON 인코딩 (string은 따옴표로, array/number는 그대로). */
+/** McpServer → codex `-c` 오버라이드 인자들.
+ *
+ *  codex의 [mcp_servers.NAME] 섹션이 받는 키 (TOML):
+ *    stdio: command, args, env (object), cwd?, env_vars?
+ *    http : url, http_headers (object), bearer_token_env_var?
+ *    sse  : 미지원. SSE 서버는 HTTP로 fallback (url + http_headers)으로 처리.
+ *           일부 서버는 같은 url을 SSE/HTTP 둘 다 노출하므로 이 fallback이 동작할 수도.
+ *
+ *  Ref: https://developers.openai.com/codex/config-reference */
 export function toCodexMcpOverrides(server: McpServer): string[] {
   const prefix = `mcp_servers.${server.name}`;
   const out: string[] = [];
@@ -53,6 +59,7 @@ export function toCodexMcpOverrides(server: McpServer): string[] {
       out.push("-c", `${prefix}.env.${k}=${JSON.stringify(v)}`);
     }
   } else {
+    // http + sse 모두 url + http_headers — codex가 SSE 별도 처리 안 함.
     if (server.url) {
       out.push("-c", `${prefix}.url=${JSON.stringify(server.url)}`);
     }

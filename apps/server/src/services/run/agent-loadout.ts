@@ -63,10 +63,17 @@ function extractBlurb(content: string): string {
   return "";
 }
 
-/** McpServer → claude-code `.mcp.json`이 받는 단일 엔트리 형태. 다른 어댑터는
- *  자기 어댑터 코드에서 다시 변환. 우리가 디스크에 떨어뜨리는 한 가지 정본
- *  포맷은 claude-code 포맷. */
-function toClaudeMcpEntry(server: McpServer): Record<string, unknown> {
+/** McpServer → claude-code `.mcp.json`이 받는 단일 엔트리.
+ *
+ *  claude-code의 mcpServers 항목 구조 (ref: code.claude.com/docs/en/mcp):
+ *    stdio: { type: "stdio", command, args, env }
+ *    http : { type: "http",  url, headers }
+ *    sse  : { type: "sse",   url, headers }
+ *
+ *  다른 어댑터는 자기 코드에서 자기 포맷으로 다시 변환 — 디스크에 떨어뜨리는
+ *  한 가지 정본 포맷이 claude-code 포맷이라 이 함수가 정본 인코더.
+ *  exported for unit tests. */
+export function toClaudeMcpEntry(server: McpServer): Record<string, unknown> {
   if (server.kind === "stdio") {
     return {
       type: "stdio",
@@ -75,7 +82,7 @@ function toClaudeMcpEntry(server: McpServer): Record<string, unknown> {
       ...(Object.keys(server.env).length > 0 ? { env: server.env } : {}),
     };
   }
-  // http / sse
+  // http / sse — same shape, different `type`.
   return {
     type: server.kind,
     ...(server.url ? { url: server.url } : {}),

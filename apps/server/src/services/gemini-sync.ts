@@ -98,9 +98,15 @@ function clearServerSyncedAt(names: string[]): void {
   tx(names);
 }
 
-/** McpServer → gemini settings.json의 mcpServers 항목 한 개. gemini 포맷:
- *   stdio: { command, args, env }
- *   http : { httpUrl, headers }  */
+/** McpServer → gemini settings.json의 mcpServers 항목 한 개.
+ *
+ *  Gemini CLI는 transport를 키로 구분 (type 필드 없음):
+ *    stdio: { command, args, env, cwd? }
+ *    http : { httpUrl, headers }      ← HTTP는 httpUrl
+ *    sse  : { url, headers }          ← SSE는 url (HTTP와 키가 다름!)
+ *
+ *  Ref: https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md
+ */
 export function toGeminiMcpEntry(server: McpServer): Record<string, unknown> {
   if (server.kind === "stdio") {
     return {
@@ -109,11 +115,13 @@ export function toGeminiMcpEntry(server: McpServer): Record<string, unknown> {
       ...(Object.keys(server.env).length > 0 ? { env: server.env } : {}),
     };
   }
-  // http / sse — gemini docs use httpUrl. SSE는 sse-spec이 따로 있지만 우선
-  // httpUrl로 통일. 차후 sse-only 처리 분기 필요하면 추가.
+  // HTTP는 httpUrl, SSE는 url — gemini docs 명시 차이.
+  const urlKey = server.kind === "http" ? "httpUrl" : "url";
   return {
-    ...(server.url ? { httpUrl: server.url } : {}),
-    ...(Object.keys(server.headers).length > 0 ? { headers: server.headers } : {}),
+    ...(server.url ? { [urlKey]: server.url } : {}),
+    ...(Object.keys(server.headers).length > 0
+      ? { headers: server.headers }
+      : {}),
   };
 }
 
