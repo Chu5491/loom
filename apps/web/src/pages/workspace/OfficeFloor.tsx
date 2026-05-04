@@ -257,25 +257,41 @@ function AgentCharacter({
     return { speedMul, waitMul };
   }, [agent.id]);
 
-  // 시작 위치 — 임의 destination 근처. 페이지 로드 직후 다 같은 자리에 있지 않게.
+  // 마운트 시 `working`이 이미 true면 캐릭터는 책상에 앉은 상태로 시작해야 함
+  // — 사용자가 다른 뷰에서 일을 시켜놓고 사무실로 돌아왔는데 캐릭터가 통로에
+  // 서있으면 "사무실이 초기화된" 인상. idle 시작은 working=false일 때만.
   const initial = useMemo(() => {
+    if (working) {
+      return {
+        pos: { x: homeX, y: homeY - 8 },
+        state: "working" as CharState,
+      };
+    }
     const seed = hashSeed(agent.id);
     const dest = DESTINATIONS[seed % DESTINATIONS.length]!;
     const ox = ((seed >> 4) % 12) - 6;
     const oy = ((seed >> 8) % 8) - 4;
     return {
-      x: clamp(dest.x + ox, 6, 94),
-      y: clamp(dest.y + oy, 28, 52),
+      pos: {
+        x: clamp(dest.x + ox, 6, 94),
+        y: clamp(dest.y + oy, 28, 52),
+      },
+      state: "idle" as CharState,
     };
-  }, [agent.id]);
+    // working은 초회 마운트의 분기점일 뿐 — 중간 변경은 아래 transition useEffect가
+    // 따로 처리. 그래서 deps에 의도적으로 포함하지 않음 (eslint 무시).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, homeX, homeY]);
 
-  const [pos, setPos] = useState(initial);
-  const [target, setTarget] = useState(initial);
-  const [state, setState] = useState<CharState>("idle");
+  const [pos, setPos] = useState(initial.pos);
+  const [target, setTarget] = useState(initial.pos);
+  const [state, setState] = useState<CharState>(initial.state);
   /** 현재 머무는/가는 destination — linger 시 머리 위 아이콘에 사용. */
   const [destKind, setDestKind] = useState<DestKind | null>(null);
   /** 호버 시 정보 카드 표시. */
   const [hovered, setHovered] = useState(false);
+  // ref 초기값을 `working`으로 — 마운트 후 첫 effect 실행에서 wasWorking === working이
+  // 되어 잘못된 going 트리거를 막음 (이미 working이면 그대로 working에 안착해 있음).
   const lastWorkingRef = useRef(working);
 
   // working 토글 → 즉시 인터럽트. linger / wander 중이어도 책상으로 출근.
