@@ -11,12 +11,17 @@ import type { LayoutOutletContext } from "../components/Layout.js";
 import { api } from "../api/client.js";
 import { useRoomDerived } from "../components/chat/index.js";
 import { agentColorOf } from "../components/agentColor.js";
-import { ChatDock } from "../components/ChatDock.js";
+import {
+  ChatDock,
+  readDockPlacement,
+  type DockPlacement,
+} from "../components/ChatDock.js";
 import { ContextDrawer } from "../components/ContextDrawer.js";
 import { FilePalette } from "../components/FilePalette.js";
 import { FileTab } from "../components/FileTab.js";
 import { TeamRibbon } from "../components/TeamRibbon.js";
 import { useI18n } from "../context/I18nContext.js";
+import { cn } from "../lib/utils.js";
 import { useLoomEvent } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
 import { ChatPanel } from "./workspace/ChatPanel.js";
@@ -300,8 +305,12 @@ export function WorkspacePage() {
 
   const [contextOpen, setContextOpen] = useState(false);
 
-  // 채팅 dock의 open/height 상태는 ChatDock 자체가 관리 (localStorage 영속).
-  // ⌘J 단축키도 ChatDock 내부에 — 이 페이지에서 별도 상태 안 둠.
+  // 채팅 dock의 open/height/width 상태는 ChatDock 자체가 관리 (localStorage 영속).
+  // 다만 placement는 외부 레이아웃(WorkspacePage)이 함께 알아야 — bottom이면 column,
+  // right면 row로 flex 방향이 달라짐.
+  const [dockPlacement, setDockPlacement] = useState<DockPlacement>(() =>
+    readDockPlacement(),
+  );
 
   // ⌘P → 파일 팔레트, ⌘\ → 모든 파일 닫기. 입력 중에는 무시.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -448,9 +457,16 @@ export function WorkspacePage() {
           onPick={openFile}
         />
 
-        {/* 메인 영역 — 에디터(상단) + 채팅 dock(하단). VSCode terminal 패턴:
-         *  같은 column flex 안에서 형제로 살면서 dock이 자체 높이를 차지. */}
-        <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+        {/* 메인 영역 — 에디터 + 채팅 dock. dockPlacement에 따라 row/col 전환.
+         *   bottom: 에디터 위, dock 아래 (flex-col)
+         *   right : 에디터 좌, dock 우 (flex-row)
+         *  좁은 / 세로가 짧은 화면에선 right가 훨씬 살림. */}
+        <div
+          className={cn(
+            "flex-1 min-h-0 min-w-0 flex",
+            dockPlacement === "bottom" ? "flex-col" : "flex-row",
+          )}
+        >
           <section className="flex-1 min-w-0 min-h-0 flex flex-col">
             {view === "office" ? (
               <Office
@@ -487,6 +503,8 @@ export function WorkspacePage() {
                   ? `# ${p.name}`
                   : (activeThread?.name ?? t("chat.overlay.title"))
               }
+              placement={dockPlacement}
+              onPlacementChange={setDockPlacement}
             >
               {/* dock 본문 = [좌측 ThreadList | 우측 ThreadBar + ChatPanel].
                   VSCode 터미널의 세션 사이드바와 동일한 컨셉. */}
@@ -496,6 +514,7 @@ export function WorkspacePage() {
                   threads={threadList}
                   activeThread={activeThread}
                   workingThreadIds={workingThreadIds}
+                  compact={dockPlacement === "right"}
                   onPick={(id) => setActiveThreadId(id)}
                   onNewThread={() => setActiveThreadId(null)}
                   onNewIsolatedThread={newIsolatedThread}

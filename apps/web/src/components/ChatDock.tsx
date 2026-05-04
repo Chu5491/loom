@@ -1,9 +1,16 @@
-// VSCode 터미널 스타일 — 워크스페이스 하단에 도킹된 채팅 패널.
-// - 항상 화면 하단 고정. 에디터/메인 영역과 같은 column flex 안에서 형제로.
-// - 드래그 핸들로 세로 리사이즈 (180px ~ 80vh)
-// - 상단 탭바: "CHAT" + 활성 thread 이름 + collapse / maximize / close 버튼
-// - collapse 상태일 때는 32px 헤더만 남김. 다시 펼치면 마지막 height로 복귀.
-// - 모든 상태 (open / height / maximized) localStorage 영속.
+// VSCode 터미널 스타일 채팅 패널 — 화면 하단 *또는* 우측에 도킹.
+// - placement="bottom" : 아래쪽 도킹 (기본). 가로폭 가득, 세로 리사이즈.
+// - placement="right"  : 오른쪽 사이드 도킹. 세로폭 가득, 가로 리사이즈.
+//
+// 좁은 / 세로가 짧은 화면에선 right가 훨씬 살림 — 에디터를 압박하지 않고
+// 채팅이 한 컬럼으로 흐름.
+//
+// 영속:
+//   loom:chatDock:placement   "bottom" | "right"
+//   loom:chatDock:height      bottom 모드 세로 길이
+//   loom:chatDock:width       right 모드 가로 길이
+//   loom:chatDock:open        토글 상태 (placement 무관 공유)
+//   loom:chatDock:maximized   같음
 
 import {
   useCallback,
@@ -17,27 +24,39 @@ import {
   MessageSquare,
   Minimize2,
   Maximize2,
+  PanelBottom,
+  PanelRight,
   X,
 } from "lucide-react";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
 const HEIGHT_KEY = "loom:chatDock:height";
+const WIDTH_KEY = "loom:chatDock:width";
+const PLACEMENT_KEY = "loom:chatDock:placement";
 const OPEN_KEY = "loom:chatDock:open";
 const MAX_KEY = "loom:chatDock:maximized";
 
 const HEADER_H = 32;
-// 280은 composer + 최근 메시지 1~2개가 보이는 최소한의 높이. 이전 360은
-// 너무 커서 에디터 영역을 잡아먹는다는 피드백이 있었음.
 const MIN_HEIGHT = 160;
 const DEFAULT_HEIGHT = 280;
+// right 모드 폭 — 360은 message + composer가 답답하지 않은 최소.
+const MIN_WIDTH = 280;
+const DEFAULT_WIDTH = 360;
 
-function readHeight(): number {
-  if (typeof window === "undefined") return DEFAULT_HEIGHT;
-  const raw = window.localStorage.getItem(HEIGHT_KEY);
+export type DockPlacement = "bottom" | "right";
+
+export function readDockPlacement(): DockPlacement {
+  if (typeof window === "undefined") return "bottom";
+  const raw = window.localStorage.getItem(PLACEMENT_KEY);
+  return raw === "right" ? "right" : "bottom";
+}
+function readSize(key: string, def: number, min: number): number {
+  if (typeof window === "undefined") return def;
+  const raw = window.localStorage.getItem(key);
   const n = raw ? Number(raw) : NaN;
-  if (!Number.isFinite(n)) return DEFAULT_HEIGHT;
-  return Math.max(MIN_HEIGHT, n);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, n);
 }
 function readBool(key: string, def: boolean): boolean {
   if (typeof window === "undefined") return def;
@@ -57,11 +76,15 @@ function storeBool(key: string, v: boolean): void {
 export function ChatDock({
   title,
   headerExtra,
+  placement,
+  onPlacementChange,
   children,
 }: {
   title?: string;
-  /** 제목 우측, 토글 버튼들 앞에 들어가는 슬롯 — 참여자 아바타 / 작업 중 뱃지 / 비용 등 */
   headerExtra?: ReactNode;
+  /** 외부에서 controlled — WorkspacePage가 layout을 바꿔야 해서 같이 알아야 함. */
+  placement: DockPlacement;
+  onPlacementChange: (next: DockPlacement) => void;
   children: ReactNode;
 }) {
   const { t } = useI18n();
@@ -69,8 +92,14 @@ export function ChatDock({
   const [maximized, setMaximized] = useState<boolean>(() =>
     readBool(MAX_KEY, false),
   );
-  const [height, setHeight] = useState<number>(() => readHeight());
-  // ⌘J / Ctrl+J 단축키로 dock 토글 — VSCode 터미널 단축키와 동일 컨벤션.
+  const [height, setHeight] = useState<number>(() =>
+    readSize(HEIGHT_KEY, DEFAULT_HEIGHT, MIN_HEIGHT),
+  );
+  const [width, setWidth] = useState<number>(() =>
+    readSize(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH),
+  );
+
+  // ⌘J / Ctrl+J 단축키
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (
@@ -95,9 +124,6 @@ export function ChatDock({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 외부에서 dock을 강제로 열 수 있게 — 사무실에서 캐릭터 클릭 시 "여기 채팅
-  // 시작해" 신호용. 닫기는 사용자가 명시적으로(닫기 버튼) 하길 바라므로 이 이벤트는
-  // open=true로만 동작.
   useEffect(() => {
     const onOpen = () => setOpen(true);
     window.addEventListener("loom:openChatDock", onOpen);
@@ -114,85 +140,151 @@ export function ChatDock({
     try {
       window.localStorage.setItem(HEIGHT_KEY, String(height));
     } catch {
-      // 무시
+      /* ignore */
     }
   }, [height]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WIDTH_KEY, String(width));
+    } catch {
+      /* ignore */
+    }
+  }, [width]);
 
-  // 드래그 핸들 — 헤더 위에 5px 두께 hot zone. mousedown으로 글로벌 listener
-  // 등록 → 드래그 중엔 cursor lock + selection 차단.
+  const togglePlacement = () => {
+    const next = placement === "bottom" ? "right" : "bottom";
+    try {
+      window.localStorage.setItem(PLACEMENT_KEY, next);
+    } catch {
+      /* ignore */
+    }
+    onPlacementChange(next);
+  };
+
+  // 드래그 — placement에 따라 세로/가로 리사이즈.
   const startResize = useCallback(
     (e: React.MouseEvent) => {
       if (!open || maximized) return;
       e.preventDefault();
-      const startY = e.clientY;
-      const startH = height;
-      const onMove = (ev: MouseEvent) => {
-        const dy = startY - ev.clientY; // 위로 끌면 + (커짐)
-        const next = Math.max(
-          MIN_HEIGHT,
-          Math.min(window.innerHeight * 0.8, startH + dy),
-        );
-        setHeight(next);
-      };
-      const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
+      if (placement === "bottom") {
+        const startY = e.clientY;
+        const startH = height;
+        const onMove = (ev: MouseEvent) => {
+          const dy = startY - ev.clientY; // 위로 끌면 +
+          const next = Math.max(
+            MIN_HEIGHT,
+            Math.min(window.innerHeight * 0.8, startH + dy),
+          );
+          setHeight(next);
+        };
+        const onUp = () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        document.body.style.cursor = "row-resize";
+        document.body.style.userSelect = "none";
+      } else {
+        const startX = e.clientX;
+        const startW = width;
+        const onMove = (ev: MouseEvent) => {
+          const dx = startX - ev.clientX; // 왼쪽으로 끌면 +
+          const next = Math.max(
+            MIN_WIDTH,
+            Math.min(window.innerWidth * 0.6, startW + dx),
+          );
+          setWidth(next);
+        };
+        const onUp = () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+      }
     },
-    [open, maximized, height],
+    [open, maximized, height, width, placement],
   );
 
-  // dock의 실제 높이 — closed면 헤더만, maximized면 가용 영역의 80vh, 아니면 사용자 height.
-  const dockH = !open
-    ? HEADER_H
-    : maximized
-      ? Math.max(MIN_HEIGHT, window.innerHeight * 0.8)
-      : height;
+  // dock의 실제 크기 — placement 별로 다른 축에 적용.
+  const sizeStyle: React.CSSProperties =
+    placement === "bottom"
+      ? {
+          height: !open
+            ? HEADER_H
+            : maximized
+              ? Math.max(MIN_HEIGHT, window.innerHeight * 0.8)
+              : height,
+        }
+      : {
+          width: !open
+            ? HEADER_H
+            : maximized
+              ? Math.max(MIN_WIDTH, window.innerWidth * 0.6)
+              : width,
+        };
+
+  const isBottom = placement === "bottom";
 
   return (
     <aside
       className={cn(
-        "shrink-0 flex flex-col border-t border-border bg-card relative",
-        // 닫혀있을 땐 hover 시 살짝 강조해서 클릭 가능하다는 신호.
+        "shrink-0 flex flex-col bg-card relative",
+        isBottom ? "border-t border-border" : "border-l border-border",
         !open && "hover:bg-muted/40 transition-colors",
       )}
-      style={{ height: dockH }}
+      style={sizeStyle}
     >
-      {/* 드래그 핸들 — 헤더 위에 얇은 hot zone (열려있고 maximize 아닐 때만). */}
+      {/* 드래그 핸들 — placement 별로 위치/축이 다름. */}
       {open && !maximized ? (
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          onMouseDown={startResize}
-          className="absolute -top-0.5 left-0 right-0 z-10 h-1 cursor-row-resize group"
-        >
-          <span
-            aria-hidden
-            className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-px bg-transparent group-hover:bg-foreground/30 transition-colors"
-          />
-        </div>
+        isBottom ? (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            onMouseDown={startResize}
+            className="absolute -top-0.5 left-0 right-0 z-10 h-1 cursor-row-resize group"
+          >
+            <span
+              aria-hidden
+              className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-px bg-transparent group-hover:bg-foreground/30 transition-colors"
+            />
+          </div>
+        ) : (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            onMouseDown={startResize}
+            className="absolute -left-0.5 top-0 bottom-0 z-10 w-1 cursor-col-resize group"
+          >
+            <span
+              aria-hidden
+              className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-transparent group-hover:bg-foreground/30 transition-colors"
+            />
+          </div>
+        )
       ) : null}
 
-      {/* 헤더 — VSCode terminal 탭 모방. 클릭 가능 영역이 넓도록 전체 헤더가 토글. */}
+      {/* 헤더 — 32px 고정. 패딩 살짝 조여서 좁은 폭에서도 버튼이 안 잘림. */}
       <header
-        className="flex items-center gap-2 px-3 h-8 border-b border-border/70 bg-muted/30 shrink-0 select-none"
+        className="flex items-center gap-1.5 px-2 h-8 border-b border-border/70 bg-muted/30 shrink-0 select-none"
         style={{ height: HEADER_H }}
       >
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors shrink-0"
           aria-expanded={open}
           title={open ? t("chat.dock.collapse") : t("chat.dock.expand")}
         >
           <MessageSquare className="size-3.5" />
-          <span>{t("chat.dock.label")}</span>
+          <span className="hidden sm:inline">{t("chat.dock.label")}</span>
         </button>
         {title ? (
           <span
@@ -207,25 +299,49 @@ export function ChatDock({
             {headerExtra}
           </div>
         ) : null}
-        <div className="ml-auto flex items-center gap-0.5">
+        <div className="ml-auto flex items-center gap-0.5 shrink-0">
           {open ? (
-            <button
-              type="button"
-              onClick={() => setMaximized((v) => !v)}
-              title={
-                maximized ? t("chat.dock.restore") : t("chat.dock.maximize")
-              }
-              aria-label={
-                maximized ? t("chat.dock.restore") : t("chat.dock.maximize")
-              }
-              className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              {maximized ? (
-                <Minimize2 className="size-3.5" />
-              ) : (
-                <Maximize2 className="size-3.5" />
-              )}
-            </button>
+            <>
+              {/* placement 토글 — 현재 위치의 *반대*쪽 아이콘. 클릭 시 그쪽으로 이동. */}
+              <button
+                type="button"
+                onClick={togglePlacement}
+                title={
+                  isBottom
+                    ? t("chat.dock.dockRight")
+                    : t("chat.dock.dockBottom")
+                }
+                aria-label={
+                  isBottom
+                    ? t("chat.dock.dockRight")
+                    : t("chat.dock.dockBottom")
+                }
+                className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                {isBottom ? (
+                  <PanelRight className="size-3.5" />
+                ) : (
+                  <PanelBottom className="size-3.5" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMaximized((v) => !v)}
+                title={
+                  maximized ? t("chat.dock.restore") : t("chat.dock.maximize")
+                }
+                aria-label={
+                  maximized ? t("chat.dock.restore") : t("chat.dock.maximize")
+                }
+                className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                {maximized ? (
+                  <Minimize2 className="size-3.5" />
+                ) : (
+                  <Maximize2 className="size-3.5" />
+                )}
+              </button>
+            </>
           ) : null}
           <button
             type="button"
@@ -254,7 +370,6 @@ export function ChatDock({
         </div>
       </header>
 
-      {/* 본문 — open 일 때만 렌더. 닫혀 있을 땐 헤더만 보임 (VSCode 탭 스타일). */}
       {open ? (
         <div className="flex-1 min-h-0 flex flex-col">{children}</div>
       ) : null}

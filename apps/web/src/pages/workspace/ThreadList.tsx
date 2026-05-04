@@ -35,6 +35,7 @@ export function ThreadList({
   threads,
   activeThread,
   workingThreadIds,
+  compact = false,
   onPick,
   onNewThread,
   onNewIsolatedThread,
@@ -44,6 +45,8 @@ export function ThreadList({
   activeThread: Thread | null;
   /** thread.id 중 현재 누군가 응답 중인 것들 — 라이브 닷 표시. */
   workingThreadIds: Set<string>;
+  /** dock가 right placement일 때 가로폭 절약 — 아이콘 + working 닷만 보임. */
+  compact?: boolean;
   onPick: (id: string) => void;
   onNewThread: () => void;
   onNewIsolatedThread: () => void;
@@ -59,15 +62,29 @@ export function ThreadList({
   const archived = sorted.filter((th) => th.status === "archived");
 
   return (
-    <aside className="w-[180px] shrink-0 flex flex-col border-r border-border bg-card/40">
-      <header className="flex items-center gap-1 px-2 h-7 border-b border-border/70 shrink-0">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-          {t("thread.list.title")}
-        </span>
-        <span className="text-[10px] mono text-muted-foreground/60">
-          {threads.length}
-        </span>
-        <div className="ml-auto flex items-center gap-0.5">
+    <aside
+      className={cn(
+        "shrink-0 flex flex-col border-r border-border bg-card/40",
+        compact ? "w-[44px]" : "w-[180px]",
+      )}
+    >
+      <header
+        className={cn(
+          "flex items-center h-7 border-b border-border/70 shrink-0",
+          compact ? "px-0.5 gap-0.5 justify-center" : "gap-1 px-2",
+        )}
+      >
+        {compact ? null : (
+          <>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+              {t("thread.list.title")}
+            </span>
+            <span className="text-[10px] mono text-muted-foreground/60">
+              {threads.length}
+            </span>
+          </>
+        )}
+        <div className={cn("flex items-center gap-0.5", !compact && "ml-auto")}>
           <button
             type="button"
             onClick={onNewThread}
@@ -77,22 +94,29 @@ export function ThreadList({
           >
             <Plus className="size-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={onNewIsolatedThread}
-            title={t("thread.bar.newIsolatedThread")}
-            aria-label={t("thread.bar.newIsolatedThread")}
-            className="inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-          >
-            <GitBranch className="size-3.5" />
-          </button>
+          {compact ? null : (
+            <button
+              type="button"
+              onClick={onNewIsolatedThread}
+              title={t("thread.bar.newIsolatedThread")}
+              aria-label={t("thread.bar.newIsolatedThread")}
+              className="inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <GitBranch className="size-3.5" />
+            </button>
+          )}
         </div>
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto py-1">
         {threads.length === 0 ? (
-          <div className="px-2 py-2 text-[11px] text-muted-foreground/70 italic">
-            {t("thread.bar.empty")}
+          <div
+            className={cn(
+              "text-[11px] text-muted-foreground/70 italic",
+              compact ? "px-1 py-2 text-center" : "px-2 py-2",
+            )}
+          >
+            {compact ? "—" : t("thread.bar.empty")}
           </div>
         ) : (
           <>
@@ -103,6 +127,7 @@ export function ThreadList({
                 thread={th}
                 active={activeThread?.id === th.id}
                 working={workingThreadIds.has(th.id)}
+                compact={compact}
                 onPick={() => onPick(th.id)}
                 onAfterDelete={() => {
                   if (activeThread?.id === th.id) {
@@ -113,7 +138,7 @@ export function ThreadList({
                 }}
               />
             ))}
-            {archived.length > 0 ? (
+            {archived.length > 0 && !compact ? (
               <ArchivedSection projectId={projectId} threads={archived} activeId={activeThread?.id ?? null} onPick={onPick} />
             ) : null}
           </>
@@ -169,6 +194,7 @@ function ThreadRow({
   active,
   working,
   dim,
+  compact = false,
   onPick,
   onAfterDelete,
 }: {
@@ -177,6 +203,8 @@ function ThreadRow({
   active: boolean;
   working: boolean;
   dim?: boolean;
+  /** 가로폭 절약 — 아이콘 + 라이브 닷만, 이름/시간 숨김. hover 툴팁으로 보존. */
+  compact?: boolean;
   onPick: () => void;
   onAfterDelete?: () => void;
 }) {
@@ -232,6 +260,8 @@ function ThreadRow({
     setEditing(false);
   };
 
+  // compact 모드는 일반 모드보다 짧게(아이콘만) — 이름/시간 라벨은 title 속성으로
+  // 툴팁 노출. 인라인 편집은 compact일 땐 비활성 (자리가 없음).
   return (
     <div
       role="button"
@@ -244,8 +274,12 @@ function ThreadRow({
           onPick();
         }
       }}
+      title={compact ? thread.name : undefined}
       className={cn(
-        "group relative flex items-center gap-1.5 px-2 py-1 cursor-pointer transition-colors",
+        "group relative flex items-center cursor-pointer transition-colors",
+        compact
+          ? "justify-center px-1 py-1.5"
+          : "gap-1.5 px-2 py-1",
         active
           ? "bg-foreground/[0.07] text-foreground"
           : "text-foreground/80 hover:bg-muted/50",
@@ -259,11 +293,20 @@ function ThreadRow({
         />
       ) : null}
 
-      {thread.worktreePath ? (
-        <GitBranch className="size-3 shrink-0 text-sky-600 dark:text-sky-400" />
-      ) : (
-        <MessagesSquare className="size-3 shrink-0 text-muted-foreground/70" />
-      )}
+      <span className="relative shrink-0">
+        {thread.worktreePath ? (
+          <GitBranch className="size-3.5 text-sky-600 dark:text-sky-400" />
+        ) : (
+          <MessagesSquare className="size-3.5 text-muted-foreground/70" />
+        )}
+        {compact && working ? (
+          <span
+            aria-hidden
+            className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-emerald-500 animate-pulse"
+            title={t("participants.status.working")}
+          />
+        ) : null}
+      </span>
 
       {editing ? (
         <input
@@ -287,28 +330,27 @@ function ThreadRow({
           onClick={(e) => e.stopPropagation()}
           className="flex-1 min-w-0 bg-transparent border-0 px-0 py-0 text-[12px] focus:outline-none focus:ring-0"
         />
-      ) : (
+      ) : compact ? null : (
         <span className="flex-1 min-w-0 truncate text-[12px]">
           {thread.name}
         </span>
       )}
 
-      {working ? (
+      {!compact && working ? (
         <span
           aria-hidden
           className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
           title={t("participants.status.working")}
         />
-      ) : !editing ? (
+      ) : !compact && !editing ? (
         <span className="text-[10px] text-muted-foreground/50 mono shrink-0 group-hover:hidden">
           {formatTimeAgo(thread.updatedAt, t)}
         </span>
       ) : null}
 
-      {/* hover 시 노출되는 "..." 메뉴 — 클릭은 행 onPick 으로 안 새도록 stop.
-          Radix Portal은 trigger가 display:none이면 위치를 (0,0)으로 잡아버려
-          좌상단에 메뉴가 뜬다. 그래서 항상 렌더하고 opacity로 숨김 + focus 시 표시. */}
-      {!editing ? (
+      {/* hover 시 노출되는 "..." 메뉴 — compact 모드에선 자리가 없어서 생략.
+          이름변경/아카이브/삭제는 thread를 펼친 모드(bottom)에서 사용. */}
+      {!editing && !compact ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
