@@ -87,6 +87,11 @@ const en: Dictionary = {
   "agents.field.skillsHint":
     "Selected skills are attached to every run by default. Per-run extra attachments still work.",
   "agents.field.skills.empty": "No skills yet — create some on the Skills tab first.",
+  "agents.field.mcps": "MCP servers ({selected}/{total})",
+  "agents.field.mcpsHint":
+    "This agent will only see the servers you tick here. Configure servers on the MCPs tab first.",
+  "agents.field.mcps.empty":
+    "No MCP servers yet — add some on the MCPs tab first.",
   "agents.needsProject":
     "Create a project first — agents run inside a project's directory.",
   "agents.confirm.switchAdapter":
@@ -229,6 +234,34 @@ const en: Dictionary = {
   "specs.button.createSpec": "Create skill",
   "specs.button.saveChanges": "Save changes",
 
+  // mcps — system-level MCP server catalog
+  "mcps.title": "MCP servers",
+  "mcps.subtitle":
+    "Configure once, pick from this list when you build an agent. Each entry is one MCP server config — name, transport, and runtime args.",
+  "mcps.new": "New MCP server",
+  "mcps.empty": "No MCP servers yet.",
+  "mcps.helpUnselected":
+    "Pick a server on the left or create a new one. Servers added here are available for any agent in any project to enable.",
+  "mcps.deleteConfirm": "Delete MCP server \"{name}\"?",
+  "mcps.field.name": "Name",
+  "mcps.field.nameHint": "Used as the key in the .mcp.json `mcpServers` map.",
+  "mcps.field.kind": "Transport",
+  "mcps.field.description": "Description",
+  "mcps.field.command": "Command",
+  "mcps.field.commandHint": "Binary the CLI spawns (e.g. npx, uvx).",
+  "mcps.field.args": "Arguments (one per line)",
+  "mcps.field.argsHint": "Each line becomes one argv entry.",
+  "mcps.field.env": "Environment (KEY=VALUE per line)",
+  "mcps.field.envHint": "Lines starting with # are ignored.",
+  "mcps.field.url": "URL",
+  "mcps.field.urlHint": "HTTP / SSE endpoint.",
+  "mcps.field.headers": "Headers (KEY=VALUE per line)",
+  "mcps.field.headersHint": "Sent on every request to the URL.",
+  "mcps.placeholder.description": "What this server provides",
+  "mcps.toast.created": "MCP server \"{name}\" created",
+  "mcps.toast.updated": "MCP server saved",
+  "mcps.toast.deleted": "MCP server deleted",
+
   // runs
   "runs.title": "History",
   "runs.subtitle": "Every CLI run kicked off in this project.",
@@ -349,11 +382,13 @@ const en: Dictionary = {
   "activity.threads": "Threads",
   "activity.agents": "Team",
   "activity.skills": "Skills",
+  "activity.mcps": "MCPs",
   "activity.history": "History",
   "activity.settings": "Settings",
   "activity.requiresProject": "Open a project to see this.",
   "activity.history.empty": "No runs yet in this project.",
   "activity.skills.empty": "No skills yet.",
+  "activity.mcps.empty": "No MCP servers yet.",
   "activity.review": "Review",
   "activity.git": "Git",
   "git.mode.status": "Status",
@@ -615,6 +650,11 @@ const ko: Dictionary = {
   "agents.field.prompt": "에이전트 프롬프트 (시스템 / 역할)",
   "agents.field.promptHint":
     "매 실행마다 사용자 입력 앞에 붙습니다. 이 에이전트의 역할과 기본 지침을 정의합니다.",
+  "agents.field.mcps": "MCP 서버 ({selected}/{total})",
+  "agents.field.mcpsHint":
+    "여기서 체크한 서버만 이 에이전트가 호출할 수 있어요. 먼저 MCP 탭에서 서버를 추가하세요.",
+  "agents.field.mcps.empty":
+    "아직 MCP 서버가 없어요 — MCP 탭에서 먼저 추가하세요.",
   "agents.field.skills": "스킬 ({selected}/{total})",
   "agents.field.skillsHint":
     "선택된 스킬은 매 실행마다 자동 첨부됩니다. 실행별 추가 첨부도 가능합니다.",
@@ -760,6 +800,33 @@ const ko: Dictionary = {
   "specs.button.createSpec": "스킬 생성",
   "specs.button.saveChanges": "변경 저장",
 
+  "mcps.title": "MCP 서버",
+  "mcps.subtitle":
+    "한 번 등록해두면 어떤 프로젝트의 어떤 에이전트라도 이 목록에서 골라 쓸 수 있어요. 각 항목은 MCP 서버 한 개의 설정 — 이름·전송 방식·실행 인자.",
+  "mcps.new": "MCP 서버 추가",
+  "mcps.empty": "아직 MCP 서버가 없어요.",
+  "mcps.helpUnselected":
+    "왼쪽에서 서버를 고르거나 새로 만드세요. 여기 추가한 서버는 어떤 프로젝트의 어떤 에이전트든 활성화할 수 있어요.",
+  "mcps.deleteConfirm": "MCP 서버 \"{name}\"을(를) 삭제하시겠어요?",
+  "mcps.field.name": "이름",
+  "mcps.field.nameHint": ".mcp.json의 mcpServers 키로 사용됩니다.",
+  "mcps.field.kind": "전송 방식",
+  "mcps.field.description": "설명",
+  "mcps.field.command": "실행 명령",
+  "mcps.field.commandHint": "CLI가 spawn할 바이너리 (예: npx, uvx).",
+  "mcps.field.args": "인자 (한 줄에 하나)",
+  "mcps.field.argsHint": "각 줄이 하나의 argv 항목이 됩니다.",
+  "mcps.field.env": "환경변수 (KEY=VALUE 한 줄에 하나)",
+  "mcps.field.envHint": "#로 시작하는 줄은 무시됩니다.",
+  "mcps.field.url": "URL",
+  "mcps.field.urlHint": "HTTP / SSE 엔드포인트.",
+  "mcps.field.headers": "헤더 (KEY=VALUE 한 줄에 하나)",
+  "mcps.field.headersHint": "URL로 보내는 모든 요청에 첨부됩니다.",
+  "mcps.placeholder.description": "이 서버가 제공하는 것",
+  "mcps.toast.created": "MCP 서버 \"{name}\" 생성됨",
+  "mcps.toast.updated": "MCP 서버 저장됨",
+  "mcps.toast.deleted": "MCP 서버 삭제됨",
+
   "runs.title": "이력",
   "runs.subtitle": "이 프로젝트에서 실행된 모든 CLI 호출 기록이에요.",
 
@@ -878,10 +945,12 @@ const ko: Dictionary = {
   "activity.threads": "대화",
   "activity.agents": "팀",
   "activity.skills": "스킬",
+  "activity.mcps": "MCP",
   "activity.history": "이력",
   "activity.settings": "설정",
   "activity.requiresProject": "프로젝트를 열어주세요.",
   "activity.skills.empty": "아직 스킬이 없어요.",
+  "activity.mcps.empty": "아직 MCP 서버가 없어요.",
   "activity.review": "리뷰",
   "activity.git": "Git",
   "git.mode.status": "변경",

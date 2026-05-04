@@ -31,6 +31,38 @@ CREATE TABLE IF NOT EXISTS agent_skills (
   created_at  TEXT NOT NULL,
   PRIMARY KEY (agent_id, skill_id)
 );
+
+-- System-level MCP server catalog. Configured once, picked from a multi-select
+-- when creating an agent. Each row is a single MCP server config (name, kind,
+-- and the runtime args). When an agent runs, the server merges only this
+-- agent's enabled servers into the .mcp.json that the CLI sees.
+CREATE TABLE IF NOT EXISTS mcp_servers (
+  id          TEXT PRIMARY KEY,
+  -- Unique key — also the key used inside .mcp.json's "mcpServers" map.
+  -- Constrained at the row level so the same name can't be added twice.
+  name        TEXT NOT NULL UNIQUE,
+  description TEXT,
+  -- "stdio" | "http" | "sse". stdio uses (command, args, env); the
+  -- network kinds use (url, headers).
+  kind        TEXT NOT NULL DEFAULT 'stdio',
+  command     TEXT,                              -- stdio only
+  args        TEXT NOT NULL DEFAULT '[]',        -- json array
+  env         TEXT NOT NULL DEFAULT '{}',        -- json object
+  url         TEXT,                              -- http/sse only
+  headers     TEXT NOT NULL DEFAULT '{}',        -- json object
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+-- Many-to-many: which MCP servers does this agent have permission to call.
+-- Mirrors agent_skills exactly. Inserts/deletes happen in a transaction
+-- when an agent is updated.
+CREATE TABLE IF NOT EXISTS agent_mcp_servers (
+  agent_id      TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  mcp_server_id TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+  created_at    TEXT NOT NULL,
+  PRIMARY KEY (agent_id, mcp_server_id)
+);
 -- The agents.project_id index is created in applyMigrations() after the
 -- ALTER-add-column step so fresh-install and upgrade paths share one source.
 

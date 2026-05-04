@@ -218,6 +218,32 @@ function applyMigrations(db: DB): void {
       db.exec(`ALTER TABLE projects ADD COLUMN preferred_editor TEXT`);
     }
   });
+
+  migration(db, 14, "mcp_servers + agent_mcp_servers", () => {
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS mcp_servers (
+         id          TEXT PRIMARY KEY,
+         name        TEXT NOT NULL UNIQUE,
+         description TEXT,
+         kind        TEXT NOT NULL DEFAULT 'stdio',
+         command     TEXT,
+         args        TEXT NOT NULL DEFAULT '[]',
+         env         TEXT NOT NULL DEFAULT '{}',
+         url         TEXT,
+         headers     TEXT NOT NULL DEFAULT '{}',
+         created_at  TEXT NOT NULL,
+         updated_at  TEXT NOT NULL
+       )`,
+    );
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS agent_mcp_servers (
+         agent_id      TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+         mcp_server_id TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+         created_at    TEXT NOT NULL,
+         PRIMARY KEY (agent_id, mcp_server_id)
+       )`,
+    );
+  });
 }
 
 interface OrphanRunRow {

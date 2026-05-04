@@ -25,6 +25,9 @@ const AgentsPage = lazy(() =>
 const SpecsPage = lazy(() =>
   import("./pages/SpecsPage.js").then((m) => ({ default: m.SpecsPage })),
 );
+const McpsPage = lazy(() =>
+  import("./pages/McpsPage.js").then((m) => ({ default: m.McpsPage })),
+);
 const RunsPage = lazy(() =>
   import("./pages/RunsPage.js").then((m) => ({ default: m.RunsPage })),
 );
@@ -66,6 +69,40 @@ export function App() {
             </Suspense>
           }
         />
+        {/* 시스템 레벨 카탈로그 — 어떤 프로젝트에서든 같은 것을 본다.
+            에이전트는 여기서 골라 자기 loadout을 구성. */}
+        <Route
+          path="/skills"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <SpecsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/skills/:specId"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <SpecsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/mcps"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <McpsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/mcps/:mcpId"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <McpsPage />
+            </Suspense>
+          }
+        />
         <Route path="/projects/:id" element={<ProjectShell />}>
           <Route
             index
@@ -83,22 +120,8 @@ export function App() {
               </Suspense>
             }
           />
-          <Route
-            path="skills"
-            element={
-              <Suspense fallback={<PageLoader />}>
-                <SpecsPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="skills/:specId"
-            element={
-              <Suspense fallback={<PageLoader />}>
-                <SpecsPage />
-              </Suspense>
-            }
-          />
+          {/* /skills 와 /mcps는 시스템 레벨이라 위쪽 라우트로 이동.
+              프로젝트 안에서도 ActivityBar가 시스템 라우트로 직접 보냄. */}
           <Route
             path="runs"
             element={

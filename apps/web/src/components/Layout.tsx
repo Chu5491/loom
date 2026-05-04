@@ -26,6 +26,7 @@ export function Layout() {
       raw === "projects" ||
       raw === "agents" ||
       raw === "skills" ||
+      raw === "mcps" ||
       raw === "review" ||
       raw === "history" ||
       raw === "git" ||

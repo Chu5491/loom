@@ -44,11 +44,36 @@ export interface Agent {
   prompt: string;
   /** IDs of skills (specs) assigned to this agent — mirrored to disk per run. */
   skillIds: string[];
+  /** IDs of MCP servers this agent is permitted to call. The server merges
+   *  only these into the .mcp.json the CLI sees at run time. */
+  mcpServerIds: string[];
   role: AgentRole | null;
   adapterKind: AdapterKind;
   adapterConfig: AdapterConfig;
   /** Optional override of the project's path for this agent. */
   defaultCwd: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Top-level MCP server config in the system catalog. Agents subscribe to a
+ *  subset via agent_mcp_servers. Storage of secrets is local-trust only — keep
+ *  loom on a single machine and don't expose the API publicly. */
+export type McpServerKind = "stdio" | "http" | "sse";
+
+export interface McpServer {
+  id: string;
+  /** Unique name — also the key in the .mcp.json `mcpServers` map. */
+  name: string;
+  description: string | null;
+  kind: McpServerKind;
+  /** stdio only — the binary to spawn (e.g. "npx"). */
+  command: string | null;
+  args: string[];
+  env: Record<string, string>;
+  /** http / sse only — the endpoint URL. */
+  url: string | null;
+  headers: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

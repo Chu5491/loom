@@ -6,6 +6,7 @@ import type {
   Agent,
   FileContent,
   FileHistoryEntry,
+  McpServer,
   ModelListResult,
   PreferredEditor,
   Project,
@@ -95,11 +96,25 @@ export interface CreateAgentBody {
   name: string;
   prompt?: string;
   skillIds?: string[];
+  mcpServerIds?: string[];
   role?: string | null;
   adapterKind: string;
   adapterConfig?: Record<string, unknown>;
   defaultCwd?: string | null;
 }
+
+export interface CreateMcpServerBody {
+  name: string;
+  description?: string | null;
+  kind: "stdio" | "http" | "sse";
+  command?: string | null;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string | null;
+  headers?: Record<string, string>;
+}
+
+export type UpdateMcpServerBody = Partial<CreateMcpServerBody>;
 
 export type UpdateAgentBody = Partial<CreateAgentBody>;
 
@@ -363,6 +378,23 @@ export const api = {
     }),
   deleteSpec: (id: string) =>
     request<void>(`/api/specs/${id}`, { method: "DELETE" }),
+
+  listMcpServers: () =>
+    request<{ servers: McpServer[] }>("/api/mcp-servers"),
+  getMcpServer: (id: string) =>
+    request<{ server: McpServer }>(`/api/mcp-servers/${id}`),
+  createMcpServer: (body: CreateMcpServerBody) =>
+    request<{ server: McpServer }>("/api/mcp-servers", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateMcpServer: (id: string, body: UpdateMcpServerBody) =>
+    request<{ server: McpServer }>(`/api/mcp-servers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteMcpServer: (id: string) =>
+    request<void>(`/api/mcp-servers/${id}`, { method: "DELETE" }),
 
   listThreads: (
     filter: { projectId?: string; status?: ThreadStatus; limit?: number } = {},

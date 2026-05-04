@@ -6,6 +6,7 @@ import {
   FileText,
   Folder,
   GitBranch,
+  Plug,
   Settings as SettingsIcon,
   Users,
 } from "lucide-react";
@@ -16,8 +17,9 @@ import { cn } from "../lib/utils.js";
 
 export type ActivityKind =
   | "projects"
-  | "agents"
   | "skills"
+  | "mcps"
+  | "agents"
   | "review"
   | "history"
   | "git"
@@ -49,13 +51,15 @@ export function ActivityBar({
   // icon should land on that route — otherwise the side panel opens
   // but the main content sits on the wrong page.
   const routeFor = (kind: ActivityKind): string | null => {
+    // 시스템 레벨 — 어떤 프로젝트에 있든 같은 카탈로그.
     if (kind === "projects") return "/projects";
+    if (kind === "skills") return "/skills";
+    if (kind === "mcps") return "/mcps";
+    // 프로젝트 스코프 — 프로젝트 안에서만 의미 있음.
     if (!projectId) return null;
     switch (kind) {
       case "agents":
         return `/projects/${projectId}/agents`;
-      case "skills":
-        return `/projects/${projectId}/skills`;
       case "review":
         return `/projects/${projectId}/review`;
       case "history":
@@ -82,11 +86,11 @@ export function ActivityBar({
 
   // Drop a saved project-scoped activity if the user is no longer in a
   // project — otherwise the panel would open empty on first paint.
+  // skills / mcps는 시스템 레벨이라 프로젝트 안 들어가도 그대로 유지.
   useEffect(() => {
     if (
       !inProject &&
       (active === "agents" ||
-        active === "skills" ||
         active === "review" ||
         active === "history" ||
         active === "git")
@@ -111,6 +115,22 @@ export function ActivityBar({
       requiresProject: false,
       group: 1,
     },
+    // 시스템 레벨 카탈로그 — 어떤 프로젝트에 있든 표시. 에이전트는 여기서
+    // 골라 자기 loadout을 구성한다.
+    {
+      kind: "skills",
+      icon: <FileText className="size-5" />,
+      label: t("activity.skills"),
+      requiresProject: false,
+      group: 1,
+    },
+    {
+      kind: "mcps",
+      icon: <Plug className="size-5" />,
+      label: t("activity.mcps"),
+      requiresProject: false,
+      group: 1,
+    },
     {
       kind: "git",
       icon: <GitBranch className="size-5" />,
@@ -122,13 +142,6 @@ export function ActivityBar({
       kind: "agents",
       icon: <Users className="size-5" />,
       label: t("activity.agents"),
-      requiresProject: true,
-      group: 3,
-    },
-    {
-      kind: "skills",
-      icon: <FileText className="size-5" />,
-      label: t("activity.skills"),
       requiresProject: true,
       group: 3,
     },

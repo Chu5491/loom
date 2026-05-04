@@ -12,21 +12,20 @@ import { useConfirm } from "../components/ConfirmDialog.js";
 
 marked.setOptions({ breaks: true, gfm: true });
 
-const EMPTY_SPEC: Pick<Spec, "name" | "content" | "agentId" | "tags"> = {
+const EMPTY_SPEC: Pick<Spec, "name" | "content" | "tags"> = {
   name: "",
   content: "",
-  agentId: null,
   tags: [],
 };
 
 export function SpecsPage() {
   const { t } = useI18n();
-  // Nested under /projects/:id/skills/:specId? — both ids come through.
-  const { id: projectId, specId } = useParams<{ id: string; specId?: string }>();
+  // Skills are now a system-level catalog. Mounted at /skills/:specId.
+  const { specId } = useParams<{ specId?: string }>();
   const navigate = useNavigate();
   const isNew = specId === "new";
   const selectedId = !specId || isNew ? null : specId;
-  const baseUrl = `/projects/${projectId}/skills`;
+  const baseUrl = "/skills";
 
   const list = useQuery({
     queryKey: ["specs"],
@@ -138,12 +137,10 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const navigate = useNavigate();
-  const agents = useQuery({ queryKey: ["agents"], queryFn: () => api.listAgents() });
 
   const [name, setName] = useState(spec?.name ?? EMPTY_SPEC.name);
   const [content, setContent] = useState(spec?.content ?? EMPTY_SPEC.content);
   const [tagsInput, setTagsInput] = useState((spec?.tags ?? EMPTY_SPEC.tags).join(", "));
-  const [agentId, setAgentId] = useState<string | null>(spec?.agentId ?? null);
   const [view, setView] = useState<"edit" | "preview" | "split">("split");
 
   useEffect(() => {
@@ -151,7 +148,6 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
       setName(spec.name);
       setContent(spec.content);
       setTagsInput(spec.tags.join(", "));
-      setAgentId(spec.agentId);
     }
   }, [spec?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -191,9 +187,8 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
   const isDirty = spec
     ? spec.name !== name ||
       spec.content !== content ||
-      spec.tags.join(",") !== tags.join(",") ||
-      (spec.agentId ?? null) !== (agentId ?? null)
-    : !!(name || content || tags.length || agentId);
+      spec.tags.join(",") !== tags.join(",")
+    : !!(name || content || tags.length);
 
   const html = useMemo(() => {
     try {
@@ -205,29 +200,13 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
 
   return (
     <Card className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-[1fr_auto] items-end">
-        <Field label={t("specs.field.name")}>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t("specs.placeholder.name")}
-          />
-        </Field>
-        <Field label={t("specs.field.linkedAgent")}>
-          <select
-            className="h-9 rounded-md border px-2 text-sm border-zinc-300 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-            value={agentId ?? ""}
-            onChange={(e) => setAgentId(e.target.value || null)}
-          >
-            <option value="">{t("specs.field.linkedAgent.none")}</option>
-            {(agents.data?.agents ?? []).map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
+      <Field label={t("specs.field.name")}>
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t("specs.placeholder.name")}
+        />
+      </Field>
 
       <Field label={t("specs.field.tags")}>
         <Input
@@ -321,7 +300,10 @@ function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
               update.isPending
             }
             onClick={() => {
-              const body = { name, content, tags, agentId };
+              // Skills are system-level — agentId is dropped from the body.
+              // Assignment to specific agents now happens via AgentForm's
+              // multi-select (writes to agent_skills join).
+              const body = { name, content, tags };
               if (spec) update.mutate(body);
               else create.mutate(body);
             }}

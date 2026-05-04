@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { Agent, AdapterConfig, AdapterKind, AgentRole } from "@loom/core";
 import { listSkillIdsForAgent, setSkillIdsForAgent } from "./agent-skills.js";
 import { getDb } from "./client.js";
+import {
+  listMcpServerIdsForAgent,
+  setMcpServersForAgent,
+} from "./mcp-servers.js";
 
 interface AgentRow {
   id: string;
@@ -23,6 +27,7 @@ function rowToAgent(row: AgentRow): Agent {
     name: row.name,
     prompt: row.prompt ?? "",
     skillIds: listSkillIdsForAgent(row.id),
+    mcpServerIds: listMcpServerIdsForAgent(row.id),
     role: (row.role as AgentRole | null) ?? null,
     adapterKind: row.adapter_kind as AdapterKind,
     adapterConfig: JSON.parse(row.adapter_config) as AdapterConfig,
@@ -37,6 +42,7 @@ export interface CreateAgentInput {
   name: string;
   prompt?: string;
   skillIds?: string[];
+  mcpServerIds?: string[];
   role?: AgentRole | null;
   adapterKind: AdapterKind;
   adapterConfig?: AdapterConfig;
@@ -48,6 +54,7 @@ export interface UpdateAgentInput {
   name?: string;
   prompt?: string;
   skillIds?: string[];
+  mcpServerIds?: string[];
   role?: AgentRole | null;
   adapterKind?: AdapterKind;
   adapterConfig?: AdapterConfig;
@@ -99,6 +106,9 @@ export function createAgent(input: CreateAgentInput): Agent {
   if (input.skillIds && input.skillIds.length > 0) {
     setSkillIdsForAgent(id, input.skillIds);
   }
+  if (input.mcpServerIds && input.mcpServerIds.length > 0) {
+    setMcpServersForAgent(id, input.mcpServerIds);
+  }
   return getAgent(id)!;
 }
 
@@ -139,6 +149,9 @@ export function updateAgent(id: string, input: UpdateAgentInput): Agent | null {
 
   if (input.skillIds !== undefined) {
     setSkillIdsForAgent(id, input.skillIds);
+  }
+  if (input.mcpServerIds !== undefined) {
+    setMcpServersForAgent(id, input.mcpServerIds);
   }
 
   return getAgent(id);

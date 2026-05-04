@@ -68,6 +68,9 @@ export function AgentForm({
   const [skillIds, setSkillIds] = useState<string[]>(
     editingAgent?.skillIds ?? [],
   );
+  const [mcpServerIds, setMcpServerIds] = useState<string[]>(
+    editingAgent?.mcpServerIds ?? [],
+  );
   const [role, setRole] = useState<string>(editingAgent?.role ?? "");
   const [defaultCwd, setDefaultCwd] = useState(editingAgent?.defaultCwd ?? "");
   const [config, setConfig] = useState<Record<string, unknown>>(
@@ -86,9 +89,18 @@ export function AgentForm({
     queryKey: ["specs"],
     queryFn: () => api.listSpecs(),
   });
+  const mcpServers = useQuery({
+    queryKey: ["mcp-servers"],
+    queryFn: api.listMcpServers,
+  });
 
   const toggleSkill = (id: string) => {
     setSkillIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+  const toggleMcp = (id: string) => {
+    setMcpServerIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
@@ -122,6 +134,7 @@ export function AgentForm({
       name,
       prompt: prompt || undefined,
       skillIds,
+      mcpServerIds,
       adapterKind: selectedManifest.kind,
       role: role || null,
       defaultCwd: defaultCwd || null,
@@ -318,6 +331,50 @@ export function AgentForm({
                         <span className="flex-1 truncate">{s.name}</span>
                         <span className="text-xs text-muted-foreground mono">
                           {(s.content.length / 1024).toFixed(1)}KB
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </Field>
+            <Field
+              label={t("agents.field.mcps", {
+                selected: mcpServerIds.length,
+                total: mcpServers.data?.servers.length ?? 0,
+              })}
+              hint={t("agents.field.mcpsHint")}
+            >
+              {mcpServers.isLoading ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("common.loading")}
+                </p>
+              ) : (mcpServers.data?.servers ?? []).length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("agents.field.mcps.empty")}
+                </p>
+              ) : (
+                <div className="rounded-md border p-2 max-h-52 overflow-y-auto space-y-1 border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50">
+                  {(mcpServers.data?.servers ?? []).map((s) => {
+                    const checked = mcpServerIds.includes(s.id);
+                    return (
+                      <label
+                        key={s.id}
+                        className={
+                          "flex items-center gap-2 rounded px-2 py-1.5 text-sm cursor-pointer " +
+                          (checked
+                            ? "bg-muted/60"
+                            : "hover:bg-zinc-100 dark:hover:bg-zinc-800/40")
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleMcp(s.id)}
+                        />
+                        <span className="flex-1 truncate">{s.name}</span>
+                        <span className="text-xs text-muted-foreground mono">
+                          {s.kind}
                         </span>
                       </label>
                     );
