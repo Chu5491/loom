@@ -45,11 +45,27 @@ export interface CliAdapter {
    *  a target leave this undefined and the UI falls back to file-level
    *  presence only. */
   extractTouchedEdits?(chunk: string): TouchedEdit[];
+  /** Pluck *every* tool_use event (not just file edits) so the Office
+   *  view can show what each agent is reaching for in real time —
+   *  Read / Bash / Grep / WebFetch / mcp__server__method, etc.
+   *  Returns one entry per tool call in chunk order; adapters that
+   *  can't surface tool names leave this undefined. */
+  extractToolUses?(chunk: string): ToolUse[];
 }
 
 export interface TouchedEdit {
   path: string;
   /** The string the agent is about to replace — used by the server
    *  to locate the edit's line. Absent for write-from-scratch tools. */
+  target?: string;
+}
+
+/** A single tool invocation surfaced from the adapter's stdout stream.
+ *  `name` is the raw CLI tool name (e.g. "Read", "Bash", "mcp__github__create_issue").
+ *  `target` is a short, user-readable summary the UI can show next to
+ *  the tool icon — file path for Read/Edit/Write, command for Bash,
+ *  pattern for Grep, URL for WebFetch, etc. Server normalises it. */
+export interface ToolUse {
+  name: string;
   target?: string;
 }

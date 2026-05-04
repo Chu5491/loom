@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Hash } from "lucide-react";
 import type { Agent, Project, Thread } from "@loom/core";
 import { api } from "../api/client.js";
-import { AgentAvatar } from "./Chat.js";
+import { AgentAvatar } from "./chat/index.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 

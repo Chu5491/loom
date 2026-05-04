@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import NumberFlow from "@number-flow/react";
 import type { AdapterManifest, Agent, Run } from "@loom/core";
-import { AgentAvatar } from "./Chat.js";
+import { AgentAvatar } from "./chat/index.js";
 import { Badge } from "./ui/badge.js";
 import { useI18n } from "../context/I18nContext.js";
 import { agentColorOf, classesFor } from "./agentColor.js";

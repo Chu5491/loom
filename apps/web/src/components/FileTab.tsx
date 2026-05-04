@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ArrowRight,
   Clock,
+  ExternalLink,
   File,
   FileText,
   GitCommit,
@@ -238,6 +240,7 @@ function PaneHeader({
         ) : null}
       </div>
       <div className="flex items-center gap-1 shrink-0">
+        <OpenInEditorButton projectId={projectId} path={path} />
         <button
           type="button"
           onClick={onToggleWrap}
@@ -619,5 +622,48 @@ function statusVariant(
     default:
       return "info";
   }
+}
+
+// 파일을 사용자의 외부 IDE에서 열기. 프로젝트의 preferred_editor를 사용 —
+// 미설정이면 서버가 vscode로 fallback. CLI를 못 찾으면 toast로 어떤 후보를
+// 시도했는지 알려줘서 사용자가 PATH 설정 / CLI 설치를 판단할 수 있게.
+function OpenInEditorButton({
+  projectId,
+  path,
+}: {
+  projectId: string;
+  path: string;
+}) {
+  const { t } = useI18n();
+  const project = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => api.getProject(projectId),
+  });
+  const preferred = project.data?.project.preferredEditor ?? null;
+  const editorName = preferred
+    ? preferred.charAt(0).toUpperCase() + preferred.slice(1)
+    : "VS Code";
+
+  const open = useMutation({
+    mutationFn: () => api.openInEditor(projectId, { path }),
+    onSuccess: (r) =>
+      toast.success(t("files.viewer.openedIn", { editor: r.editor })),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : String(err)),
+  });
+
+  return (
+    <button
+      type="button"
+      onClick={() => open.mutate()}
+      disabled={open.isPending}
+      title={t("files.viewer.openIn", { editor: editorName })}
+      aria-label={t("files.viewer.openIn", { editor: editorName })}
+      className="inline-flex items-center gap-1 px-2 h-6 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+    >
+      <ExternalLink className="size-3" />
+      <span>{t("files.viewer.openInEditor")}</span>
+    </button>
+  );
 }
 

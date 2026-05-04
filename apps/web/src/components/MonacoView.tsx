@@ -32,13 +32,7 @@ const COLOR_HEX: Record<AgentColor, string> = {
   lime: "#84cc16",
   orange: "#f97316",
   cyan: "#06b6d4",
-  red: "#ef4444",
-  yellow: "#eab308",
-  green: "#22c55e",
-  blue: "#3b82f6",
   indigo: "#6366f1",
-  purple: "#a855f7",
-  pink: "#ec4899",
   slate: "#64748b",
 };
 
@@ -152,8 +146,11 @@ export function MonacoView({
         readOnly: true,
         wordWrap: wrap ? "on" : "off",
         fontSize: 12,
+        // 서비스 전체 단일 폰트. styles.css 의 @font-face 가 로드되면
+        // Monaco도 같은 글꼴로 그려짐. 시스템 mono를 fallback으로 둬서
+        // 폰트 다운로드 전 잠깐의 FOUT를 안전하게 처리.
         fontFamily:
-          'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace',
+          '"CommitMonoChu", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace',
         minimap: { enabled: true, renderCharacters: false },
         scrollBeyondLastLine: false,
         renderLineHighlight: "none",

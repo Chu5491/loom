@@ -1,4 +1,5 @@
 import type {
+  ActiveToolsForAgent,
   ActiveTouch,
   AdapterManifest,
   AdapterProbeResult,
@@ -6,6 +7,7 @@ import type {
   FileContent,
   FileHistoryEntry,
   ModelListResult,
+  PreferredEditor,
   Project,
   Run,
   RunChange,
@@ -75,9 +77,18 @@ export interface CreateProjectBody {
   name: string;
   path: string;
   description?: string | null;
+  preferredEditor?: PreferredEditor | null;
 }
 
 export type UpdateProjectBody = Partial<CreateProjectBody>;
+
+export interface OpenInEditorBody {
+  /** project-relative path. Missing/empty = project root. */
+  path?: string;
+  line?: number;
+  /** Override the project's saved preference for this call. */
+  editor?: PreferredEditor;
+}
 
 export interface CreateAgentBody {
   projectId: string;
@@ -187,6 +198,11 @@ export const api = {
     }),
   deleteProject: (id: string) =>
     request<void>(`/api/projects/${id}`, { method: "DELETE" }),
+  openInEditor: (id: string, body: OpenInEditorBody = {}) =>
+    request<{ ok: true; editor: PreferredEditor; command: string }>(
+      `/api/projects/${id}/open-in-editor`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
   getProjectTree: (id: string, path?: string) => {
     const qs = path ? `?path=${encodeURIComponent(path)}` : "";
     return request<{ entries: TreeEntry[] }>(`/api/projects/${id}/tree${qs}`);
@@ -203,6 +219,17 @@ export const api = {
     request<{ paths: TouchedPath[] }>(`/api/projects/${id}/touched`),
   getProjectActiveTouches: (id: string) =>
     request<{ touches: ActiveTouch[] }>(`/api/projects/${id}/active-touches`),
+  getProjectActiveTools: (id: string) =>
+    request<{ tools: ActiveToolsForAgent[] }>(
+      `/api/projects/${id}/active-tools`,
+    ),
+  getProjectEnv: (id: string) =>
+    request<{ env: Record<string, string> }>(`/api/projects/${id}/env`),
+  setProjectEnv: (id: string, env: Record<string, string>) =>
+    request<{ env: Record<string, string> }>(`/api/projects/${id}/env`, {
+      method: "PUT",
+      body: JSON.stringify({ env }),
+    }),
   getProjectFilesFlat: (id: string) =>
     request<{ paths: string[] }>(`/api/projects/${id}/files-flat`),
 
@@ -358,4 +385,8 @@ export const api = {
     }),
   deleteThread: (id: string) =>
     request<void>(`/api/threads/${id}`, { method: "DELETE" }),
+  resetThreadSession: (id: string) =>
+    request<{ cleared: number }>(`/api/threads/${id}/reset-session`, {
+      method: "POST",
+    }),
 };

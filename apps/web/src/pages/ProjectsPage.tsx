@@ -2,13 +2,14 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { celebrate } from "../lib/celebrate.js";
+import { ExternalLink } from "lucide-react";
 import { useConfirm } from "../components/ConfirmDialog.js";
-import type { Project } from "@loom/core";
+import type { PreferredEditor, Project } from "@loom/core";
 import { api, type CreateProjectBody } from "../api/client.js";
 import { Button, Card, Field, Input, Textarea } from "../components/ui.js";
 import { Skeleton } from "../components/ui/skeleton.js";
 import { PageScroll } from "../components/PageScroll.js";
+import { EditorPicker, editorLabel } from "../components/EditorPicker.js";
 import { useI18n } from "../context/I18nContext.js";
 
 export function ProjectsPage() {
@@ -25,7 +26,6 @@ export function ProjectsPage() {
       qc.invalidateQueries({ queryKey: ["projects"] });
       setShowForm(false);
       toast.success(t("projects.toast.created", { name: r.project.name }));
-      celebrate("firstProject");
     },
     onError: (err) =>
       toast.error(err instanceof Error ? err.message : String(err)),
@@ -110,11 +110,30 @@ function ProjectCard({
   onDelete: () => void;
 }) {
   const { t } = useI18n();
+  const qc = useQueryClient();
   const agents = useQuery({
     queryKey: ["agents", { projectId: project.id }],
     queryFn: () => api.listAgents({ projectId: project.id }),
   });
   const agentCount = agents.data?.agents.length ?? 0;
+
+  const setEditor = useMutation({
+    mutationFn: (editor: PreferredEditor) =>
+      api.updateProject(project.id, { preferredEditor: editor }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : String(err)),
+  });
+
+  const openInIde = useMutation({
+    mutationFn: () => api.openInEditor(project.id, {}),
+    onSuccess: (r) =>
+      toast.success(
+        t("projects.openedIn", { editor: editorLabel(r.editor) }),
+      ),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : String(err)),
+  });
 
   return (
     <Card className="space-y-3">
@@ -139,13 +158,34 @@ function ProjectCard({
           {project.description}
         </p>
       ) : null}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Link
           to={`/projects/${project.id}`}
           className="hover:underline"
         >
           {t("projects.agentsLink", { count: agentCount })}
         </Link>
+        <span className="text-border">·</span>
+        {/* IDE picker — quick PATCH on change. 새 IDE를 골라도 하단의 "Open" 버튼은
+            즉시 새 값으로 동작 (mutation 성공 후 query 무효화 → project 재조회). */}
+        <EditorPicker
+          value={project.preferredEditor}
+          onChange={(next) => setEditor.mutate(next)}
+          className="h-7 w-auto px-2 text-xs"
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          className="ml-auto h-7 gap-1"
+          disabled={openInIde.isPending}
+          onClick={() => openInIde.mutate()}
+          title={t("projects.openIn", {
+            editor: editorLabel(project.preferredEditor),
+          })}
+        >
+          <ExternalLink className="size-3.5" />
+          {t("projects.open")}
+        </Button>
       </div>
     </Card>
   );
@@ -164,6 +204,7 @@ function CreateProjectForm({
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [description, setDescription] = useState("");
+  const [editor, setEditor] = useState<PreferredEditor>("vscode");
 
   return (
     <Card className="space-y-4">
@@ -196,6 +237,9 @@ function CreateProjectForm({
           placeholder={t("projects.placeholder.description")}
         />
       </Field>
+      <Field label={t("projects.field.editor")} hint={t("projects.field.editorHint")}>
+        <EditorPicker value={editor} onChange={setEditor} className="h-9" />
+      </Field>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>
           {t("common.cancel")}
@@ -203,7 +247,12 @@ function CreateProjectForm({
         <Button
           disabled={submitting || !name || !path}
           onClick={() =>
-            onSubmit({ name, path, description: description || null })
+            onSubmit({
+              name,
+              path,
+              description: description || null,
+              preferredEditor: editor,
+            })
           }
         >
           {submitting ? t("common.creating") : t("common.create")}

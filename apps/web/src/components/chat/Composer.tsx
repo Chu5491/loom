@@ -166,8 +166,14 @@ export function Composer({
   const canSend = !!target && text.trim().length > 0 && !isSending;
 
   return (
-    <div className="px-5 pb-4 pt-1 bg-background shrink-0">
-      <div className="relative rounded-lg border bg-background focus-within:ring-1 focus-within:ring-ring transition-shadow">
+    // 좌우 정렬:
+    //   - 메시지 텍스트 left = MessageRow.px(8/16) + avatar(28/32) + gap(8/12) ≈ 44 / 60
+    //   - composer 자체는 아바타가 없으므로, 빈 슬롯만큼 pl을 추가해 textarea
+    //     글자가 위쪽 메시지 텍스트와 같은 세로축에 떨어지도록 정렬.
+    //   - 우측은 MessageRow.px와 동일하게 — bordered box 우측 끝이 메시지 행
+    //     우측 끝과 일치.
+    <div className="mx-auto w-full max-w-3xl pl-9 pr-2 py-1.5 @[480px]:pl-12 @[480px]:pr-4 @[480px]:py-2 bg-card shrink-0">
+      <div className="relative rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring transition-shadow">
         <AnimatePresence>
           {slashOpen && slashMatches.length > 0 ? (
             <motion.div
@@ -232,17 +238,17 @@ export function Composer({
           }}
           placeholder={placeholder}
           disabled={!target}
-          className="w-full resize-none bg-transparent px-3.5 py-3 text-sm placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
-          style={{ minHeight: "40px" }}
+          className="w-full resize-none bg-transparent px-3 py-1.5 text-sm leading-snug placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+          style={{ minHeight: "32px" }}
         />
-        <div className="flex items-center justify-between gap-2 border-t px-2 py-1.5">
+        <div className="flex items-center justify-between gap-1 border-t border-border/60 px-1.5 py-0.5">
           <Select
             value={target?.id ?? ""}
             onValueChange={(id) => {
               if (id) setTarget(id);
             }}
           >
-            <SelectTrigger className="h-7 w-auto gap-1 border-0 bg-transparent hover:bg-muted px-2 shadow-none focus:ring-0">
+            <SelectTrigger className="h-6 w-auto gap-1 border-0 bg-transparent hover:bg-muted px-1.5 shadow-none focus:ring-0">
               <SelectValue>
                 {target ? (
                   <span className="inline-flex items-center gap-1.5">
@@ -286,7 +292,7 @@ export function Composer({
               })}
             </SelectContent>
           </Select>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             {threadHasContext ? (
               <button
                 type="button"
@@ -298,19 +304,20 @@ export function Composer({
                 }
                 aria-pressed={attachContext}
                 className={cn(
-                  "inline-flex items-center gap-1 px-2 h-6 rounded text-[11px] transition-colors",
+                  "inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] transition-colors",
                   attachContext
                     ? "text-sky-700 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted",
                 )}
               >
                 <Paperclip className="size-3" />
-                <span className="hidden sm:inline">
+                <span className="hidden @[420px]:inline">
                   {t("chat.composer.context")}
                 </span>
               </button>
             ) : null}
-            <span className="text-[10px] text-muted-foreground/70 hidden md:inline">
+            {/* Enter 힌트는 dock가 충분히 넓을 때만. 좁으면 잘림이 더 시끄러움. */}
+            <span className="text-[10px] text-muted-foreground/70 hidden @[520px]:inline">
               {t("chat.composer.hint")}
             </span>
             <Button

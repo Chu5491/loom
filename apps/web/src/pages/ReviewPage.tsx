@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { AdapterManifest, Agent, Run, RunChange } from "@loom/core";
 import { api } from "../api/client.js";
-import { AgentAvatar } from "../components/Chat.js";
+import { AgentAvatar } from "../components/chat/index.js";
 import { PageHeader } from "../components/PageHeader.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";

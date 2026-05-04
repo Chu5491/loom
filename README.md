@@ -1,346 +1,441 @@
 # loom
 
-**Multi-agent orchestrator for CLI-based development workflows.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dark-office.png">
+  <img alt="loom — pixel office for your CLI agents" src="docs/assets/light-office.png">
+</picture>
 
-여러 AI CLI 도구(Claude Code, Gemini, Codex, OpenCode)를 하나의 웹 인터페이스에서 통합하고, 에이전트 간 협업을 채팅처럼 관리하는 워크스페이스. 파일 변경, diff, 실행 비용을 실시간으로 추적합니다.
+[**Quickstart**](#quickstart) · [**Adapters**](#-bring-your-own-cli) · [**Architecture**](#whats-under-the-hood) · [**FAQ**](#faq)
 
-[![node](https://img.shields.io/badge/node-%E2%89%A522-blue)](#-요구사항)
-[![license](https://img.shields.io/badge/license-MIT-green)](#라이선스)
-[![typescript](https://img.shields.io/badge/typescript-5.0%2B-blue)](#)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue)](#-license) [![Node ≥ 22](https://img.shields.io/badge/node-%E2%89%A522-green)](#requirements) [![TypeScript](https://img.shields.io/badge/typescript-5-blue)](#)
 
----
+## What is loom?
 
-## 왜 loom을 써야 하나
+### A workspace where your CLI coding agents share an office.
 
-**문제**: AI 에이전트별로 CLI를 분리하면 결과를 추적하고 통합하기 어렵다.
+**Claude Code is one terminal. loom is the room where five of them work together.**
 
-**해결**: 모든 에이전트를 한 곳에서 관리하되, 입력은 명시적이고 결과는 가시화한다.
+loom is a Node.js server + React UI that runs your CLI coding agents (Claude Code, Gemini, Codex, OpenCode) inside one workspace, threads their conversations like a group chat, watches every file they touch in real time, and lets you walk to your real IDE in one click when you actually need to read code.
 
-- 파일 변경을 실시간으로 확인할 수 있다
-- 어떤 에이전트가 언제 무엇을 했는지 추적할 수 있다
-- 한 thread 안에서 여러 에이전트를 순차적으로 또는 동시에 호출할 수 있다
-- 각 실행의 비용을 기록할 수 있다
-- 같은 프로젝트에서 여러 독립적인 thread를 병렬로 진행할 수 있다
+It looks like a chat app and a tiny pixel office — but underneath it's git worktrees, session resume, cost ledgers, MCP tracing, and a dispatcher that keeps every agent's input explicit.
 
-핵심 설계: **사용자가 명시적으로 입력한 것만 에이전트에 전달된다.** 시스템 프롬프트, 파일 자동 주입, 스킬 번들 같은 것은 사용자가 명시적으로 첨부할 때만 포함된다.
+**One thread, many agents. One workspace, no babysitting.**
 
----
+| Step | Example |
+|------|---------|
+| **01** | Hire your team: `@frontend`, `@backend`, `@reviewer` — each one a real CLI agent with its own model, prompt, and budget. |
+| **02** | Start a thread: _"Migrate auth to NextAuth and write the tests."_ |
+| **03** | Watch them work: characters walk to their desks, edit files, hand off to each other. You read the chat, hit `IDE` when you want to dive in. |
 
-## 주요 기능
+> **Coming soon: gemini / codex / opencode adapters** — same explicit-input contract, ~40 lines per adapter. Today's stable adapter is **claude-code**; the others are wired but live behind the registry.
 
-### 에이전트 협업 (Multi-Agent Chat)
-각 프로젝트의 **thread** 안에서 여러 에이전트를 관리한다.
-- `@mention`으로 에이전트 전환 또는 다른 에이전트에 위임
-- 한 메시지를 여러 에이전트에 동시 전송
-- 답변에서 텍스트 선택 후 다음 메시지에 자동 인용
-- 위임 뱃지로 대화 흐름 시각화
+### Works with
 
-### 파일과 채팅 통합 (Unified Workspace)
-한 화면에서 파일과 메시지를 함께 본다.
-- **좌측**: 파일 트리 (수정된 파일 표시)
-- **중앙**: 파일 뷰어 + 시점별 diff
-- **우측**: 메시지 흐름 + composer
+| Adapter | Command | Input mode | What it surfaces |
+|---|---|---|---|
+| **Claude Code** | `claude` | stdin (`--print -`) | session_id · tool_use · cost · MCP calls |
+| **Gemini CLI** | `gemini` | stdin (non-TTY) | _adapter scaffolded_ |
+| **Codex** | `codex exec` | last arg | _adapter scaffolded_ |
+| **OpenCode** | `opencode run` | last arg | _adapter scaffolded_ |
 
-각 실행이 변경한 파일을 추적하고, 파일의 변경 히스토리를 시간순으로 확인할 수 있다.
-
-### Thread 컨텍스트 (Context Bundle)
-각 thread마다 markdown 메모를 작성하고, 필요할 때만 첨부한다.
-- 자동 주입 없음 — 사용자가 메시지 작성 시점에 결정
-- 프롬프트에 `=== Thread Context ===` 섹션으로 추가
-
-### Worktree 격리 (Branch Isolation)
-같은 프로젝트에서 여러 작업을 병렬로 진행한다.
-- 새 thread 생성 시 `git worktree` 자동 할당
-- 각 thread는 독립적인 브랜치에서 작업
-- thread 삭제 시 worktree 자동 정리
-
-### 비용 추적 (Cost Tracking)
-각 run의 실행 비용을 기록하고 표시한다.
-- 메시지별 비용 표시 (`$0.042`)
-- thread별 누적 비용
-- 에이전트가 비용 정보를 제공할 때만 기록
-
-### 지원하는 CLI 에이전트
-
-| Agent | CLI | 입력 | 특징 |
-| --- | --- | --- | --- |
-| **Claude Code** | `claude` | stdin | stream-json 실시간 출력, 비용 추적 |
-| **Gemini** | `gemini` | stdin | non-TTY 모드 |
-| **Codex** | `codex exec` | 마지막 인자 | 커맨드라인 인자 모드 |
-| **OpenCode** | `opencode run` | 마지막 인자 | 커맨드라인 인자 모드 |
-
-모든 어댑터는 동일한 `defineCliAdapter` 팩토리로 구성되어 ~40줄 정도의 일관된 코드 크기를 유지합니다.
+_If it speaks stdout one event at a time, it can move into the office._
 
 ---
 
-## 설계 원칙
+## loom is right for you if
 
-### 명시성 (Explicitness)
-자동 주입은 하지 않는다. 시스템 프롬프트, 파일, 스킬, context 같은 모든 것은 **사용자가 명시적으로 선택**할 때만 에이전트에 전달된다. 이를 통해 비용과 결과를 예측 가능하게 유지한다.
-
-### 사용자 제어 (User Control)
-매 위임과 매 실행을 사용자가 결정한다. 에이전트가 자동으로 다음 에이전트를 선택하거나 워크플로우를 진행하지 않는다.
-
-### 코드 중심 (Code-First)
-어댑터는 플러그인 마켓이 아닌 코드로 등록한다. 새 CLI를 붙이려면 패키지를 작성해서 registry에 추가한다.
-
-### 로컬 도구 (Local-First)
-인증, 멀티 테넌트, 클라우드 동기화 같은 것은 없다. 로컬 개발 워크스페이스다.
+- ✅ You have **three Claude Code terminals open** for the same repo and lose track of which one did what
+- ✅ You want **one chat thread** where `@backend` writes the migration and `@frontend` writes the form, and you can read both like Slack
+- ✅ You want to see **every file each agent edits, in real time**, and the diff for "what did *that* run change?"
+- ✅ You want to **read code in your real IDE** (VS Code / Cursor / Antigravity / Zed / IntelliJ) — not in another web Monaco
+- ✅ You want **session resume**, **per-thread git worktrees**, and **cost per run** without writing those plumbing yourself
+- ✅ You want a coding-agent runner that **never silently appends a system prompt to your message**
 
 ---
 
-## 지금 없는 것
+## Features
 
-- 에이전트 자동 제안 패턴 (`[NEXT]`, `[ASK]`)
-- 재사용 가능한 워크플로우 템플릿
-- 플러그인 마켓
+### 💬 Group chat for agents
+
+Threads are first-class. Inside a thread, mention any agent with `@`, hand off mid-message, quote their answer in your reply, and read the result like a group DM. Reply quotes are exact strings, not summaries.
+
+### 🏢 Pixel office (yes, really)
+
+The "Office" view is a tiny diorama. Each agent walks around when idle, sits at their desk when a run starts, and a speech bubble shows the file they're editing or the tool they're using right now. Click a character → talk to them. It's a glanceable status board you can leave open all day.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dark-office.png">
+  <img alt="Office view" src="docs/assets/light-office.png">
+</picture>
+
+### 📂 Live file presence
+
+The file tree dots brighten the moment an agent opens a file. The tab bar shows `@backend` editing `auth.ts:42` while you're still typing. When the run finishes, the dot persists — the file remembers which run touched it. Click the dot, jump to that conversation.
+
+### 🔧 Tool & MCP visibility
+
+We parse the CLI's `tool_use` stream live. Read / Edit / Write / Bash / Grep / WebFetch all show up as chips on the agent's desk; `mcp__server__method` calls are grouped into "MCP servers in use" pills. No more guessing what the agent is _actually_ doing.
+
+### 🌿 Worktree-isolated threads
+
+Mark a thread "isolated" → loom creates a fresh `git worktree` for it, agents `cd` into that worktree on every run, and deletion cleans up. Run two threads against the same repo without their edits stepping on each other.
+
+### 💰 Honest cost
+
+Cost shown is whatever the CLI itself reported — claude-code's `total_cost_usd`, nothing more. We don't fabricate token estimates. Per-run number on each message, per-thread total in the bar, per-project sum on the projects screen.
+
+### 🔁 Session resume
+
+Every run captures the CLI's `session_id`. The next run in the same thread + agent automatically `--resume`s it, so the agent keeps context across turns. If a session id ever fails to resume (CLI says "no conversation found"), it gets poisoned — we never try it again.
+
+### ✏️ Spec attachments
+
+Markdown skills you write in `Specs`, attached only when *you* tick the paperclip on a message. Never auto-injected. Composed into the prompt as a bordered `=== Skill: <name> ===` block so the agent can tell where the user prompt ends.
+
+### 🔌 Open in your real IDE
+
+A button on every file (and every project card) opens it in **VS Code, Cursor, Antigravity, Zed, or IntelliJ** at the right line. Falls back through `code` on PATH → app-bundle absolute path → `open -a "<App>"` so it works without the user installing the shell command.
+
+### 🎨 Theme-aware everything
+
+Light, dark, and system. The pixel sprites, the office walls, the carpet, the monitors — all driven by CSS variables, so flipping theme flips the diorama too.
 
 ---
 
-## 요구사항
+## Problems loom solves
 
-- Node.js ≥ 22
-- pnpm (또는 npm)
-- 지원하는 CLI 도구 설치: Claude Code, Gemini, Codex, OpenCode 중 하나 이상
+| Without loom | With loom |
+|---|---|
+| ❌ Five terminals open, none of them know about the others. You manually paste context between them. | ✅ One thread, `@mention` to switch agents. Each one sees the same conversation. |
+| ❌ "Did the agent finish?" requires alt-tabbing to a terminal and squinting at scrollback. | ✅ The Office view shows who's at their desk, and a speech bubble tells you the file they're editing right now. |
+| ❌ "Which file did that last run change?" → `git diff` and pray. | ✅ Every run captures before/after git refs, persists `run_changes`, and the file tree pulses on the touched file even after the run is gone. |
+| ❌ Each CLI prints its own log format. Cost numbers are scattered. | ✅ One SSE stream, one parser per adapter. Cost is whatever the CLI reports — captured, summed, displayed. |
+| ❌ Two agents editing the same repo race each other and clobber each other's work. | ✅ Mark a thread "isolated" → its own git worktree. Two threads can be making conflicting edits at once. |
+| ❌ Reading code in a webapp's Monaco while your real editor sits open in the next window. | ✅ One click sends the file (and the line number) to VS Code / Cursor / Antigravity / Zed / IntelliJ. |
+| ❌ The web tool secretly prepends a system prompt and 40k of "helpful context" to every message. | ✅ The CLI gets exactly: your text + any spec you ticked. Nothing else. Ever. |
 
-## 설치
+---
+
+## Why loom is special
+
+loom solves the _quiet_ orchestration problems honestly.
+
+**Explicit input.**
+The contract is: _user prompt + user-attached specs → CLI stdin/argv._ No system prompt injection, no AGENTS.md auto-discovery, no skill bundles. Predictable cost, predictable behavior, no "why did it suddenly know about my .env?"
+
+**Live tool extraction.**
+The adapter parses `tool_use` events out of stream-json without buffering the whole run. The Office desks update inside ~1 second of an agent picking up a tool. MCP calls (`mcp__server__method`) are split into `(server, method)` so we can show "github" / "context7" pills next to each desk.
+
+**Poison-aware session resume.**
+A failed `--resume <id>` poisons that session id permanently. The thread keeps moving forward instead of looping on a dead session — no more "No conversation found" infinite retries.
+
+**Worktree-as-thread.**
+Isolated threads create dangling git worktrees that agents `cd` into. Cleaned up on thread deletion. The branch lives until you merge it; before/after refs survive `git gc` because we persist `run_changes` rows.
+
+**One spawn-process abstraction.**
+`@loom/adapter-utils` exports `defineCliAdapter()` and `spawnProcess()`. A new adapter is ~40 lines: build the command, pick stdin or argv, plug it in. No frameworks, no plugin marketplace, no DI container.
+
+**Pixel office is data, not chrome.**
+Every animation in the Office reflects real state — speech bubbles read `activeTools.recent`, the screen pulse is `working === true`, the desk an agent walks to is its assigned slot. Nothing is decorative.
+
+---
+
+## What's Under the Hood
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         LOOM SERVER (Hono)                       │
+│                                                                  │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐  │
+│  │  Projects  │  │   Threads  │  │    Runs    │  │  Adapters  │  │
+│  │   + env    │  │ + worktree │  │ + sessions │  │   + cost   │  │
+│  └────────────┘  └────────────┘  └────────────┘  └────────────┘  │
+│                                                                  │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐  │
+│  │ Active     │  │ Active     │  │ Run        │  │ Git        │  │
+│  │ touches    │  │ tools      │  │ changes    │  │ snapshots  │  │
+│  │ (in-mem)   │  │ (in-mem)   │  │ (sqlite)   │  │ (refs)     │  │
+│  └────────────┘  └────────────┘  └────────────┘  └────────────┘  │
+│                                                                  │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐  │
+│  │   Specs    │  │  Open-in-  │  │  Log SSE   │  │   Health   │  │
+│  │ (markdown) │  │  IDE relay │  │  per run   │  │  / probes  │  │
+│  └────────────┘  └────────────┘  └────────────┘  └────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+                              ▲
+       ┌──────────────────────┼──────────────────────┐
+       │            stream-json / pty                │
+   ┌───┴───┐    ┌────────┐   ┌───────┐   ┌──────────┐
+   │claude │    │ gemini │   │ codex │   │ opencode │   ← any new
+   │ code  │    │   CLI  │   │  exec │   │   run    │      stdin/argv CLI
+   └───────┘    └────────┘   └───────┘   └──────────┘     in ~40 LOC
+```
+
+### The systems
+
+**Projects** — Path on disk + per-project env vars (lower priority than agent env, higher than OS) + a chosen IDE for the "Open" button. Many projects, one server.
+
+**Threads** — First-class conversation containers. Status (active/done/archived), curated context bundle, optional isolated git worktree, hand-off chain. The `ThreadList` sidebar inside the chat dock is your terminal-tab equivalent.
+
+**Runs** — Every CLI invocation is a row. Status, exit code, prompt, attached spec ids, before/after git refs, cost, captured session id, the session id that was attempted to resume. The full audit trail of what each agent did.
+
+**Adapters** — Each CLI is a thin module: `buildCommand()` → `{command, args}`, `spawn()` via the shared `spawnProcess`, optional `extractSessionId` / `extractTouchedEdits` / `extractToolUses`. Registered in `apps/server/src/adapters/registry.ts`. New ones drop in.
+
+**Active touches & tools** — In-memory, drained when the run finishes. Powers the live "@backend is editing auth.ts" pulses, the Office speech bubbles, and the MCP-server pills.
+
+**Run changes & git snapshots** — Before/after work-tree snapshots (dangling commits) → diff stat → persisted `run_changes` rows. Survives `git gc`. Powers the file-history rail and the per-run diff view.
+
+**Specs** — Markdown documents you can attach to a message. Composed into the prompt as `=== Skill: <name> ===` blocks. Never auto-injected.
+
+**Open-in-IDE** — Spawn relay: PATH lookup → app-bundle absolute paths → `open -a "<App Name>"` fallback (macOS). Returns 404 with the candidate list when nothing is found.
+
+**Log SSE** — One stream per run, `text/event-stream`, replay-from-disk on reconnect. The chat panel renders parsed events; the live tail keeps streaming.
+
+---
+
+## What loom is not
+
+**Not a Claude Code wrapper.**
+loom doesn't bundle any agent. You bring your own CLI binaries — claude, gemini, codex, opencode, or anything else that takes a prompt on stdin and prints stdout.
+
+**Not an autonomous agent.**
+loom never decides to call another agent. Every hand-off is a button press. Every spec attachment is a checkbox tick. The user is in the loop, on purpose.
+
+**Not a prompt manager.**
+We don't compose system prompts, choose models for you, or maintain a "skill marketplace." Models live in `agent.adapterConfig.model`. Prompts live in `agent.prompt`.
+
+**Not a code editor replacement.**
+Monaco lives in the Editor view for diff inspection, but the "Open in IDE" button is the primary path for actual editing. We treat the user's real IDE as a first-class destination, not a fallback.
+
+**Not multi-tenant.**
+Local single-user tool. SQLite, no auth, no team accounts. If you put it on a public IP, it will execute arbitrary commands as you.
+
+**Not a workflow builder.**
+No DAG, no nodes, no canvas. Just threads, runs, agents, and the messages between them.
+
+---
+
+## Screens
+
+### Office — the pixel diorama
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Light office" src="docs/assets/light-office.png"></td>
+    <td width="50%"><img alt="Dark office" src="docs/assets/dark-office.png"></td>
+  </tr>
+</table>
+
+Characters wander the corridor when idle, walk to their desks when a run starts, and a speech bubble names the file they're touching or the tool they're using. Window, coffee station, bookshelf, plants — all SVG `<rect>` pixel art driven by CSS variables, so the room re-skins itself for light/dark.
+
+### Editor — Monaco + diff
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Light editor" src="docs/assets/light-editor.png"></td>
+    <td width="50%"><img alt="Dark editor" src="docs/assets/dark-editor.png"></td>
+  </tr>
+</table>
+
+The "Editor" tab swaps the diorama for a real file viewer with per-run diffs and a "history" rail showing which runs touched the file. The `Open in IDE` button on the toolbar sends the current file (and active line) to your real editor.
+
+### Projects — many repos, one IDE picker
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Light projects" src="docs/assets/light-projects.png"></td>
+    <td width="50%"><img alt="Dark projects" src="docs/assets/dark-projects.png"></td>
+  </tr>
+</table>
+
+Each card shows agent count and a per-project preferred IDE (VS Code / Cursor / Antigravity / Zed / IntelliJ). The "Open" button works whether or not the IDE's CLI is on your PATH.
+
+### Agents — small org chart per project
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Light agents" src="docs/assets/light-agents.png"></td>
+    <td width="50%"><img alt="Dark agents" src="docs/assets/dark-agents.png"></td>
+  </tr>
+</table>
+
+Each agent has a name, role, color, adapter kind, model, custom prompt, and optional autonomy. The card shows assigned skills + per-project env editor for shared API keys.
+
+### Skills — markdown you opt into
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Light skills" src="docs/assets/light-skills.png"></td>
+    <td width="50%"><img alt="Dark skills" src="docs/assets/dark-skills.png"></td>
+  </tr>
+</table>
+
+Skills are plain markdown files. Tick the paperclip on a message to attach one — never auto-injected, never surprise context.
+
+### History — every run, ever
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Light history" src="docs/assets/light-history.png"></td>
+    <td width="50%"><img alt="Dark history" src="docs/assets/dark-history.png"></td>
+  </tr>
+</table>
+
+Filter by agent / status / thread. Each row links to the run page (full log + diff) and the original chat message.
+
+---
+
+## Quickstart
+
+Self-hosted, single-binary-feel. Local dev only — no auth, no cloud.
+
+### Requirements
+
+- **Node.js ≥ 22**
+- **pnpm ≥ 9**
+- At least one supported CLI installed and on PATH: `claude`, `gemini`, `codex`, or `opencode`
+
+### Run
 
 ```bash
 git clone https://github.com/Chu5491/loom.git
 cd loom
 pnpm install
-```
-
-## 실행
-
-```bash
 pnpm dev
 ```
 
-이 명령은 다음 두 서버를 동시에 실행한다:
-- **서버**: http://localhost:3200 (API + SSE)
-- **웹**: http://localhost:3201 (UI)
+This boots two processes:
 
-브라우저에서 http://localhost:3201 을 열고, 프로젝트를 생성한 후 에이전트를 설정해 시작한다.
+- **Server** at `http://localhost:3200` — REST + SSE
+- **Web** at `http://localhost:3201` — open this in your browser
 
-## 검증 & 빌드
+Create a project pointing to a repo on disk, add an agent (paste your CLI command name), and send a message in a thread.
+
+### Verify the build
 
 ```bash
-# 타입 체크 (모든 패키지)
-pnpm -r typecheck
-
-# 단위 테스트 (server + adapters)
-pnpm -r test
-
-# 프로덕션 빌드
-pnpm -r build
+pnpm -r typecheck      # all packages
+pnpm -r test           # vitest (server + each adapter)
+pnpm --filter @loom/web build
 ```
 
 ---
 
-## UI 레이아웃
+## FAQ
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ loom                     Projects · Agents · Specs       │
-├────────┬─────────────────────────────────────────────────┤
-│        │  Backend [●●●] Frontend [idle] ...             │
-│ Sidebar├────────────────────────────────────────────────┤
-│        │  src             │ src/auth.ts × │ Messages    │
-│ •Home  │  ├─ auth.ts      │ ────────────── │ ──────────  │
-│ •Prj A │  ├─ db.ts        │ 23 insertions │ 20:45       │
-│ •Prj B │  ├─ route.ts     │ 5 deletions   │ Backend:... │
-│        │  └─ utils.ts     │ +/- diffs     │              │
-│ Settings│  │               │ (inline)      │ composer    │
-└────────┴──┴──────────────┴───────────────┴──────────────┘
-```
+**Do I need to run anything besides `pnpm dev`?**
+No. SQLite is created on first boot at `~/.loom/loom.db`. Logs land in `~/.loom/logs/`. Worktrees in `~/.loom/worktrees/`. There is no separate Postgres or Redis.
 
-- **좌측**: 프로젝트 네비게이션 + 설정
-- **상단**: 실행 중인 에이전트 상태바
-- **중앙-좌**: 파일 트리 (수정된 파일에 점 표시)
-- **중앙**: 파일 뷰어 + unified diff
-- **우측**: 메시지 흐름 (토글 가능)
+**Why no auto-injected system prompt?**
+Predictable cost, predictable behavior, predictable surface area for security review. If you want a system prompt, write it as a Spec and attach it. The CLI sees what you typed plus what you ticked — nothing else.
 
-### 키보드 네비게이션
-- `⌘P` — 파일 검색 팔레트 (fuzzy)
-- `⌘L` — 우측 메시지 drawer 토글
-- `⇧⌘A` — 현재 thread archive
-- `@` (입력 중) — 에이전트 멘션
+**Can multiple agents work in the same thread at once?**
+Yes. Each `@mention` spawns a new run, each run streams in real time. The Office view shows them all sitting at their desks simultaneously.
+
+**What if my IDE isn't on PATH?**
+The "Open" button tries: PATH command (`code`, `cursor`, `zed`, ...) → app-bundle absolute path (`/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code`) → macOS `open -a "<App>"`. The vast majority of macOS users hit case 2 or 3 without ever installing a shell command.
+
+**How do I add a new CLI adapter?**
+Copy `packages/adapters/claude-code/`, change `kind` and `buildCommand`, register in `apps/server/src/adapters/registry.ts`. ~40 lines. See [`CLAUDE.md §4`](./CLAUDE.md) for the contract.
+
+**What's an "isolated" thread?**
+A thread with its own git worktree. Agents `cd` into the worktree on every run. Lets two threads make conflicting edits in parallel without colliding. Toggle when creating the thread.
+
+**Will it run on Windows?**
+The server uses POSIX path conventions and macOS-favored fallbacks for the IDE relay. Linux works. Windows: stdin spawn should work, but the `open -a` fallback won't and we haven't tested it.
 
 ---
 
-## 아키텍처
+## Development
 
-### 기술 스택
-- **Backend**: Hono (lightweight framework) + better-sqlite3
-- **Frontend**: React + Vite + TanStack Query
-- **Monorepo**: pnpm workspaces
-- **Language**: TypeScript 5.0+
+```bash
+pnpm dev                         # full stack (server :3200 + web :3201, watch)
+pnpm dev:server                  # server only
+pnpm --filter @loom/web dev      # web only
+pnpm -r typecheck                # all packages
+pnpm -r test                     # all unit tests (vitest)
+pnpm --filter @loom/server test  # server tests only
+pnpm -r build                    # production build
+```
 
-### 폴더 구조
+### Folder layout
 
 ```
 loom/
 ├── apps/
-│   ├── server/        Hono API + DB + run executor + git service
-│   └── web/           React SPA + UI components + API client
-├── packages/
-│   ├── core/          Shared types (Project, Agent, Run, Thread, etc)
-│   ├── adapter-utils/ defineCliAdapter factory + spawnProcess utility
-│   └── adapters/      Individual CLI adapters (claude-code, gemini, codex, opencode)
-└── [config files]     TypeScript, pnpm workspace, package.json
+│   ├── server/        Hono API + SQLite + run executor + git snapshots
+│   └── web/           React SPA + Vite + TanStack Query + Tailwind v4
+└── packages/
+    ├── core/                      Shared types (Project, Run, Thread, …)
+    ├── adapter-utils/             defineCliAdapter() + spawnProcess()
+    └── adapters/
+        ├── claude-code/           stable
+        ├── gemini/                scaffolded
+        ├── codex/                 scaffolded
+        └── opencode/              scaffolded
 ```
+
+See [`CLAUDE.md`](./CLAUDE.md) for the working agreement (naming, comments, abstraction rules) and [`SLIM-HARNESS-DESIGN.md`](./SLIM-HARNESS-DESIGN.md) for the original design intent.
 
 ---
 
-## 데이터 모델
+## 🔌 Bring Your Own CLI
 
-```
-Project
-  ├── Thread (각각 독립적인 git worktree)
-  │   ├── context_bundle (markdown 메모)
-  │   └── Run (실행 기록)
-  │       ├── agent_id
-  │       ├── prompt (사용자 입력)
-  │       ├── attached_specs[] (명시적으로 첨부한 spec)
-  │       ├── before_ref / after_ref (git 스냅샷)
-  │       ├── run_changes[] (파일 변경 기록)
-  │       └── cost_usd (실행 비용)
-  │
-  ├── Agent (프로젝트별 설정)
-  │   ├── name
-  │   ├── prompt (기본 명령어)
-  │   ├── adapter_kind (claude-code, gemini 등)
-  │   ├── adapter_config (모델, 사용자 정의 args)
-  │   └── default_cwd
-  │
-  └── Spec (문서 라이브러리)
-      ├── name
-      ├── content (markdown)
-      └── tags
-```
+A new adapter is one file. Here's the entire `claude-code` adapter, abridged:
 
-핵심:
-- **Thread**는 일급 컨테이너. 대화의 경계다.
-- **Run** 체인이 thread 안의 시간 순서를 이룬다.
-- **Spec**은 선택적으로 각 run에 첨부된다 (자동 주입 안 함).
-- **run_changes**는 git gc 후에도 유지되는 영구 기록이다.
-
----
-
-## REST API
-
-### Projects
-```
-GET    /api/projects
-GET    /api/projects/:id
-POST   /api/projects
-PATCH  /api/projects/:id
-DELETE /api/projects/:id
-GET    /api/projects/:id/tree?path=...         # 디렉토리 트리 (lazy)
-GET    /api/projects/:id/files-flat            # 모든 파일 목록 (검색용)
-GET    /api/projects/:id/file?path=...         # 파일 내용
-GET    /api/projects/:id/touched               # 최근 수정된 파일 목록
-GET    /api/projects/:id/file-history?path=... # 파일의 변경 히스토리
-```
-
-### Threads
-```
-GET    /api/threads?projectId=...
-GET    /api/threads/:id
-POST   /api/threads                    # body.isolate=true → git worktree 생성
-PATCH  /api/threads/:id                # name, status, context_bundle 변경
-DELETE /api/threads/:id                # worktree 자동 정리
-```
-
-### Runs
-```
-GET    /api/runs?agentId=...&threadId=...&status=...
-GET    /api/runs/:id
-GET    /api/runs/:id/result            # 최종 output
-GET    /api/runs/:id/changes           # 파일 변경 목록
-GET    /api/runs/:id/changes/patch?path=... # unified diff
-POST   /api/runs                       # 새 run 시작
-POST   /api/runs/:id/cancel
-GET    /api/runs/:id/logs              # SSE: 실시간 스트림
-```
-
-### Entities (표준 CRUD)
-```
-GET/POST/PATCH/DELETE /api/agents
-GET/POST/PATCH/DELETE /api/specs
-GET                   /api/adapters
-GET                   /api/health
-```
-
----
-
-## 어댑터 개발 가이드
-
-### 구조
-```
-packages/adapters/<cli-name>/
-├── package.json
-├── tsconfig.json
-└── src/
-    ├── index.ts           # ~40줄: buildXxxCommand + 어댑터 정의
-    └── index.test.ts      # 단위 테스트
-```
-
-### 최소 구현
 ```ts
 import { defineCliAdapter } from "@loom/adapter-utils";
-import type { AdapterConfig, BuiltCommand } from "@loom/core";
 
-export interface XxxConfig extends AdapterConfig {
-  command?: string;
-  model?: string;
-  extraArgs?: string[];
-  env?: Record<string, string>;
-}
-
-export function buildXxxCommand(config: XxxConfig = {}): BuiltCommand {
-  const command = config.command ?? "xxx";
-  const args: string[] = [];
-  if (config.model) args.push("--model", config.model);
-  if (config.extraArgs?.length) args.push(...config.extraArgs);
-  return { command, args };
-}
-
-export const xxxAdapter = defineCliAdapter({
-  kind: "xxx",
-  buildCommand: (cfg) => buildXxxCommand(cfg as XxxConfig),
-  inputMode: "stdin",              // 또는 "arg" (마지막 인자)
-  resolveEnv: (cfg) => (cfg as XxxConfig).env ?? {},
+export const claudeCodeAdapter = defineCliAdapter({
+  kind: "claude-code",
+  buildCommand: (cfg) => ({
+    command: cfg.command ?? "claude",
+    args: ["--print", "-", "--output-format", "stream-json", "--verbose",
+           ...(cfg.model ? ["--model", cfg.model] : []),
+           ...(cfg.extraArgs ?? [])],
+  }),
+  prompt: { via: "stdin" },
+  applyResume: (args, sessionId) => ["--resume", sessionId, ...args],
+  extractSessionId: extractClaudeSessionId,
+  extractTouchedEdits: extractClaudeTouchedEdits,
+  extractToolUses: extractClaudeToolUses,
 });
 ```
 
-### 등록
-`apps/server/src/adapters/registry.ts`에 임포트해서 추가:
-```ts
-import { xxxAdapter } from "@loom/adapter-xxx";
+Register it:
 
-export const adapters = {
+```ts
+// apps/server/src/adapters/registry.ts
+import { claudeCodeAdapter } from "@loom/adapter-claude-code";
+import { yourAdapter } from "@loom/adapter-yours";
+
+export const adapters: Record<string, CliAdapter> = {
   "claude-code": claudeCodeAdapter,
-  "gemini": geminiAdapter,
-  "xxx": xxxAdapter,  // ← 추가
+  "yours":       yourAdapter,
 };
 ```
 
-### 비용 추적
-stdout에 다음 형식의 JSON을 emit하면 자동으로 캡처:
-```json
-{"type":"result","total_cost_usd":0.042}
-```
-
-### 설계 원칙
-- **사용자 프롬프트는 절대 커맨드라인 인자로 전달하지 말 것.** stdin 또는 arg 배열로만 전달한다.
-- **자동 주입 금지.** 시스템 프롬프트, 파일, 스킬 등은 사용자가 명시적으로 첨부한 것만 포함된다.
-- **어댑터는 단순할수록 좋다.** 원본 청크만 emit하고, 파싱은 UI의 책임이다.
-- **사용자가 재정의 가능하게.** `command`, `extraArgs`, `env` 모두 설정으로 재정의 가능하다.
+That's the contract. **The CLI gets stdin/argv + signals. The web gets stdout chunks + parsed events. Nothing else flows through.**
 
 ---
 
-## 라이선스
+## Roadmap
 
-MIT.
+- ✅ Live file presence + active touches
+- ✅ Pixel office with character state machine + speech bubbles
+- ✅ Open-in-IDE relay (vscode / cursor / antigravity / zed / intellij)
+- ✅ Per-project env vars + per-thread isolated worktrees
+- ✅ Cost capture per run, summed per thread
+- ✅ Session resume with poison-on-failure
+- ✅ Tool & MCP extraction from stream-json
+- ⚪ gemini / codex / opencode adapters wired into the registry
+- ⚪ Run logs replay search (full-text)
+- ⚪ Diff-driven PR creation
+- ⚪ Agent-to-agent suggestion patterns (`[NEXT]` / `[ASK]`)
+- ⚪ Importable project templates (agents + skills + env)
+
+---
+
+## License
+
+MIT © 2026 — for people who want to read code in their real editor.

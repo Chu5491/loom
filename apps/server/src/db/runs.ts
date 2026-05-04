@@ -157,6 +157,20 @@ export function setRunSessionId(id: string, sessionId: string): void {
     .run(sessionId, id);
 }
 
+/** Drop every captured CLI session id in this thread, forcing the
+ *  next run to start a fresh conversation. Used by the "reset session"
+ *  thread-bar action when the user wants to break out of a stale-resume
+ *  loop or just clear the context that's been accumulating. */
+export function clearThreadSessionIds(threadId: string): number {
+  const r = getDb()
+    .prepare(
+      `UPDATE runs SET session_id = NULL, resumed_session_id = NULL
+       WHERE thread_id = ?`,
+    )
+    .run(threadId);
+  return r.changes;
+}
+
 /** Most recent (thread, agent) session id that's safe to resume.
  *
  *  Two layers of safety:

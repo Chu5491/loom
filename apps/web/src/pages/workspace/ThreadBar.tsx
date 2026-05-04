@@ -1,37 +1,25 @@
-// 채팅 영역 위쪽 스레드 컨트롤 바.
-// 스레드 스위처 + 컨텍스트 첨부 알약 + 누적 비용 + focus mode 토글.
+// 채팅 영역 위쪽 컨트롤 바 — 활성 thread 정보(이름/참여자/작업중)와 보조
+// 액션(컨텍스트 첨부 / 누적 비용 / 세션 리셋 / hand-off 그래프 / 풀모달).
+// 스레드 목록 자체는 좌측 ThreadList 사이드바가 담당 — 이전 dropdown 스위처는 제거.
 
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import NumberFlow from "@number-flow/react";
 import { Drawer } from "vaul";
 import {
-  Archive,
-  ArchiveRestore,
-  Check,
-  CheckCircle2,
-  ChevronDown,
   Expand,
   GitBranch,
   MessagesSquare,
   Minimize2,
   Network,
   Paperclip,
-  Plus,
-  Trash2,
+  RefreshCw,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { AdapterManifest, Agent, Thread } from "@loom/core";
 import { api } from "../../api/client.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu.js";
+import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 // 큰 청크(@xyflow/react)는 드로어가 처음 열릴 때만 fetch.
 const HandoffGraph = lazy(() =>
   import("../../components/HandoffGraph.js").then((m) => ({
@@ -40,73 +28,54 @@ const HandoffGraph = lazy(() =>
 );
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
-import { formatTimeAgo } from "../../lib/timeAgo.js";
 import { emit } from "../../lib/loomEvents.js";
 import { compactBundleSize } from "./formatters.js";
 
 export function ThreadBar({
-  projectId,
-  threads,
   activeThread,
   activeThreadCost,
+  participants,
+  workingIds,
+  touchingIds,
   fullModal,
   onToggleFullModal,
   onOpenContext,
-  onPickThread,
-  onNewThread,
-  onNewIsolatedThread,
 }: {
-  projectId: string;
-  threads: Thread[];
   activeThread: Thread | null;
   /** 이 스레드의 run 비용 합계. 비용 보고가 하나도 없으면 null. */
   activeThreadCost: number | null;
+  /** 이 스레드에서 한 번이라도 발화한 에이전트 — 참여자 stack용. */
+  participants: Agent[];
+  /** 응답을 만들고 있는 (running) 에이전트들. */
+  workingIds: Set<string>;
+  /** 실제로 파일을 만지고 있는 에이전트들. live dot 표시용. */
+  touchingIds: Set<string>;
   fullModal?: boolean;
   onToggleFullModal?: () => void;
   onOpenContext: () => void;
-  onPickThread: (id: string) => void;
-  onNewThread: () => void;
-  onNewIsolatedThread: () => void;
 }) {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const rename = useMutation({
-    mutationFn: (input: { id: string; name: string }) =>
-      api.updateThread(input.id, { name: input.name }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["threads", { projectId }] });
-    },
-  });
 
   const setStatus = useMutation({
     mutationFn: (input: { id: string; status: Thread["status"] }) =>
       api.updateThread(input.id, { status: input.status }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["threads", { projectId }] });
+      qc.invalidateQueries({ queryKey: ["threads"] });
     },
   });
 
-  const removeThread = useMutation({
-    mutationFn: (id: string) => api.deleteThread(id),
-    onSuccess: (_data, deletedId) => {
-      // 삭제된 thread가 활성이었으면 다음으로 자동 전환 — 가장 최근 thread,
-      // 없으면 null(새 thread). emit 으로 부모(WorkspacePage)에 위임.
-      if (activeThread && activeThread.id === deletedId) {
-        const next = threads.find((t) => t.id !== deletedId);
-        if (next) onPickThread(next.id);
-        else onNewThread();
-      }
-      qc.invalidateQueries({ queryKey: ["threads", { projectId }] });
+  const resetSession = useMutation({
+    mutationFn: (id: string) => api.resetThreadSession(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["runs"] });
+      toast.success(t("thread.bar.resetSession.done"));
     },
     onError: (err) =>
       toast.error(err instanceof Error ? err.message : String(err)),
   });
 
-  // ⌘⇧A 토글 아카이브. 입력 중에는 무시.
+  // ⌘⇧A 토글 아카이브. 입력 중에는 무시. (이름 편집 등은 ThreadList 안에 있음)
   useEffect(() => {
     if (!activeThread) return;
     const onKey = (e: KeyboardEvent) => {
@@ -136,198 +105,66 @@ export function ThreadBar({
     return () => window.removeEventListener("keydown", onKey);
   }, [activeThread, setStatus]);
 
-  const startEdit = () => {
-    if (!activeThread) return;
-    setDraftName(activeThread.name);
-    setEditing(true);
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    });
-  };
-  const commitEdit = () => {
-    if (!activeThread) {
-      setEditing(false);
-      return;
-    }
-    const next = draftName.trim();
-    if (next && next !== activeThread.name) {
-      rename.mutate({ id: activeThread.id, name: next });
-    }
-    setEditing(false);
-  };
-  const cancelEdit = () => setEditing(false);
+  const workingCount = workingIds.size;
 
   return (
-    <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border shrink-0 bg-card">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 px-2 h-7 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            title={t("thread.bar.switch")}
-          >
-            {activeThread?.worktreePath ? (
-              <GitBranch className="size-3.5 text-sky-600 dark:text-sky-400" />
-            ) : (
-              <MessagesSquare className="size-3.5" />
-            )}
-            <span>
-              {activeThread
-                ? t("thread.bar.threadsCount", { n: threads.length })
-                : t("thread.bar.newConversation")}
-            </span>
-            <ChevronDown className="size-3" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-[18rem] max-w-[24rem]">
-          <DropdownMenuLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {t("thread.bar.threadsCount", { n: threads.length })}
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {threads.length === 0 ? (
-            <div className="px-2 py-2 text-xs text-muted-foreground">
-              {t("thread.bar.empty")}
-            </div>
-          ) : (
-            threads.map((th) => (
-              <DropdownMenuItem
-                key={th.id}
-                onSelect={() => onPickThread(th.id)}
-                className="gap-2"
-              >
-                <span className="flex-1 truncate text-sm">{th.name}</span>
-                {th.id === activeThread?.id ? (
-                  <Check className="size-3 shrink-0 text-foreground/70" />
-                ) : (
-                  <span className="text-[10px] text-muted-foreground/60 mono shrink-0">
-                    {formatTimeAgo(th.updatedAt, t)}
-                  </span>
-                )}
-              </DropdownMenuItem>
-            ))
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={onNewThread} className="gap-2 text-sm">
-            <Plus className="size-3.5 text-muted-foreground" />
-            {t("thread.bar.newThread")}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={onNewIsolatedThread}
-            className="gap-2 text-sm"
-          >
-            <GitBranch className="size-3.5 text-muted-foreground" />
-            <span className="flex-1">{t("thread.bar.newIsolatedThread")}</span>
-            <span className="text-[10px] text-muted-foreground/70">
-              {t("thread.bar.isolatedTag")}
-            </span>
-          </DropdownMenuItem>
-          {activeThread ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => activeThread && startEdit()}
-                className="gap-2 text-sm"
-              >
-                <span className="size-3.5 inline-flex items-center justify-center text-muted-foreground">
-                  ✎
-                </span>
-                {t("thread.bar.rename")}
-              </DropdownMenuItem>
-              {activeThread.status !== "done" ? (
-                <DropdownMenuItem
-                  onSelect={() =>
-                    setStatus.mutate({
-                      id: activeThread.id,
-                      status: "done",
-                    })
-                  }
-                  className="gap-2 text-sm"
-                >
-                  <CheckCircle2 className="size-3.5 text-muted-foreground" />
-                  {t("thread.bar.markDone")}
-                </DropdownMenuItem>
-              ) : null}
-              {activeThread.status !== "archived" ? (
-                <DropdownMenuItem
-                  onSelect={() =>
-                    setStatus.mutate({
-                      id: activeThread.id,
-                      status: "archived",
-                    })
-                  }
-                  className="gap-2 text-sm"
-                >
-                  <Archive className="size-3.5 text-muted-foreground" />
-                  {t("thread.bar.archive")}
-                  <span className="ml-auto text-[10px] text-muted-foreground/70 mono">
-                    ⇧⌘A
-                  </span>
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem
-                  onSelect={() =>
-                    setStatus.mutate({
-                      id: activeThread.id,
-                      status: "active",
-                    })
-                  }
-                  className="gap-2 text-sm"
-                >
-                  <ArchiveRestore className="size-3.5 text-muted-foreground" />
-                  {t("thread.bar.unarchive")}
-                  <span className="ml-auto text-[10px] text-muted-foreground/70 mono">
-                    ⇧⌘A
-                  </span>
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => {
-                  if (!activeThread) return;
-                  const ok = window.confirm(
-                    t("thread.bar.deleteConfirm", {
-                      name: activeThread.name,
-                    }),
-                  );
-                  if (ok) removeThread.mutate(activeThread.id);
-                }}
-                className="gap-2 text-sm text-destructive focus:text-destructive"
-              >
-                <Trash2 className="size-3.5" />
-                {t("thread.bar.delete")}
-              </DropdownMenuItem>
-            </>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+    <div className="flex items-center gap-1 px-3 py-1 border-b border-border shrink-0 bg-card">
+      {/* 활성 thread 라벨 — 사이드바와 동일한 아이콘 + 이름. dropdown 없음. */}
+      <div className="flex items-center gap-1.5 min-w-0 shrink">
+        {activeThread?.worktreePath ? (
+          <GitBranch className="size-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+        ) : (
+          <MessagesSquare className="size-3.5 text-muted-foreground shrink-0" />
+        )}
+        <span className="text-[12px] font-medium text-foreground truncate">
+          {activeThread ? activeThread.name : t("thread.bar.newConversation")}
+        </span>
+      </div>
 
-      {/* 이름 편집은 스위처 자리에서 인라인. 한 줄 유지. */}
-      {editing && activeThread ? (
-        <input
-          ref={inputRef}
-          value={draftName}
-          onChange={(e) => setDraftName(e.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.nativeEvent.isComposing &&
-              e.nativeEvent.keyCode !== 229
-            ) {
-              e.preventDefault();
-              commitEdit();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              cancelEdit();
-            }
-          }}
-          placeholder={t("thread.bar.rename")}
-          className="flex-1 min-w-0 bg-transparent border-0 px-2 py-0 text-sm focus:outline-none focus:ring-0"
-        />
-      ) : (
-        <div className="flex-1" />
-      )}
+      {/* 참여자 stack — 누가 이 thread에서 발화했는가. live dot은 touching에 한해. */}
+      {participants.length > 0 ? (
+        <div className="flex -space-x-1.5 shrink-0 ml-1">
+          {participants.slice(0, 4).map((a) => (
+            <span
+              key={a.id}
+              className="ring-2 ring-card rounded-full"
+              title={`@${a.name}`}
+            >
+              <AgentInitialBadge
+                agent={a}
+                size="xs"
+                live={touchingIds.has(a.id)}
+              />
+            </span>
+          ))}
+          {participants.length > 4 ? (
+            <span
+              className="size-5 rounded-full ring-2 ring-card bg-muted text-[9px] font-semibold mono inline-flex items-center justify-center text-muted-foreground"
+              title={participants
+                .slice(4)
+                .map((a) => `@${a.name}`)
+                .join(", ")}
+            >
+              +{participants.length - 4}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {workingCount > 0 ? (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 h-5 rounded-full text-[10px] mono text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 shrink-0"
+          title={t("participants.status.working")}
+        >
+          <span
+            aria-hidden
+            className="size-1.5 rounded-full bg-emerald-500 animate-pulse"
+          />
+          {t("thread.bar.workingCount", { n: workingCount })}
+        </span>
+      ) : null}
+
+      <div className="flex-1" />
 
       {activeThread ? (
         <button
@@ -336,7 +173,7 @@ export function ThreadBar({
           title={t("thread.bar.editContext")}
           aria-label={t("thread.bar.editContext")}
           className={cn(
-            "inline-flex items-center gap-1 px-1.5 h-7 rounded text-[11px] transition-colors shrink-0",
+            "inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] transition-colors shrink-0",
             activeThread.contextBundle
               ? "text-sky-700 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20"
               : "text-muted-foreground hover:text-foreground hover:bg-muted",
@@ -374,11 +211,29 @@ export function ThreadBar({
 
       {activeThread ? <ThreadGraphButton thread={activeThread} /> : null}
 
+      {activeThread ? (
+        <button
+          type="button"
+          onClick={() => resetSession.mutate(activeThread.id)}
+          disabled={resetSession.isPending}
+          title={t("thread.bar.resetSession")}
+          aria-label={t("thread.bar.resetSession")}
+          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0 disabled:opacity-50"
+        >
+          <RefreshCw
+            className={cn(
+              "size-3.5",
+              resetSession.isPending && "animate-spin",
+            )}
+          />
+        </button>
+      ) : null}
+
       {onToggleFullModal ? (
         <button
           type="button"
           onClick={onToggleFullModal}
-          className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
           title={
             fullModal
               ? t("workspace.chat.exitFullModal")
@@ -439,7 +294,7 @@ function ThreadGraphButton({ thread }: { thread: Thread }) {
       <Drawer.Trigger asChild>
         <button
           type="button"
-          className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
           title={t("thread.bar.graph")}
           aria-label={t("thread.bar.graph")}
         >

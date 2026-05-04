@@ -9,22 +9,25 @@ import { toast } from "sonner";
 import type { AdapterManifest } from "@loom/core";
 import type { LayoutOutletContext } from "../components/Layout.js";
 import { api } from "../api/client.js";
-import { useRoomDerived } from "../components/Chat.js";
+import { useRoomDerived } from "../components/chat/index.js";
 import { agentColorOf } from "../components/agentColor.js";
-import { ChatLauncher } from "../components/ChatLauncher.js";
-import { ChatOverlay } from "../components/ChatOverlay.js";
+import { ChatDock } from "../components/ChatDock.js";
 import { ContextDrawer } from "../components/ContextDrawer.js";
 import { FilePalette } from "../components/FilePalette.js";
 import { FileTab } from "../components/FileTab.js";
-import { ParticipantsHeader } from "../components/ParticipantsHeader.js";
 import { TeamRibbon } from "../components/TeamRibbon.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useLoomEvent } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
 import { ChatPanel } from "./workspace/ChatPanel.js";
 import { FileTabBar } from "./workspace/FileTabBar.js";
+import { Office } from "./workspace/Office.js";
 import { ThreadBar } from "./workspace/ThreadBar.js";
+import { ThreadList } from "./workspace/ThreadList.js";
 import { readPersistedTabs } from "./workspace/persistence.js";
+
+const VIEW_KEY = "loom:workspace:view";
+type WorkspaceView = "office" | "editor";
 
 export function WorkspacePage() {
   const { t } = useI18n();
@@ -75,6 +78,13 @@ export function WorkspacePage() {
   const activeTouchesQuery = useQuery({
     queryKey: ["projectActiveTouches", projectId],
     queryFn: () => api.getProjectActiveTouches(projectId!),
+    enabled: !!projectId,
+    refetchInterval: 1500,
+  });
+  // 사무실 책상의 "지금 들고 있는 도구". 동일 폴링 cadence — 시각적 일관성.
+  const activeToolsQuery = useQuery({
+    queryKey: ["projectActiveTools", projectId],
+    queryFn: () => api.getProjectActiveTools(projectId!),
     enabled: !!projectId,
     refetchInterval: 1500,
   });
@@ -156,6 +166,21 @@ export function WorkspacePage() {
     () => readPersistedTabs(tabsKey).activeThreadId,
   );
 
+  // 메인 캔버스 뷰 모드 — Office가 기본. 사용자가 파일 탭을 누르거나 ⌘P로
+  // 파일을 열면 자동으로 editor로 전환됨. 명시적으로 Office 탭을 누르면 다시 office.
+  const [view, setView] = useState<WorkspaceView>(() => {
+    if (typeof window === "undefined") return "office";
+    const raw = window.localStorage.getItem(VIEW_KEY);
+    return raw === "editor" ? "editor" : "office";
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(VIEW_KEY, view);
+    } catch {
+      // quota — 무시
+    }
+  }, [view]);
+
   // 프로젝트 간 네비게이션 시 unmount 없이 재읽기.
   useEffect(() => {
     const next = readPersistedTabs(tabsKey);
@@ -221,6 +246,8 @@ export function WorkspacePage() {
   const openFile = useCallback((path: string) => {
     setOpenFiles((prev) => (prev.includes(path) ? prev : [...prev, path]));
     setActiveFile(path);
+    // 파일을 여는 행위 자체가 "에디터로 보고 싶다"는 신호 — 명시적 전환.
+    setView("editor");
   }, []);
   const closeFile = useCallback((path: string) => {
     setOpenFiles((prev) => {
@@ -229,12 +256,15 @@ export function WorkspacePage() {
         if (cur !== path) return cur;
         return next[next.length - 1] ?? null;
       });
+      // 마지막 파일을 닫으면 자동으로 Office로 — 빈 에디터 자리에 사무실이 의미 있음.
+      if (next.length === 0) setView("office");
       return next;
     });
   }, []);
   const closeAllFiles = useCallback(() => {
     setOpenFiles([]);
     setActiveFile(null);
+    setView("office");
   }, []);
 
   // composer 상태는 이 레벨에 — 파일 히스토리 → 채팅 점프 시 타깃 에이전트 스왑 + draft 표시 가능.
@@ -270,43 +300,8 @@ export function WorkspacePage() {
 
   const [contextOpen, setContextOpen] = useState(false);
 
-  // 채팅 floating overlay 토글. 첫 진입은 열어둠 — 환영 + 메시지 입력 유도.
-  const [chatOpen, setChatOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const raw = window.localStorage.getItem("loom:chatOverlay:open");
-    return raw === null ? true : raw === "1";
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        "loom:chatOverlay:open",
-        chatOpen ? "1" : "0",
-      );
-    } catch {
-      // 무시
-    }
-  }, [chatOpen]);
-
-  // 안 읽음 — 채팅이 닫혀있는 동안 들어온 thread 활동을 카운트.
-  // 시간 기반 — chatOpen=true가 될 때 lastSeenAt 갱신, 그 이후 createdAt이
-  // 더 새로운 run을 unread로 계산.
-  const [lastSeenAt, setLastSeenAt] = useState<string>(() => {
-    if (typeof window === "undefined") return new Date().toISOString();
-    return (
-      window.localStorage.getItem("loom:chatOverlay:lastSeen") ??
-      new Date().toISOString()
-    );
-  });
-  useEffect(() => {
-    if (!chatOpen) return;
-    const now = new Date().toISOString();
-    setLastSeenAt(now);
-    try {
-      window.localStorage.setItem("loom:chatOverlay:lastSeen", now);
-    } catch {
-      // 무시
-    }
-  }, [chatOpen, activeThreadId]);
+  // 채팅 dock의 open/height 상태는 ChatDock 자체가 관리 (localStorage 영속).
+  // ⌘J 단축키도 ChatDock 내부에 — 이 페이지에서 별도 상태 안 둠.
 
   // ⌘P → 파일 팔레트, ⌘\ → 모든 파일 닫기. 입력 중에는 무시.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -343,14 +338,19 @@ export function WorkspacePage() {
     return agentList.filter((a) => ids.has(a.id));
   }, [filteredRuns, agentList]);
 
-  // chatOpen=false 동안 들어온 새 활동 수.
-  const unreadCount = useMemo(() => {
-    if (chatOpen) return 0;
-    const since = new Date(lastSeenAt).getTime();
-    return filteredRuns.filter(
-      (r) => new Date(r.createdAt).getTime() > since,
-    ).length;
-  }, [chatOpen, lastSeenAt, filteredRuns]);
+  // ThreadList 사이드바에서 행마다 라이브 닷을 표시하기 위한 현재 active thread id 집합.
+  const workingThreadIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of projectRuns) {
+      if (r.status === "running" || r.status === "queued") {
+        if (r.threadId) s.add(r.threadId);
+      }
+    }
+    return s;
+  }, [projectRuns]);
+
+  // 채팅 dock의 open/height 상태는 ChatDock 자체가 관리. 여기서는 unread count
+  // 같은 floating-launcher 시절의 보조 상태가 더 이상 필요 없음.
 
   // Monaco에 넘길 multi-presence — 활성 파일에 떠있는 에이전트들을 색·이름과 함께.
   const editorPresences = useMemo(() => {
@@ -389,8 +389,13 @@ export function WorkspacePage() {
   const p = project.data.project;
   const activeThread =
     threadList.find((th) => th.id === activeThreadId) ?? null;
-  const showEditor = activeFile !== null && openFiles.includes(activeFile);
-  const showFileTabs = !chatFullModal && openFiles.length > 0;
+  // Office 뷰일 땐 view === "office", editor 뷰일 땐 활성 파일 유무에 따라 FileTab/EditorEmpty.
+  const showEditor =
+    view === "editor" &&
+    activeFile !== null &&
+    openFiles.includes(activeFile);
+  // 파일 탭바는 항상 표시 (Office 가짜 탭이 항상 있어서) — chat full-modal일 때만 숨김.
+  const showFileTabs = !chatFullModal;
 
   const newIsolatedThread = async () => {
     try {
@@ -420,14 +425,20 @@ export function WorkspacePage() {
 
         {showFileTabs ? (
           <FileTabBar
+            view={view}
             activeFile={activeFile}
             openFiles={openFiles}
             activeByPath={activeByPath}
             lineByPath={lineByPath}
             agents={agentList}
-            onActivate={(path) => setActiveFile(path)}
+            onActivate={(path) => {
+              setActiveFile(path);
+              setView("editor");
+            }}
             onClose={closeFile}
             onCloseAll={closeAllFiles}
+            onSelectOffice={() => setView("office")}
+            onSelectEditor={() => setView("editor")}
           />
         ) : null}
 
@@ -437,9 +448,24 @@ export function WorkspacePage() {
           onPick={openFile}
         />
 
-        <div className="flex-1 min-h-0 min-w-0 flex">
-          <section className="flex-1 min-w-0 flex flex-col">
-            {showEditor ? (
+        {/* 메인 영역 — 에디터(상단) + 채팅 dock(하단). VSCode terminal 패턴:
+         *  같은 column flex 안에서 형제로 살면서 dock이 자체 높이를 차지. */}
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+          <section className="flex-1 min-w-0 min-h-0 flex flex-col">
+            {view === "office" ? (
+              <Office
+                projectId={p.id}
+                agents={agentList}
+                runs={projectRuns}
+                workingIds={workingIds}
+                touchingIds={touchingIds}
+                activeTouches={activeTouchesQuery.data?.touches ?? []}
+                activeTools={activeToolsQuery.data?.tools ?? []}
+                activeThread={activeThread}
+                onPickFile={openFile}
+                onPickAgent={(id) => setAgentIds([id])}
+              />
+            ) : showEditor ? (
               <FileTab
                 projectId={p.id}
                 path={activeFile}
@@ -451,65 +477,67 @@ export function WorkspacePage() {
             ) : (
               <EditorEmpty
                 onOpenPalette={() => setPaletteOpen(true)}
-                onOpenChat={() => setChatOpen(true)}
+                onSwitchToOffice={() => setView("office")}
                 hint={t("workspace.empty.hint")}
               />
             )}
           </section>
 
+          {!chatFullModal ? (
+            <ChatDock
+              title={
+                p
+                  ? `# ${p.name}`
+                  : (activeThread?.name ?? t("chat.overlay.title"))
+              }
+            >
+              {/* dock 본문 = [좌측 ThreadList | 우측 ThreadBar + ChatPanel].
+                  VSCode 터미널의 세션 사이드바와 동일한 컨셉. */}
+              <div className="flex flex-1 min-h-0 min-w-0">
+                <ThreadList
+                  projectId={p.id}
+                  threads={threadList}
+                  activeThread={activeThread}
+                  workingThreadIds={workingThreadIds}
+                  onPick={(id) => setActiveThreadId(id)}
+                  onNewThread={() => setActiveThreadId(null)}
+                  onNewIsolatedThread={newIsolatedThread}
+                />
+                <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+                  <ThreadBar
+                    activeThread={activeThread}
+                    activeThreadCost={threadCost}
+                    participants={participantsForThread}
+                    workingIds={workingIds}
+                    touchingIds={touchingIds}
+                    fullModal={chatFullModal}
+                    onToggleFullModal={() => setChatFullModal(!chatFullModal)}
+                    onOpenContext={() => setContextOpen(true)}
+                  />
+                  <ChatPanel
+                    project={p}
+                    agentList={agentList}
+                    manifests={manifests}
+                    threads={threads}
+                    working={working}
+                    activeThreadId={activeThreadId}
+                    threadHasContext={!!activeThread?.contextBundle}
+                    onAdoptThreadId={setActiveThreadId}
+                    agentIds={agentIds}
+                    setAgentIds={setAgentIds}
+                    draft={draft}
+                    setDraft={setDraft}
+                    draftKey={draftKey}
+                    setDraftKey={setDraftKey}
+                    pendingJumpRunId={pendingJumpRunId}
+                    onConsumedJump={() => setPendingJumpRunId(null)}
+                  />
+                </div>
+              </div>
+            </ChatDock>
+          ) : null}
         </div>
       </div>
-
-      <ChatLauncher
-        visible={!chatOpen && !chatFullModal}
-        unreadCount={unreadCount}
-        onOpen={() => setChatOpen(true)}
-      />
-
-      <ChatOverlay
-        open={chatOpen && !chatFullModal}
-        onClose={() => setChatOpen(false)}
-        title={
-          activeThread?.name ??
-          (p ? `# ${p.name}` : t("chat.overlay.title"))
-        }
-      >
-        <ParticipantsHeader
-          participants={participantsForThread}
-          workingIds={workingIds}
-          touchingIds={touchingIds}
-        />
-        <ThreadBar
-          projectId={p.id}
-          threads={threadList}
-          activeThread={activeThread}
-          activeThreadCost={threadCost}
-          fullModal={chatFullModal}
-          onToggleFullModal={() => setChatFullModal(!chatFullModal)}
-          onOpenContext={() => setContextOpen(true)}
-          onPickThread={(id) => setActiveThreadId(id)}
-          onNewThread={() => setActiveThreadId(null)}
-          onNewIsolatedThread={newIsolatedThread}
-        />
-        <ChatPanel
-          project={p}
-          agentList={agentList}
-          manifests={manifests}
-          threads={threads}
-          working={working}
-          activeThreadId={activeThreadId}
-          threadHasContext={!!activeThread?.contextBundle}
-          onAdoptThreadId={setActiveThreadId}
-          agentIds={agentIds}
-          setAgentIds={setAgentIds}
-          draft={draft}
-          setDraft={setDraft}
-          draftKey={draftKey}
-          setDraftKey={setDraftKey}
-          pendingJumpRunId={pendingJumpRunId}
-          onConsumedJump={() => setPendingJumpRunId(null)}
-        />
-      </ChatOverlay>
 
       <FilePalette
         projectId={p.id}
@@ -530,11 +558,11 @@ export function WorkspacePage() {
 function EditorEmpty({
   hint,
   onOpenPalette,
-  onOpenChat,
+  onSwitchToOffice,
 }: {
   hint: string;
   onOpenPalette: () => void;
-  onOpenChat: () => void;
+  onSwitchToOffice: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -550,10 +578,10 @@ function EditorEmpty({
         </button>
         <button
           type="button"
-          onClick={onOpenChat}
+          onClick={onSwitchToOffice}
           className="px-2 h-7 rounded border border-border hover:bg-muted hover:border-foreground/30 transition-colors"
         >
-          💬 {t("workspace.empty.openChat")}
+          🏢 {t("workspace.empty.openOffice")}
         </button>
       </div>
     </div>

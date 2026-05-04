@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { ThreadStatus } from "@loom/core";
 import { getProject } from "../db/projects.js";
+import { clearThreadSessionIds } from "../db/runs.js";
 import type { UpdateThreadInput } from "../db/threads.js";
 import {
   createThread,
@@ -110,6 +111,20 @@ threadsRoute.patch("/:id", async (c) => {
   );
   if (!thread) return c.json({ error: "not_found" }, 404);
   return c.json({ thread });
+});
+
+/**
+ * Reset CLI session ids in this thread. The next run won't have a
+ * resume token, so the agent starts fresh — useful when the prior
+ * session went stale ("no conversation found …") or when the user
+ * just wants a clean slate without creating a new thread.
+ */
+threadsRoute.post("/:id/reset-session", (c) => {
+  const id = c.req.param("id");
+  const thread = getThread(id);
+  if (!thread) return c.json({ error: "not_found" }, 404);
+  const cleared = clearThreadSessionIds(id);
+  return c.json({ cleared });
 });
 
 threadsRoute.delete("/:id", async (c) => {

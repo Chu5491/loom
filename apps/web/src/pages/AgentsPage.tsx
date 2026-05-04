@@ -9,17 +9,16 @@ import type { Agent } from "@loom/core";
 import { api, type UpdateAgentBody } from "../api/client.js";
 import { Button, Card } from "../components/ui.js";
 import { Skeleton } from "../components/ui/skeleton.js";
-import { Spotlight } from "../components/Spotlight.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
 import { PageScroll } from "../components/PageScroll.js";
 import { PageHeader } from "../components/PageHeader.js";
-import { AgentAvatar } from "../components/Chat.js";
+import { ProjectEnvEditor } from "../components/ProjectEnvEditor.js";
+import { AgentAvatar } from "../components/chat/index.js";
 import { AdapterStatusLive } from "../components/AdapterStatus.js";
 import { agentColorOf, classesFor } from "../components/agentColor.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 import { useAutoAnimate } from "../lib/useAutoAnimate.js";
-import { celebrate } from "../lib/celebrate.js";
 import { AgentForm } from "./agents/AgentForm.js";
 import { AutonomyChip } from "./agents/Autonomy.js";
 import { readAutonomy, type FormMode } from "./agents/types.js";
@@ -74,7 +73,6 @@ export function AgentsPage() {
       qc.invalidateQueries({ queryKey: ["agents"] });
       setFormState(null);
       toast.success(t("agents.toast.created", { name: r.agent.name }));
-      celebrate("firstAgent");
     },
     onError: onMutationError,
   });
@@ -131,6 +129,8 @@ export function AgentsPage() {
           </p>
         </Card>
       ) : null}
+
+      {projectId ? <ProjectEnvEditor projectId={projectId} /> : null}
 
       {formState ? (
         <AgentForm
@@ -224,9 +224,8 @@ function AgentRow({
       ? (a.adapterConfig.model as string)
       : undefined;
   return (
-    <div className="group relative overflow-hidden rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors">
-      <Spotlight color={`rgb(var(--spotlight-color, 14 165 233) / 0.18)`} />
-      <div className="relative flex items-start gap-3 p-3">
+    <div className="group rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors">
+      <div className="flex items-start gap-3 p-3">
         <AgentAvatar agent={a} manifest={manifest} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 min-w-0">

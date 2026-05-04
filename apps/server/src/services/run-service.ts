@@ -10,6 +10,7 @@ import type { Run, Spec } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { getAgent } from "../db/agents.js";
 import { getProject } from "../db/projects.js";
+import { listProjectEnv } from "../db/project-env.js";
 import {
   createRun,
   getLatestSessionId,
@@ -25,6 +26,10 @@ import { getSpecsByIds } from "../db/specs.js";
 import { getThread, touchThread } from "../db/threads.js";
 import { runLogger } from "../logger.js";
 import { startTracking, stopTracking } from "./active-touches.js";
+import {
+  startToolTracking,
+  stopToolTracking,
+} from "./active-tools.js";
 import { diffStat, snapshotWorkTree } from "./git-snapshot.js";
 import { appendChunk, finishLog, startLog } from "./log-store.js";
 import { trackActiveRun, untrackActiveRun } from "./run/active-runs.js";
@@ -32,6 +37,7 @@ import { composePrompt } from "./run/prompt-composer.js";
 import {
   makeCostTapper,
   makeSessionIdTapper,
+  makeToolsTapper,
   makeTouchesTapper,
 } from "./run/run-tappers.js";
 import { resolveThreadForRun } from "./run/thread-resolver.js";
@@ -198,6 +204,7 @@ async function executeRun(
     const tapCost = makeCostTapper(runId);
     const tapSessionId = makeSessionIdTapper(runId, adapter);
     const tapTouches = makeTouchesTapper(runId, adapter);
+    const tapTools = makeToolsTapper(runId, adapter);
 
     if (agent.projectId) {
       startTracking({
@@ -206,13 +213,22 @@ async function executeRun(
         projectId: agent.projectId,
         cwd,
       });
+      startToolTracking({
+        runId,
+        agentId: agent.id,
+        projectId: agent.projectId,
+      });
     }
+
+    // 프로젝트 단위 env — 모든 에이전트가 공통으로 받는 KV. 에이전트의
+    // adapterConfig.env가 더 높은 우선순위 (define.ts spawn 합성 참고).
+    const projectEnv = agent.projectId ? listProjectEnv(agent.projectId) : {};
 
     const handle = await adapter.spawn(
       {
         prompt: composedPrompt,
         cwd,
-        env: {},
+        env: projectEnv,
         signal: abort.signal,
         resumeSessionId,
         onStdout: (chunk) => {
@@ -220,6 +236,7 @@ async function executeRun(
           tapCost(chunk);
           tapSessionId(chunk);
           tapTouches(chunk);
+          tapTools(chunk);
         },
         onStderr: (chunk) => appendChunk(runId, "stderr", chunk),
       },
@@ -273,6 +290,7 @@ async function executeRun(
       // best-effort. 변경 영속화 실패가 run을 실패시키면 안 됨.
     }
     stopTracking(runId);
+    stopToolTracking(runId);
     untrackActiveRun(runId);
   }
 }

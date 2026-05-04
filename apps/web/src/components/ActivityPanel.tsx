@@ -3,7 +3,6 @@
 
 import type { ActivityKind } from "./ActivityBar.js";
 import { ProjectsTab } from "./activity/ProjectsTab.js";
-import { FilesTab } from "./activity/FilesTab.js";
 import { AgentsTab } from "./activity/AgentsTab.js";
 import { SkillsTab } from "./activity/SkillsTab.js";
 import { ReviewTab } from "./activity/ReviewTab.js";
@@ -40,8 +39,6 @@ function ActivityContent({ activity }: { activity: ActivityKind }) {
   switch (activity) {
     case "projects":
       return <ProjectsTab />;
-    case "files":
-      return <FilesTab />;
     case "agents":
       return <AgentsTab />;
     case "skills":

@@ -5,7 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { Plus } from "lucide-react";
 import type { Run } from "@loom/core";
 import { api } from "../../api/client.js";
-import { AgentAvatar } from "../Chat.js";
+import { AgentAvatar } from "../chat/index.js";
 import { Button } from "../ui/button.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";

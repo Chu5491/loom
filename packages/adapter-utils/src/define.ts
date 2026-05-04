@@ -4,6 +4,7 @@ import type {
   CliAdapter,
   RunHandle,
   SpawnArgs,
+  ToolUse,
   TouchedEdit,
 } from "@loom/core";
 import { spawnProcess } from "./spawn.js";
@@ -34,6 +35,10 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
   /** Optional: same as extractTouchedPaths but with the replace target
    *  for line-level localisation. */
   extractTouchedEdits?(chunk: string): TouchedEdit[];
+  /** Optional: scan a stdout chunk for *every* tool_use event (not just
+   *  file edits) so the Office view can show what each agent is reaching
+   *  for in real time — Read / Bash / Grep / mcp__server__method, etc. */
+  extractToolUses?(chunk: string): ToolUse[];
 }
 
 export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
@@ -49,6 +54,7 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
     extractSessionId: def.extractSessionId,
     extractTouchedPaths: def.extractTouchedPaths,
     extractTouchedEdits: def.extractTouchedEdits,
+    extractToolUses: def.extractToolUses,
     async spawn(spawnArgs: SpawnArgs, config: AdapterConfig): Promise<RunHandle> {
       const built = def.buildCommand(config as TConfig);
       const cfgEnv = def.resolveEnv?.(config as TConfig) ?? {};
@@ -64,7 +70,10 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
         command: built.command,
         args,
         cwd: spawnArgs.cwd,
-        env: { ...cfgEnv, ...spawnArgs.env },
+        // Priority (last-spread-wins): caller spawnArgs.env (project-level)
+        // < cfgEnv (adapter resolveEnv → agent's adapterConfig.env). Agent
+        // settings override project defaults; adapter knows its own needs.
+        env: { ...spawnArgs.env, ...cfgEnv },
         stdin,
         signal: spawnArgs.signal,
         onStdout: spawnArgs.onStdout,

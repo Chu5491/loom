@@ -1,10 +1,13 @@
 CREATE TABLE IF NOT EXISTS projects (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  path        TEXT NOT NULL,
-  description TEXT,
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
+  id                TEXT PRIMARY KEY,
+  name              TEXT NOT NULL,
+  path              TEXT NOT NULL,
+  description       TEXT,
+  -- 외부 IDE — vscode | cursor | antigravity | zed | intellij. NULL이면
+  -- 클라이언트의 기본값(vscode) 사용. "Open in IDE" 버튼이 spawn할 CLI 결정.
+  preferred_editor  TEXT,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -119,3 +122,13 @@ CREATE TABLE IF NOT EXISTS run_changes (
   PRIMARY KEY (run_id, path)
 );
 CREATE INDEX IF NOT EXISTS idx_run_changes_path ON run_changes(path);
+
+-- 프로젝트 단위 환경변수. 같은 프로젝트의 모든 에이전트 run에 공통 주입.
+-- 우선순위: agent.adapterConfig.env > project_env > 시스템 env. UI에서
+-- 마스터-가편집 표 형태로 관리. API 키 같은 공유 secret 보관용.
+CREATE TABLE IF NOT EXISTS project_env (
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  key         TEXT NOT NULL,
+  value       TEXT NOT NULL,
+  PRIMARY KEY (project_id, key)
+);

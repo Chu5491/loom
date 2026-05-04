@@ -24,7 +24,6 @@ export function Layout() {
     if (raw === "null") return null;
     if (
       raw === "projects" ||
-      raw === "files" ||
       raw === "agents" ||
       raw === "skills" ||
       raw === "review" ||

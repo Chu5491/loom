@@ -9,6 +9,12 @@
 
 // 신규 색은 항상 PALETTE 끝에 추가. agentColorFor() 의 해시가 인덱스
 // 기반이라 기존 자동 색 안정성을 유지하려면 순서를 절대 바꾸지 말 것.
+//
+// 12색이 한 프로젝트 안 에이전트 식별에 충분 (deuteranopia 안전 한계 근처).
+// 이전에는 18색이었는데 red/yellow/green/blue/purple/pink는 다른 색과
+// 시각적으로 너무 가까웠고, 사용자가 그만큼 많은 에이전트를 두는 시나리오가
+// 비현실적이라 trim. 저장된 explicit 값이 dropped 색이면 isAgentColor가
+// false를 반환해서 hash fallback이 자동 적용 — 무해하게 마이그레이션됨.
 const PALETTE = [
   "sky",
   "emerald",
@@ -20,13 +26,7 @@ const PALETTE = [
   "lime",
   "orange",
   "cyan",
-  "red",
-  "yellow",
-  "green",
-  "blue",
   "indigo",
-  "purple",
-  "pink",
   "slate",
 ] as const;
 
@@ -38,22 +38,16 @@ export const AGENT_COLORS: ReadonlyArray<AgentColor> = PALETTE;
 /** Picker 시각 정렬용 — 색상환을 따라 도는 순서. PALETTE 와 별도로
  *  유지해서 해시 안정성을 깨지 않으면서 UI 만 자연스럽게 보이게 함. */
 export const PICKER_ORDER: ReadonlyArray<AgentColor> = [
-  "red",
   "orange",
   "amber",
-  "yellow",
   "lime",
-  "green",
   "emerald",
   "teal",
   "cyan",
   "sky",
-  "blue",
   "indigo",
   "violet",
-  "purple",
   "fuchsia",
-  "pink",
   "rose",
   "slate",
 ];
@@ -213,50 +207,6 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     gradientVia: "via-sky-400",
     gradientTo: "to-blue-500",
   },
-  red: {
-    bgSoft: "bg-red-100 dark:bg-red-950/50",
-    text: "text-red-700 dark:text-red-300",
-    border: "border-red-400 dark:border-red-700",
-    dot: "bg-red-500",
-    ring: "ring-red-200 dark:ring-red-900/50",
-    ringPulse: "bg-red-400/40 dark:bg-red-500/40",
-    gradientFrom: "from-red-500",
-    gradientVia: "via-orange-400",
-    gradientTo: "to-rose-500",
-  },
-  yellow: {
-    bgSoft: "bg-yellow-100 dark:bg-yellow-950/50",
-    text: "text-yellow-700 dark:text-yellow-300",
-    border: "border-yellow-400 dark:border-yellow-700",
-    dot: "bg-yellow-500",
-    ring: "ring-yellow-200 dark:ring-yellow-900/50",
-    ringPulse: "bg-yellow-400/40 dark:bg-yellow-500/40",
-    gradientFrom: "from-yellow-500",
-    gradientVia: "via-amber-400",
-    gradientTo: "to-orange-500",
-  },
-  green: {
-    bgSoft: "bg-green-100 dark:bg-green-950/50",
-    text: "text-green-700 dark:text-green-300",
-    border: "border-green-400 dark:border-green-700",
-    dot: "bg-green-500",
-    ring: "ring-green-200 dark:ring-green-900/50",
-    ringPulse: "bg-green-400/40 dark:bg-green-500/40",
-    gradientFrom: "from-green-500",
-    gradientVia: "via-emerald-400",
-    gradientTo: "to-lime-500",
-  },
-  blue: {
-    bgSoft: "bg-blue-100 dark:bg-blue-950/50",
-    text: "text-blue-700 dark:text-blue-300",
-    border: "border-blue-400 dark:border-blue-700",
-    dot: "bg-blue-500",
-    ring: "ring-blue-200 dark:ring-blue-900/50",
-    ringPulse: "bg-blue-400/40 dark:bg-blue-500/40",
-    gradientFrom: "from-blue-500",
-    gradientVia: "via-sky-400",
-    gradientTo: "to-indigo-500",
-  },
   indigo: {
     bgSoft: "bg-indigo-100 dark:bg-indigo-950/50",
     text: "text-indigo-700 dark:text-indigo-300",
@@ -267,28 +217,6 @@ const CLASSES: Record<AgentColor, ColorClasses> = {
     gradientFrom: "from-indigo-500",
     gradientVia: "via-blue-400",
     gradientTo: "to-violet-500",
-  },
-  purple: {
-    bgSoft: "bg-purple-100 dark:bg-purple-950/50",
-    text: "text-purple-700 dark:text-purple-300",
-    border: "border-purple-400 dark:border-purple-700",
-    dot: "bg-purple-500",
-    ring: "ring-purple-200 dark:ring-purple-900/50",
-    ringPulse: "bg-purple-400/40 dark:bg-purple-500/40",
-    gradientFrom: "from-purple-500",
-    gradientVia: "via-violet-400",
-    gradientTo: "to-fuchsia-500",
-  },
-  pink: {
-    bgSoft: "bg-pink-100 dark:bg-pink-950/50",
-    text: "text-pink-700 dark:text-pink-300",
-    border: "border-pink-400 dark:border-pink-700",
-    dot: "bg-pink-500",
-    ring: "ring-pink-200 dark:ring-pink-900/50",
-    ringPulse: "bg-pink-400/40 dark:bg-pink-500/40",
-    gradientFrom: "from-pink-500",
-    gradientVia: "via-rose-400",
-    gradientTo: "to-fuchsia-500",
   },
   slate: {
     bgSoft: "bg-slate-100 dark:bg-slate-900/50",

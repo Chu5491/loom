@@ -5,7 +5,6 @@ import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowDown, Users } from "lucide-react";
 import type { AdapterManifest, Agent, Run } from "@loom/core";
-import { celebrate } from "../../lib/celebrate.js";
 import {
   AgentMessage,
   Composer,
@@ -20,7 +19,7 @@ import {
   findParentAgent,
   isContinuation,
   type ThreadGroup,
-} from "../../components/Chat.js";
+} from "../../components/chat/index.js";
 import { Button } from "../../components/ui/button.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { ChatStartHint } from "./ChatStartHint.js";
@@ -98,14 +97,6 @@ export function ChatPanel({
     setUnread(0);
   };
 
-  // 첫 성공 run 셀러브레이션 — localStorage 기반 1회만 발사.
-  useEffect(() => {
-    const succeeded = threads.some((thr) =>
-      thr.runs.some((r) => r.status === "succeeded"),
-    );
-    if (succeeded) celebrate("firstSuccessfulRun");
-  }, [threads]);
-
   // hand-off 배지의 점프와 동일한 scroll-and-flash 처리.
   useEffect(() => {
     if (!pendingJumpRunId) return;
@@ -150,11 +141,14 @@ export function ChatPanel({
 
   return (
     <>
+      {/* @container chat — 자식 컴포넌트(MessageRow, Composer 등)가 채팅 컨테이너
+       *  실폭을 기준으로 패딩/gap을 조정. 부모 화면 폭이 아닌 채팅 영역 폭이
+       *  중요(분할/오버레이 모드 둘 다 케어). */}
       <div
         ref={bodyRef}
-        className="relative flex-1 overflow-y-auto overflow-x-hidden bg-card subtle-scrollbar"
+        className="@container/chat relative flex-1 overflow-y-auto overflow-x-hidden bg-card subtle-scrollbar"
       >
-        <div className="mx-auto w-full max-w-3xl py-3 px-4">
+        <div className="mx-auto w-full max-w-3xl py-2">
           {agentList.length === 0 ? (
             <Empty
               icon={<Users className="size-10 text-muted-foreground" />}
@@ -250,24 +244,25 @@ export function ChatPanel({
       <WorkingIndicator workingAgents={working} />
 
       {agentList.length > 0 ? (
-        <div className="border-t border-border bg-card shrink-0">
-          <div className="mx-auto w-full max-w-3xl px-4">
-            <Composer
-              agents={agentList}
-              manifests={manifests}
-              agentIds={agentIds}
-              onAgentIdsChange={setAgentIds}
-              threadId={activeThreadId}
-              threadHasContext={threadHasContext}
-              onThreadCreated={onAdoptThreadId}
-              initialDraft={draft}
-              draftKey={draftKey}
-              onSent={() => {
-                setDraft(undefined);
-                stickyBottomRef.current = true;
-              }}
-            />
-          </div>
+        // Composer가 자체 padding을 갖고 있어서 추가 wrapper(mx-auto max-w-3xl
+        // px-4)는 좁은 dock에선 안쪽이 두 번 패딩 먹어 답답해짐. 컨테이너 쿼리로
+        // composer 자체에서 폭별 padding을 조절.
+        <div className="border-t border-border bg-card shrink-0 @container/chat">
+          <Composer
+            agents={agentList}
+            manifests={manifests}
+            agentIds={agentIds}
+            onAgentIdsChange={setAgentIds}
+            threadId={activeThreadId}
+            threadHasContext={threadHasContext}
+            onThreadCreated={onAdoptThreadId}
+            initialDraft={draft}
+            draftKey={draftKey}
+            onSent={() => {
+              setDraft(undefined);
+              stickyBottomRef.current = true;
+            }}
+          />
         </div>
       ) : null}
     </>

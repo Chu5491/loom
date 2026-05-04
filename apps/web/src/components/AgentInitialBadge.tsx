@@ -3,6 +3,7 @@ import { agentColorOf, initialFor } from "./agentColor.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
+// PALETTE 와 1:1 매칭. 색이 추가/삭제될 때 양쪽을 같이 바꿀 것.
 const SOLID_BG: Record<string, string> = {
   sky: "bg-sky-500",
   emerald: "bg-emerald-500",
@@ -14,6 +15,8 @@ const SOLID_BG: Record<string, string> = {
   lime: "bg-lime-600",
   orange: "bg-orange-500",
   cyan: "bg-cyan-500",
+  indigo: "bg-indigo-500",
+  slate: "bg-slate-500",
 };
 
 /**

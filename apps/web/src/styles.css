@@ -4,6 +4,18 @@
 /* Class-based dark variant: html.dark gates all dark:* utilities. */
 @variant dark (&:where(.dark, .dark *));
 
+/* CommitMonoChu — 서비스의 단일 폰트. UI / 본문 / 코드 / Monaco 에디터까지
+ * 한 글꼴로 통일. otf 한 파일이 모든 무게(550 single-weight)를 담당하므로
+ * font-weight 변형은 시각적 효과(굵기 시뮬레이션) 또는 자연스러운 fallback에
+ * 의존. font-display: swap — 로드 전엔 시스템 mono로 즉시 보여주고 swap. */
+@font-face {
+  font-family: "CommitMonoChu";
+  src: url("/fonts/CommitMonoChu-550-Regular.otf") format("opentype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /*
   ─── Design notes ─────────────────────────────────────────────────────
   Inherited from the Medit project: warm off-white paper tones with a
@@ -11,7 +23,7 @@
   foreground, muted, accent, …) so existing components don't need to
   change — only the values move from cool blue-gray HSL to warm paper
   OKLCH.
-  Type: Inter sans, Source Serif 4 headings, JetBrains Mono code.
+  Type: CommitMonoChu — single mono font for UI / headings / code.
   Hover: bg = muted, fg = fg. Active rows pair bg-muted with an accent
   edge instead of inverting (gentler against the paper background).
   ─────────────────────────────────────────────────────────────────────
@@ -46,9 +58,12 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-  --font-sans: "Inter", "Pretendard Variable", "Pretendard", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-serif: "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
-  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 단일 폰트 정책: CommitMonoChu가 UI(sans), 헤딩(serif), 코드(mono) 모두
+   * 담당. fallback은 시스템 mono로 — CommitMonoChu가 mono 베이스 글꼴이라
+   * 한글/시스템 글리프와의 메트릭 차이를 줄이는 데 효과적. */
+  --font-sans: "CommitMonoChu", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-serif: "CommitMonoChu", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: "CommitMonoChu", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 :root {
@@ -79,6 +94,55 @@
   /* Extra Medit tokens used directly by a few components. */
   --accent-strong: oklch(0.55 0.13 35);     /* terracotta */
   --border-soft: oklch(0.93 0.006 70);
+
+  /* ── Pixel office (light) ──────────────────────────────────────────
+   * 책상 디오라마용 색상 팔레트. itch.io 픽셀팩 스타일을 참고했지만
+   * 라이센스 트래킹이 필요 없도록 SVG <rect>로 직접 박는 방식 — 색상은
+   * 여기서 정의해 light/dark 둘 다 자연스럽게. */
+  --pixel-monitor: oklch(0.32 0.01 60);          /* 모니터 프레임 */
+  --pixel-monitor-stand: oklch(0.42 0.01 60);    /* 모니터 받침대 */
+  --pixel-screen: oklch(0.78 0.06 220);          /* 화면 (cyan-ish) */
+  --pixel-screen-on: oklch(0.86 0.10 200);       /* 화면 active */
+  --pixel-keyboard: oklch(0.56 0.01 60);         /* 키보드 */
+  --pixel-mug: oklch(0.62 0.13 35);              /* 머그 (terracotta) */
+  --pixel-desk: oklch(0.78 0.04 65);             /* 책상 상판 (warm tan) */
+  --pixel-desk-edge: oklch(0.55 0.06 50);        /* 책상 모서리 */
+  --pixel-plant-leaf: oklch(0.65 0.13 145);      /* 식물 잎 (sage) */
+  --pixel-plant-stem: oklch(0.45 0.10 145);      /* 줄기 */
+  --pixel-plant-pot: oklch(0.55 0.10 50);        /* 화분 (terracotta) */
+
+  /* 캐릭터 — 셔츠 색상은 PixelCharacter prop으로 직접 받지만 그 외 부분은 토큰. */
+  --pixel-char-skin: oklch(0.85 0.05 60);        /* 피부 (warm cream) */
+  --pixel-char-hair: oklch(0.32 0.04 50);        /* 머리카락 (dark brown) */
+  --pixel-char-eye: oklch(0.18 0.01 60);         /* 눈 (검정에 가까움) */
+  --pixel-char-pants: oklch(0.40 0.02 250);      /* 바지 (slate) */
+  --pixel-char-boots: oklch(0.25 0.02 50);       /* 신발 */
+
+  /* 사무실 데코 — 창문/커피/화분/책장. light: 따뜻한 낮 분위기. */
+  --decor-window-frame: oklch(0.42 0.04 50);
+  --decor-window-sky:   oklch(0.85 0.08 220);    /* 맑은 하늘 */
+  --decor-window-halo:  oklch(0.92 0.10 90);     /* 햇살 */
+  --decor-window-sun:   oklch(0.88 0.18 80);     /* 태양 */
+  --decor-counter:      oklch(0.78 0.04 65);
+  --decor-counter-edge: oklch(0.55 0.06 50);
+  --decor-machine:      oklch(0.32 0.01 60);
+  --decor-machine-base: oklch(0.45 0.01 60);
+  --decor-steam:        oklch(0.92 0.005 60);
+  --decor-cup:          oklch(0.93 0.005 60);
+  --decor-plant-highlight: oklch(0.78 0.13 130);
+  --decor-plant-pot-edge:  oklch(0.40 0.08 50);
+  --decor-shelf-frame:  oklch(0.42 0.04 50);
+  --decor-book-r:       oklch(0.55 0.16 25);
+  --decor-book-o:       oklch(0.65 0.15 50);
+  --decor-book-y:       oklch(0.78 0.14 95);
+  --decor-book-g:       oklch(0.55 0.14 150);
+  --decor-book-b:       oklch(0.50 0.16 250);
+  --decor-book-p:       oklch(0.50 0.18 300);
+
+  /* 카펫/벽 톤 — 사무실 바닥/벽 분리감. light는 따뜻한 베이지 카펫. */
+  --office-wall:   oklch(0.93 0.012 80);
+  --office-carpet: oklch(0.86 0.02 60);
+  --office-skirt:  oklch(0.62 0.04 50);
 }
 
 .dark {
@@ -107,6 +171,52 @@
   --ring: oklch(0.72 0.12 45);              /* warm amber */
   --accent-strong: oklch(0.72 0.12 45);
   --border-soft: oklch(0.24 0.008 70);
+
+  /* ── Pixel office (dark) ───────────────────────────────────────────
+   * 다크 모드는 톤을 살짝 낮추고 화면은 더 발광하는 형광 cyan으로. */
+  --pixel-monitor: oklch(0.18 0.01 70);
+  --pixel-monitor-stand: oklch(0.30 0.01 70);
+  --pixel-screen: oklch(0.55 0.12 220);
+  --pixel-screen-on: oklch(0.72 0.18 200);
+  --pixel-keyboard: oklch(0.42 0.01 70);
+  --pixel-mug: oklch(0.66 0.13 35);
+  --pixel-desk: oklch(0.42 0.05 65);
+  --pixel-desk-edge: oklch(0.28 0.04 50);
+  --pixel-plant-leaf: oklch(0.62 0.14 145);
+  --pixel-plant-stem: oklch(0.42 0.10 145);
+  --pixel-plant-pot: oklch(0.48 0.10 50);
+
+  /* 다크 모드 — 셔츠는 그대로(에이전트 컬러), 피부톤은 살짝 어둡게. */
+  --pixel-char-skin: oklch(0.78 0.06 50);
+  --pixel-char-hair: oklch(0.28 0.04 50);
+  --pixel-char-eye: oklch(0.10 0.01 60);
+  --pixel-char-pants: oklch(0.32 0.02 250);
+  --pixel-char-boots: oklch(0.18 0.02 50);
+
+  /* 데코 (dark) — 창밖은 야경, 책색은 살짝 어둡고 채도 유지. */
+  --decor-window-frame: oklch(0.20 0.02 50);
+  --decor-window-sky:   oklch(0.22 0.06 260);    /* 미드나잇 블루 */
+  --decor-window-halo:  oklch(0.45 0.05 85);     /* 달빛 */
+  --decor-window-sun:   oklch(0.85 0.05 90);     /* 달 */
+  --decor-counter:      oklch(0.42 0.05 65);
+  --decor-counter-edge: oklch(0.28 0.04 50);
+  --decor-machine:      oklch(0.14 0.01 60);
+  --decor-machine-base: oklch(0.28 0.01 60);
+  --decor-steam:        oklch(0.65 0.01 60);
+  --decor-cup:          oklch(0.78 0.01 60);
+  --decor-plant-highlight: oklch(0.72 0.13 130);
+  --decor-plant-pot-edge:  oklch(0.30 0.08 50);
+  --decor-shelf-frame:  oklch(0.22 0.02 50);
+  --decor-book-r:       oklch(0.55 0.18 25);
+  --decor-book-o:       oklch(0.62 0.16 50);
+  --decor-book-y:       oklch(0.70 0.16 95);
+  --decor-book-g:       oklch(0.55 0.16 150);
+  --decor-book-b:       oklch(0.55 0.18 250);
+  --decor-book-p:       oklch(0.55 0.20 300);
+
+  --office-wall:   oklch(0.20 0.012 70);
+  --office-carpet: oklch(0.16 0.015 60);
+  --office-skirt:  oklch(0.12 0.01 60);
 }
 
 html,
@@ -390,7 +500,7 @@ body {
   margin-left: 16px;
   border-radius: 9999px;
   font-size: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
@@ -407,4 +517,122 @@ body {
 @keyframes loom-pres-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.3; }
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Office view — 사무실 디오라마 톤. 픽셀 sprite는 아니지만 "방"의 느낌:
+ *   - 바닥: 미세한 격자 (도트 그리드) — 픽셀 사무실의 평면도 분위기.
+ *   - 책상: 살짝 들린 그림자 + 둥근 모서리. status별 outline 색상.
+ * 다크/라이트 모두 안전하도록 alpha 기반.
+ * ──────────────────────────────────────────────────────────── */
+.office-floor {
+  background-color: var(--card);
+  background-image:
+    radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 10%, transparent) 1px, transparent 0);
+  background-size: 16px 16px;
+  background-position: 0 0;
+}
+.dark .office-floor {
+  background-image:
+    radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 14%, transparent) 1px, transparent 0);
+}
+
+.office-desk {
+  /* 책상 모서리 살짝 두꺼운 그림자 — 떠 있는 느낌 + 픽셀 사무실의 입체감. */
+  box-shadow:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Pixel desk — 책상 카드 상단 디오라마.
+ * 평상시엔 차분한 톤, working 상태(.pixel-desk-active)면 화면이 펄스.
+ * ──────────────────────────────────────────────────────────── */
+.pixel-desk {
+  display: block;
+}
+.pixel-desk-active .pixel-screen {
+  animation: pixel-screen-glow 1.6s ease-in-out infinite;
+}
+@keyframes pixel-screen-glow {
+  0%, 100% { fill: var(--pixel-screen); }
+  50%      { fill: var(--pixel-screen-on); }
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Pixel character — 두 walk 프레임을 한 SVG 안에 두고 visibility로 교대.
+ * 0.4s 주기로 A↔B 전환 → 종종걸음 효과. JS는 위치만 보간하고 프레임 swap은
+ * CSS가 담당해서 React 리렌더 부담 없음.
+ * ──────────────────────────────────────────────────────────── */
+.pixel-walk-frame-a,
+.pixel-walk-frame-b {
+  animation: pixel-walk-swap 0.4s steps(1, end) infinite;
+}
+.pixel-walk-frame-a {
+  visibility: visible;
+}
+.pixel-walk-frame-b {
+  visibility: hidden;
+  animation-delay: 0.2s;
+}
+@keyframes pixel-walk-swap {
+  0%, 49%   { visibility: visible; }
+  50%, 100% { visibility: hidden; }
+}
+
+/* 캐릭터 미세 동작:
+ *   - 걷기: 0.55s 한 걸음 — 2 단계 (왼발/오른발) → 시각적으로 "터벅터벅".
+ *           amplitude 1px (이전 2px는 통통 튀는 느낌이었음).
+ *   - 서있기: 5s 호흡 — 매우 느린 1px 흔들림.
+ * SVG의 flipX와 충돌 없도록 outer span 에서만 transform 적용.
+ */
+.pixel-bob-walk {
+  animation: pixel-bob-walk 0.55s steps(2, end) infinite;
+}
+.pixel-bob-idle {
+  animation: pixel-bob-idle 5s ease-in-out infinite;
+}
+@keyframes pixel-bob-walk {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-1px); }
+}
+@keyframes pixel-bob-idle {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-1px); }
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Office room — 벽 / 카펫 / 걸레받이 톤. PixelDesk와 같이 픽셀 톤을 유지.
+ * 벽: 살짝 줄무늬 (벽지 모티프). 카펫: 미세한 도트 무늬.
+ * 걸레받이는 1.2% 높이 띠로 벽-바닥 경계 강조.
+ * ──────────────────────────────────────────────────────────── */
+.office-room-outer {
+  background: var(--background);
+}
+.office-room {
+  background: var(--card);
+}
+.office-wall {
+  background-color: var(--office-wall);
+  /* 가는 세로 줄무늬 = 벽지 효과. 8px 간격으로 살짝 어두운 줄. */
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent 7px,
+    color-mix(in oklch, var(--foreground) 4%, transparent) 7px,
+    color-mix(in oklch, var(--foreground) 4%, transparent) 8px
+  );
+}
+.office-skirt {
+  background: var(--office-skirt);
+}
+.office-carpet {
+  background-color: var(--office-carpet);
+  /* 카펫 미세 도트 — 픽셀 게임의 "뜨개질된 양탄자" 느낌. */
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in oklch, var(--foreground) 6%, transparent) 1px,
+    transparent 0
+  );
+  background-size: 8px 8px;
 }

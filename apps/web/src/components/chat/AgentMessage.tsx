@@ -171,7 +171,11 @@ export function AgentMessage({
         // ActiveProgress가 flex divs를 쓰므로 <p>로 감싸면 nested 경고. div 사용.
         <div className="text-sm italic text-muted-foreground">
           {isActive ? (
-            <ActiveProgress run={run} events={events} />
+            <ActiveProgress
+              run={run}
+              events={events}
+              onCancel={() => cancel.mutate()}
+            />
           ) : (
             <FailedReason runId={run.id} status={run.status} />
           )}
@@ -190,7 +194,11 @@ export function AgentMessage({
             {finalText ? <MarkdownView text={finalText} /> : null}
             <ToolStrip events={events} />
             {isActive ? (
-              <ActiveProgress run={run} events={events} />
+              <ActiveProgress
+              run={run}
+              events={events}
+              onCancel={() => cancel.mutate()}
+            />
             ) : null}
           </div>
         </SelectionQuoteScope>
@@ -260,10 +268,15 @@ function FailedReason({
 function ActiveProgress({
   run,
   events,
+  onCancel,
 }: {
   run: Run;
   events: TailEvent[];
+  /** 활성 run을 멈추는 콜백. 부모(AgentMessage)가 cancel mutation으로 연결.
+   *  hover-only 액션 외에 인라인으로 항상 보이는 Stop 버튼이 필요해서 추가. */
+  onCancel?: () => void;
 }) {
+  const { t } = useI18n();
   const [elapsed, setElapsed] = useState(() => elapsedSecs(run));
   useEffect(() => {
     // 1Hz로 충분 — 초 단위 표시.
@@ -292,6 +305,17 @@ function ActiveProgress({
             </span>
           ) : null}
         </>
+      ) : null}
+      {onCancel ? (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ml-auto shrink-0 inline-flex items-center gap-1 rounded border border-border px-1.5 h-5 text-[10px] uppercase tracking-wider text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/5 transition-colors"
+          title={t("chat.message.cancel")}
+        >
+          <span aria-hidden className="size-1.5 rounded-[1px] bg-current" />
+          {t("chat.message.cancel")}
+        </button>
       ) : null}
     </div>
   );

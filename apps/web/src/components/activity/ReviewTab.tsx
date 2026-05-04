@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../api/client.js";
-import { AgentAvatar } from "../Chat.js";
+import { AgentAvatar } from "../chat/index.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
 import { formatTimeAgo } from "../../lib/timeAgo.js";

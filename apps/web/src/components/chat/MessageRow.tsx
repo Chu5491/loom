@@ -42,11 +42,14 @@ export function MessageRow({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
       className={cn(
-        "group relative flex items-start gap-3 px-5 py-0.5 hover:bg-foreground/[0.03]",
-        !isContinuation && "mt-2 pt-1.5",
+        // 좁은 폭(@chat 컨테이너 < 480px) 대응 — 좌우 여백을 줄이고
+        // gap도 좁혀서 채팅 dock / 분할 모드에서 텍스트 폭 확보.
+        "group relative flex items-start gap-2 px-2 py-0.5 hover:bg-foreground/[0.03]",
+        "@[480px]:gap-3 @[480px]:px-4",
+        !isContinuation && "mt-1.5 pt-1",
       )}
     >
-      <div className="w-9 shrink-0 mt-0.5 relative">
+      <div className="w-7 @[480px]:w-8 shrink-0 mt-0.5 relative">
         {isContinuation ? (
           <>
             {/* 연속 메시지를 그룹 아바타에 잇는 희미한 세로선. */}
@@ -75,7 +78,7 @@ export function MessageRow({
         {children}
       </div>
       {actions ? (
-        <div className="absolute right-4 -top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute right-1.5 @[480px]:right-3 -top-2 opacity-0 group-hover:opacity-100 transition-opacity">
           {actions}
         </div>
       ) : null}

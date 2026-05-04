@@ -2,7 +2,7 @@
 // 채팅은 floating overlay로 분리됐으므로 가짜 Chat 탭은 제거됨.
 // 활성 에이전트 라이브 배지 + 라인 번호 + 닫기. auto-animate로 추가/삭제 모핑.
 
-import { FileText, X } from "lucide-react";
+import { Building2, Code2, FileText, X } from "lucide-react";
 import type { Agent } from "@loom/core";
 import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 import { useI18n } from "../../context/I18nContext.js";
@@ -11,6 +11,7 @@ import { basename } from "../../lib/path.js";
 import { useAutoAnimate } from "../../lib/useAutoAnimate.js";
 
 export function FileTabBar({
+  view,
   activeFile,
   openFiles,
   activeByPath,
@@ -19,7 +20,11 @@ export function FileTabBar({
   onActivate,
   onClose,
   onCloseAll,
+  onSelectOffice,
+  onSelectEditor,
 }: {
+  /** "office"이면 Office 가짜 탭이 활성 — 어떤 파일 탭도 active 안 됨. */
+  view: "office" | "editor";
   activeFile: string | null;
   openFiles: string[];
   activeByPath?: Map<string, string>;
@@ -28,6 +33,10 @@ export function FileTabBar({
   onActivate: (path: string) => void;
   onClose: (path: string) => void;
   onCloseAll: () => void;
+  /** Office 모드로 전환 — 활성 파일은 보존. */
+  onSelectOffice: () => void;
+  /** Editor 모드로 복귀 — 마지막 활성 파일이 있으면 그걸 보여줌. 없으면 EditorEmpty. */
+  onSelectEditor: () => void;
 }) {
   const { t } = useI18n();
   const stripRef = useAutoAnimate<HTMLDivElement>({
@@ -37,10 +46,35 @@ export function FileTabBar({
 
   return (
     <div className="flex items-stretch border-b border-border bg-muted/30 shrink-0">
+      {/* 좌측: 뷰 모드 버튼 — 사무실/에디터는 "파일이 아니라 모드". 시각적으로
+          분리해서 탭 strip과 섞이지 않도록 별도 섹션 + vertical divider.
+          두 버튼은 segmented control 처럼 붙어서 어떤 모드인지 한 눈에. */}
+      <div className="flex items-stretch shrink-0 px-1.5 py-1 gap-0.5 border-r border-border">
+        <ViewModeButton
+          active={view === "office"}
+          icon={<Building2 className="size-3.5" />}
+          label={t("workspace.tabs.office")}
+          title={t("workspace.tabs.officeTitle")}
+          onClick={onSelectOffice}
+        />
+        <ViewModeButton
+          active={view === "editor"}
+          icon={<Code2 className="size-3.5" />}
+          label={t("workspace.tabs.editor")}
+          title={t("workspace.tabs.editorTitle")}
+          onClick={onSelectEditor}
+        />
+      </div>
+
       <div
         ref={stripRef}
         className="flex-1 min-w-0 flex items-stretch gap-px px-1 overflow-x-auto subtle-scrollbar"
       >
+        {openFiles.length === 0 ? (
+          <span className="self-center px-3 text-[11px] text-muted-foreground/50 italic">
+            {t("workspace.tabs.noFiles")}
+          </span>
+        ) : null}
         {openFiles.map((path) => {
           const liveAgentId = activeByPath?.get(path);
           const liveAgent = liveAgentId
@@ -50,7 +84,7 @@ export function FileTabBar({
           return (
             <Tab
               key={path}
-              active={activeFile === path}
+              active={view === "editor" && activeFile === path}
               icon={<FileText className="size-3.5" />}
               label={basename(path)}
               title={path}
@@ -62,18 +96,54 @@ export function FileTabBar({
           );
         })}
       </div>
-      <button
-        type="button"
-        onClick={onCloseAll}
-        title={t("workspace.tabs.closeAll")}
-        aria-label={t("workspace.tabs.closeAll")}
-        className="inline-flex items-center gap-1 px-2 self-center h-6 mx-1 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors whitespace-nowrap shrink-0"
-      >
-        <X className="size-3 shrink-0" />
-        <span>{t("workspace.tabs.closeAll")}</span>
-        <span className="text-muted-foreground/60 mono ml-1">⌘\</span>
-      </button>
+      {openFiles.length > 0 ? (
+        <button
+          type="button"
+          onClick={onCloseAll}
+          title={t("workspace.tabs.closeAll")}
+          aria-label={t("workspace.tabs.closeAll")}
+          className="inline-flex items-center gap-1 px-2 self-center h-6 mx-1 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors whitespace-nowrap shrink-0"
+        >
+          <X className="size-3 shrink-0" />
+          <span>{t("workspace.tabs.closeAll")}</span>
+          <span className="text-muted-foreground/60 mono ml-1">⌘\</span>
+        </button>
+      ) : null}
     </div>
+  );
+}
+
+// 뷰 모드 버튼 — 사무실/에디터처럼 "어떤 콘텐츠를 보여줄지" 결정하는 토글.
+// 파일 탭과는 의미가 다르므로 시각적으로도 다르게: 둥근 사각, 배경 채움.
+function ViewModeButton({
+  active,
+  icon,
+  label,
+  title,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  title?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors shrink-0",
+        active
+          ? "bg-foreground text-background shadow-sm"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted",
+      )}
+    >
+      <span className="opacity-90">{icon}</span>
+      <span>{label}</span>
+    </button>
   );
 }
 

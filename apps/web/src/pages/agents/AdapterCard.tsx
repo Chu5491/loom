@@ -1,13 +1,12 @@
-// 어댑터 선택 카드. 호버 spotlight + 선택 시 회전 보더 빔.
+// 어댑터 선택 카드. 선택되면 좌측에 강조 바 + 보더 색 변화.
+// (이전엔 spotlight + rotating border 효과 — 화려하지만 정보가치 0이라 제거.)
 
-import { motion } from "motion/react";
 import type { AdapterManifest } from "@loom/core";
 import { AdapterIcon } from "../../components/AdapterIcon.js";
 import { AdapterStatusLive } from "../../components/AdapterStatus.js";
-import { RotatingBorder } from "../../components/RotatingBorder.js";
-import { Spotlight } from "../../components/Spotlight.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { tManifestDescription } from "../../lib/adapterText.js";
+import { cn } from "../../lib/utils.js";
 
 export function AdapterCard({
   manifest,
@@ -20,45 +19,36 @@ export function AdapterCard({
 }) {
   const { t } = useI18n();
   return (
-    <motion.button
+    <button
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      whileHover={{ y: -1 }}
-      whileTap={{ scale: 0.985 }}
-      transition={{ duration: 0.12 }}
-      className={
-        "group relative overflow-hidden text-left rounded-lg p-3 transition-colors " +
-        (selected
-          ? "bg-card"
-          : "border border-zinc-200 bg-zinc-50/50 hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/50 dark:hover:border-zinc-600")
-      }
+      className={cn(
+        "group relative text-left rounded-lg border p-3 transition-colors",
+        selected
+          ? "border-foreground/50 bg-card"
+          : "border-border bg-muted/40 hover:border-foreground/30 hover:bg-muted/60",
+      )}
     >
-      <RotatingBorder active={selected} />
-      <Spotlight />
-      <div className="relative z-10">
-        {selected ? (
-          <motion.span
-            layoutId="adapter-card-marker"
-            aria-hidden
-            className="absolute -left-3 top-1/2 -translate-y-1/2 h-8 w-1 rounded-r-full bg-sky-500 dark:bg-sky-400"
-            transition={{ type: "spring", stiffness: 500, damping: 32 }}
-          />
-        ) : null}
-        <div className="flex items-center gap-3">
-          <AdapterIcon manifest={manifest} size={32} />
-          <div className="min-w-0 flex-1">
-            <div className="font-medium truncate">{manifest.displayName}</div>
-            <div className="text-xs text-muted-foreground mono truncate">
-              {manifest.kind} · {manifest.defaultCommand}
-            </div>
+      {selected ? (
+        <span
+          aria-hidden
+          className="absolute -left-px top-2 bottom-2 w-0.5 rounded-r-full bg-foreground"
+        />
+      ) : null}
+      <div className="flex items-center gap-3">
+        <AdapterIcon manifest={manifest} size={32} />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium truncate">{manifest.displayName}</div>
+          <div className="text-xs text-muted-foreground mono truncate">
+            {manifest.kind} · {manifest.defaultCommand}
           </div>
-          <AdapterStatusLive kind={manifest.kind} showLabel={false} />
         </div>
-        <p className="mt-2 text-xs text-muted-foreground line-clamp-2">
-          {tManifestDescription(t, manifest)}
-        </p>
+        <AdapterStatusLive kind={manifest.kind} showLabel={false} />
       </div>
-    </motion.button>
+      <p className="mt-2 text-xs text-muted-foreground line-clamp-2">
+        {tManifestDescription(t, manifest)}
+      </p>
+    </button>
   );
 }

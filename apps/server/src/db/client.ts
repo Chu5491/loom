@@ -200,6 +200,24 @@ function applyMigrations(db: DB): void {
       db.exec(`ALTER TABLE runs ADD COLUMN resumed_session_id TEXT`);
     }
   });
+
+  migration(db, 12, "project_env table", () => {
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS project_env (
+         project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+         key         TEXT NOT NULL,
+         value       TEXT NOT NULL,
+         PRIMARY KEY (project_id, key)
+       )`,
+    );
+  });
+
+  migration(db, 13, "projects.preferred_editor", () => {
+    if (!columnExists(db, "projects", "preferred_editor")) {
+      // 외부 IDE 핸들러. NULL이면 클라이언트가 기본값(vscode) 사용.
+      db.exec(`ALTER TABLE projects ADD COLUMN preferred_editor TEXT`);
+    }
+  });
 }
 
 interface OrphanRunRow {

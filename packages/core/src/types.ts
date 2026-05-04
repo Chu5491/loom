@@ -6,12 +6,23 @@ export type AdapterKind = "claude-code" | "gemini" | "codex" | "cursor" | string
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
+/** "Open in IDE" 버튼이 spawn할 외부 에디터 CLI. 새 IDE를 추가하려면
+ *  서버 쪽 buildOpenCommand에 인자 패턴도 함께 추가해야 한다. */
+export type PreferredEditor =
+  | "vscode"
+  | "cursor"
+  | "antigravity"
+  | "zed"
+  | "intellij";
+
 export interface Project {
   id: string;
   name: string;
   /** Absolute path on disk. Becomes the default `cwd` for runs of agents in this project. */
   path: string;
   description: string | null;
+  /** 사용자가 "Open in IDE"로 호출하는 외부 에디터. NULL이면 vscode. */
+  preferredEditor: PreferredEditor | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -200,6 +211,25 @@ export interface ActiveTouch {
    *  Empty when the adapter doesn't expose targets, or none of the
    *  current edits could be located (file already shifted). */
   locations: { path: string; line: number }[];
+}
+
+/** One tool_use captured live from an agent's stdout. Companion to
+ *  ActiveTouch: ActiveTouch answers "which file", ActiveTool answers
+ *  "which tool / which MCP server". The Office view's desks render
+ *  these as the "what's on the desk right now" indicator. */
+export interface ActiveTool {
+  ts: string;
+  name: string;
+  target?: string;
+}
+
+export interface ActiveToolsForAgent {
+  agentId: string;
+  runId: string;
+  projectId: string;
+  recent: ActiveTool[];
+  /** mcp__<server>__... 패턴에서 뽑은 server 이름들. 사무실 책상에 "회의 중인 서버" chip. */
+  mcpServers: string[];
 }
 
 /**

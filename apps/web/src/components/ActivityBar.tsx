@@ -5,7 +5,6 @@ import {
   ClipboardCheck,
   FileText,
   Folder,
-  FolderTree,
   GitBranch,
   Settings as SettingsIcon,
   Users,
@@ -17,7 +16,6 @@ import { cn } from "../lib/utils.js";
 
 export type ActivityKind =
   | "projects"
-  | "files"
   | "agents"
   | "skills"
   | "review"
@@ -54,8 +52,6 @@ export function ActivityBar({
     if (kind === "projects") return "/projects";
     if (!projectId) return null;
     switch (kind) {
-      case "files":
-        return `/projects/${projectId}`;
       case "agents":
         return `/projects/${projectId}/agents`;
       case "skills":
@@ -89,8 +85,7 @@ export function ActivityBar({
   useEffect(() => {
     if (
       !inProject &&
-      (active === "files" ||
-        active === "agents" ||
+      (active === "agents" ||
         active === "skills" ||
         active === "review" ||
         active === "history" ||
@@ -115,13 +110,6 @@ export function ActivityBar({
       label: t("activity.projects"),
       requiresProject: false,
       group: 1,
-    },
-    {
-      kind: "files",
-      icon: <FolderTree className="size-5" />,
-      label: t("activity.files"),
-      requiresProject: true,
-      group: 2,
     },
     {
       kind: "git",
@@ -168,13 +156,15 @@ export function ActivityBar({
         end
         className={({ isActive }) =>
           cn(
-            "flex items-center justify-center h-12 border-b border-border transition-colors",
+            // h-10으로 통일 — 옆 panel header(`h-10`) 및 워크스페이스 TeamRibbon
+            // (`py-2` ≈ 40px)과 가로 라인을 정확히 맞춤. 이전 h-12는 8px 어긋남.
+            "flex items-center justify-center h-10 border-b border-border transition-colors",
             isActive ? "bg-foreground/[0.06]" : "hover:bg-muted/60",
           )
         }
         title="loom"
       >
-        <LoomLogo className="size-6 dark:invert" />
+        <LoomLogo className="size-5 dark:invert" />
       </NavLink>
 
       <nav className="flex-1 flex flex-col items-stretch px-1.5 py-2 gap-0.5">

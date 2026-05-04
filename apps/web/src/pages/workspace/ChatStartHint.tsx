@@ -1,17 +1,9 @@
 // 프로젝트에 에이전트는 있지만 첫 스레드가 아직 없을 때의 빈 상태.
 // "비어 있는 에디터" 대신 "이미 자리 잡은 채널"을 보여주는 게 목적.
 
-import { Suspense, lazy } from "react";
 import type { AdapterManifest, Agent } from "@loom/core";
 import { useI18n } from "../../context/I18nContext.js";
-import { AgentAvatar } from "../../components/Chat.js";
-
-// tsparticles는 빈 상태 진입 시에만 fetch — 메인 번들에서 빠짐.
-const EmptyParticles = lazy(() =>
-  import("../../components/EmptyParticles.js").then((m) => ({
-    default: m.EmptyParticles,
-  })),
-);
+import { AgentAvatar } from "../../components/chat/index.js";
 
 export function ChatStartHint({
   agents,
@@ -23,9 +15,10 @@ export function ChatStartHint({
   const { t } = useI18n();
   return (
     <div className="relative px-4 py-12 text-center overflow-hidden">
-      <Suspense fallback={null}>
-        <EmptyParticles className="absolute inset-0 -z-10 opacity-60" />
-      </Suspense>
+      <div
+        aria-hidden
+        className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_30%,_color-mix(in_oklch,_var(--accent-strong)_10%,_transparent),_transparent_60%)]"
+      />
       <div className="inline-flex flex-wrap items-center justify-center gap-1.5 mb-4">
         {agents.slice(0, 6).map((a) => (
           <span
