@@ -1,13 +1,34 @@
-# loom
+<p align="center">
+  <img src="docs/assets/loom-logo.png" alt="loom" width="160">
+</p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dark-office.png">
-  <img alt="loom — pixel office for your CLI agents" src="docs/assets/light-office.png">
-</picture>
+<h1 align="center">loom</h1>
+<p align="center"><strong>A workspace where your CLI coding agents share an office.</strong></p>
 
-[**Quickstart**](#quickstart) · [**Adapters**](#-bring-your-own-cli) · [**Architecture**](#whats-under-the-hood) · [**FAQ**](#faq)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dark-office.png">
+    <img alt="loom — pixel office for your CLI agents" src="docs/assets/light-office.png">
+  </picture>
+</p>
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue)](#-license) [![Node ≥ 22](https://img.shields.io/badge/node-%E2%89%A522-green)](#requirements) [![TypeScript](https://img.shields.io/badge/typescript-5-blue)](#)
+<p align="center">
+  <a href="#quickstart"><b>Quickstart</b></a> ·
+  <a href="#status"><b>Status</b></a> ·
+  <a href="#-bring-your-own-cli"><b>Adapters</b></a> ·
+  <a href="#whats-under-the-hood"><b>Architecture</b></a> ·
+  <a href="#faq"><b>FAQ</b></a> ·
+  <a href="./README.ko.md"><b>한국어</b></a>
+</p>
+
+<p align="center">
+  <a href="#-license"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="#requirements"><img alt="Node ≥ 22" src="https://img.shields.io/badge/node-%E2%89%A522-green"></a>
+  <img alt="TypeScript 5" src="https://img.shields.io/badge/typescript-5-blue">
+  <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange">
+</p>
+
+> ⚠️ **loom is in active development (alpha).** The chat / office / claude-code path is stable enough for daily use locally. The other adapters, project templates, and search are still being wired — see [**Status**](#status) below.
 
 ## What is loom?
 
@@ -39,6 +60,55 @@ It looks like a chat app and a tiny pixel office — but underneath it's git wor
 | **OpenCode** | `opencode run` | last arg | _adapter scaffolded_ |
 
 _If it speaks stdout one event at a time, it can move into the office._
+
+---
+
+## Status
+
+loom is **alpha** — usable locally, but not yet hardened for production or shared deployments. Below is the honest state of every system.
+
+### ✅ Stable — daily-use ready
+
+| Area | What works |
+|---|---|
+| **claude-code adapter** | stream-json parsing, session resume with poison cascade, cost capture, tool extraction |
+| **Threads + Runs** | full lifecycle, SSE log streaming, per-thread git worktree, `run_changes` persistence |
+| **Office view** | pixel diorama, character state machine (idle / walking / sitting), live speech bubbles |
+| **Chat dock** | VS Code-terminal pattern, ⌘J toggle, persisted height, ThreadList sidebar |
+| **File workspace** | live presence dots, diff viewer per run, file-history rail, ⌘P palette |
+| **Open in IDE** | VS Code / Cursor / Antigravity / Zed / IntelliJ — PATH → app bundle → `open -a` fallback |
+| **Per-project env** | shared API keys per project, agent-level overrides, lower priority than agent env |
+| **Specs (markdown skills)** | attach per message, never auto-injected |
+| **Light / dark theme** | full coverage including pixel sprites and the office room |
+
+### 🚧 In development — wired but not yet primary
+
+| Area | What's missing |
+|---|---|
+| **gemini adapter** | `defineCliAdapter` skeleton in place; needs registry hookup + a smoke run |
+| **codex adapter** | same — argv-mode prompt instead of stdin |
+| **opencode adapter** | same — `opencode run <prompt>` |
+| **MCP server pills** | extracted and surfaced on desks, but no per-server config UI yet |
+| **Diff-driven PR creation** | branch + before/after refs are captured; no PR button yet |
+| **Run logs full-text search** | logs persist on disk; no search index yet |
+
+### 📋 Planned
+
+| Idea | Sketch |
+|---|---|
+| **Importable project templates** | export agents + skills + env as a single JSON, drop into a new project |
+| **Agent-to-agent suggestion patterns** | optional `[NEXT]` / `[ASK]` markers the UI can render as hand-off chips |
+| **Office decor variants** | additional rooms (cafe / library / co-working) themed for different vibes |
+| **Mobile / phone layout** | the office canvas already scales; chat + thread switcher need a portrait skin |
+
+### 🚫 Explicitly **not** planned
+
+These are intentional non-goals — `CLAUDE.md` keeps us honest:
+
+- Auto-injection of system prompts, AGENTS.md, or skill bundles
+- An "agent marketplace" or plugin registry
+- Multi-tenant auth / cloud hosting
+- Self-cost estimation (we only show what the CLI itself reports)
 
 ---
 
