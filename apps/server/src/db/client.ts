@@ -245,6 +245,24 @@ function applyMigrations(db: DB): void {
        )`,
     );
   });
+
+  migration(db, 15, "gemini_sync + mcp_servers.gemini_synced_at", () => {
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS gemini_sync (
+         id              INTEGER PRIMARY KEY CHECK (id = 1),
+         enabled         INTEGER NOT NULL DEFAULT 1,
+         last_synced_at  TEXT,
+         last_error      TEXT
+       )`,
+    );
+    db.exec(`INSERT OR IGNORE INTO gemini_sync (id, enabled) VALUES (1, 1)`);
+    if (!columnExists(db, "mcp_servers", "gemini_synced_at")) {
+      // 이 컬럼이 NOT NULL이면 "loom이 settings.json에 이 이름으로 쓴 적 있음".
+      // 안전 머지에서 "loom-managed"인지 식별 — 사용자가 직접 같은 이름을 추가했다면
+      // 이 컬럼은 NULL이고 그 row는 절대 안 건드림.
+      db.exec(`ALTER TABLE mcp_servers ADD COLUMN gemini_synced_at TEXT`);
+    }
+  });
 }
 
 interface OrphanRunRow {

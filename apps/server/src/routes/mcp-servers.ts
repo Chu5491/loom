@@ -7,6 +7,39 @@ import {
   listMcpServers,
   updateMcpServer,
 } from "../db/mcp-servers.js";
+import { runGeminiSync } from "../services/gemini-sync.js";
+import { logger } from "../logger.js";
+
+/** mcp 카탈로그 변경 후 — gemini settings.json 자동 머지. enabled=false면 no-op.
+ *  실패해도 CRUD는 성공 응답을 그대로 보냄(sync 실패가 카탈로그 변경을 막으면 안 됨). */
+function autoSyncGemini(reason: string): void {
+  try {
+    const r = runGeminiSync();
+    if (r.skipped === "disabled") return;
+    if (!r.ok) {
+      logger.warn(
+        { reason, error: r.error },
+        "gemini auto-sync failed (catalog change applied anyway)",
+      );
+    } else if (
+      r.addedToSettings.length > 0 ||
+      r.removedFromSettings.length > 0 ||
+      r.conflicts.length > 0
+    ) {
+      logger.info(
+        {
+          reason,
+          added: r.addedToSettings,
+          removed: r.removedFromSettings,
+          conflicts: r.conflicts,
+        },
+        "gemini auto-sync applied",
+      );
+    }
+  } catch (err) {
+    logger.warn({ reason, err }, "gemini auto-sync threw");
+  }
+}
 
 const kindSchema = z.enum(["stdio", "http", "sse"]);
 
@@ -44,6 +77,7 @@ mcpServersRoute.post("/", async (c) => {
   }
   try {
     const server = createMcpServer(parsed.data);
+    autoSyncGemini(`create:${server.name}`);
     return c.json({ server }, 201);
   } catch (err) {
     // UNIQUE name 충돌이 가장 흔한 실패 경로 — 메시지를 그대로 surface.
@@ -68,11 +102,14 @@ mcpServersRoute.patch("/:id", async (c) => {
   }
   const server = updateMcpServer(c.req.param("id"), parsed.data);
   if (!server) return c.json({ error: "not_found" }, 404);
+  autoSyncGemini(`update:${server.name}`);
   return c.json({ server });
 });
 
 mcpServersRoute.delete("/:id", (c) => {
+  const before = getMcpServer(c.req.param("id"));
   const ok = deleteMcpServer(c.req.param("id"));
   if (!ok) return c.json({ error: "not_found" }, 404);
+  autoSyncGemini(`delete:${before?.name ?? c.req.param("id")}`);
   return c.body(null, 204);
 });

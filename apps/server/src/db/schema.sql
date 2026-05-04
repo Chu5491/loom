@@ -63,6 +63,19 @@ CREATE TABLE IF NOT EXISTS agent_mcp_servers (
   created_at    TEXT NOT NULL,
   PRIMARY KEY (agent_id, mcp_server_id)
 );
+
+-- One-row settings table for the Gemini settings.json sync feature.
+-- gemini doesn't accept a runtime --mcp-config flag and isn't XDG-aware,
+-- so loom optionally mirrors its catalog into ~/.gemini/settings.json's
+-- mcpServers field. This row tracks whether that mirroring is enabled
+-- + the latest sync result. CHECK (id=1) keeps it singleton.
+CREATE TABLE IF NOT EXISTS gemini_sync (
+  id              INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  last_synced_at  TEXT,
+  last_error      TEXT
+);
+INSERT OR IGNORE INTO gemini_sync (id, enabled) VALUES (1, 1);
 -- The agents.project_id index is created in applyMigrations() after the
 -- ALTER-add-column step so fresh-install and upgrade paths share one source.
 

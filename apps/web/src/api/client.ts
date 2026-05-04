@@ -83,6 +83,26 @@ export interface CreateProjectBody {
 
 export type UpdateProjectBody = Partial<CreateProjectBody>;
 
+export interface GeminiSyncStatus {
+  enabled: boolean;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+  loomManagedNames: string[];
+  userManagedNames: string[];
+  conflicts: string[];
+  settingsPath: string;
+}
+
+export interface GeminiSyncReport {
+  ok: boolean;
+  error?: string;
+  skipped?: "disabled";
+  removedFromSettings: string[];
+  addedToSettings: string[];
+  conflicts: string[];
+  backupPath: string | null;
+}
+
 export interface OpenInEditorBody {
   /** project-relative path. Missing/empty = project root. */
   path?: string;
@@ -395,6 +415,22 @@ export const api = {
     }),
   deleteMcpServer: (id: string) =>
     request<void>(`/api/mcp-servers/${id}`, { method: "DELETE" }),
+
+  // gemini-sync — settings.json mirroring on/off + manual run + snippet
+  getGeminiSyncStatus: () =>
+    request<{ status: GeminiSyncStatus }>("/api/gemini-sync/status"),
+  runGeminiSync: (force = false) =>
+    request<{ report: GeminiSyncReport; status: GeminiSyncStatus }>(
+      "/api/gemini-sync/run",
+      { method: "POST", body: JSON.stringify({ force }) },
+    ),
+  setGeminiSyncEnabled: (enabled: boolean) =>
+    request<{ status: GeminiSyncStatus }>("/api/gemini-sync/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+  getGeminiSnippet: () =>
+    request<{ snippet: string }>("/api/gemini-sync/snippet"),
 
   listThreads: (
     filter: { projectId?: string; status?: ThreadStatus; limit?: number } = {},

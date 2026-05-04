@@ -26,6 +26,7 @@ import { PageHeader } from "../components/PageHeader.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
 import { cn } from "../lib/utils.js";
+import { GeminiSyncCard } from "./mcps/GeminiSyncCard.js";
 
 const BASE_URL = "/mcps";
 
@@ -63,6 +64,9 @@ export function McpsPage() {
           </Button>
         }
       />
+      {/* gemini는 런타임 --mcp-config을 안 받으므로, 카탈로그가 변경될 때마다
+          ~/.gemini/settings.json을 안전 머지해서 반영. 사용자는 UI만 보면 됨. */}
+      <GeminiSyncCard />
       <div className="grid gap-4 md:grid-cols-[260px_1fr]">
         <ServerList
           servers={list.data?.servers ?? []}
