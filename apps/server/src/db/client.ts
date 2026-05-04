@@ -18,6 +18,7 @@ export function getDb(): DB {
   fs.mkdirSync(config.dataDir, { recursive: true });
   fs.mkdirSync(paths.logs, { recursive: true });
   fs.mkdirSync(paths.worktrees, { recursive: true });
+  fs.mkdirSync(paths.agents, { recursive: true });
 
   const db = new Database(paths.db);
   db.pragma("journal_mode = WAL");

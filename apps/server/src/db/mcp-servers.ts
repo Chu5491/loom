@@ -111,6 +111,23 @@ export function getMcpServer(id: string): McpServer | null {
   return row ? rowToServer(row) : null;
 }
 
+/** Bulk fetch by id — 입력 순서를 유지(없는 id는 조용히 스킵). 에이전트의
+ *  mcpServerIds로 loadout 만들 때 호출. */
+export function getMcpServersByIds(ids: string[]): McpServer[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = getDb()
+    .prepare<string[], McpRow>(
+      `SELECT * FROM mcp_servers WHERE id IN (${placeholders})`,
+    )
+    .all(...ids);
+  const byId = new Map(rows.map((r) => [r.id, rowToServer(r)]));
+  return ids.flatMap((id) => {
+    const s = byId.get(id);
+    return s ? [s] : [];
+  });
+}
+
 export function createMcpServer(input: CreateMcpServerInput): McpServer {
   const id = randomUUID();
   const now = new Date().toISOString();

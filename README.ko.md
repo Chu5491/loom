@@ -54,10 +54,10 @@ loom은 Node.js 서버 + React UI로, 여러 CLI 코딩 에이전트(Claude Code
 
 | 어댑터 | 명령어 | 입력 방식 | 노출되는 것 |
 |---|---|---|---|
-| **Claude Code** | `claude` | stdin (`--print -`) | session_id · tool_use · 비용 · MCP 호출 |
-| **Gemini CLI** | `gemini` | stdin (non-TTY) | _어댑터 골격만_ |
-| **Codex** | `codex exec` | 마지막 인자 | _어댑터 골격만_ |
-| **OpenCode** | `opencode run` | 마지막 인자 | _어댑터 골격만_ |
+| **Claude Code** | `claude` | stdin (`--print -`) | session_id · tool_use · 비용 · MCP는 `--mcp-config + --strict-mcp-config`로 주입 |
+| **Gemini CLI** | `gemini` | `--prompt` 인자 | tool_use · MCP는 `--allowed-mcp-server-names`로 필터 (서버는 사용자 `settings.json`에 등록되어 있어야 함) |
+| **Codex** | `codex exec` | stdin | tool_use · MCP는 `-c mcp_servers.<name>.…=…` override로 주입 |
+| **OpenCode** | `opencode run` | 마지막 인자 | tool_use · MCP는 카탈로그 reference만 (런타임 override 플래그 없음) |
 
 _stdout으로 한 이벤트씩 말할 수 있다면, 사무실에 입주 가능._
 
@@ -71,24 +71,32 @@ loom은 **알파**입니다 — 로컬에서 쓸 수 있지만, 운영이나 공
 
 | 영역 | 동작 |
 |---|---|
-| **claude-code 어댑터** | stream-json 파싱, poison cascade가 적용된 세션 resume, 비용 캡처, 도구 추출 |
+| **claude-code 어댑터** | stream-json 파싱, poison cascade 세션 resume, 비용 캡처, 도구 추출, **MCP 주입** (`--mcp-config + --strict-mcp-config`) |
+| **gemini / codex / opencode 어댑터** | wired in, prompt 경로 검증됨, MCP는 CLI별 방식으로 주입 (필터 / per-key / 카탈로그-ref — 아래 표) |
+| **시스템 스킬 + MCP 카탈로그** | `/skills`와 `/mcps` 톱레벨, 에이전트 loadout이 `~/.loom/data/agents/<id>/`에 파일을 펼침 |
+| **Loadout 포인터 프롬프트** | 스킬 *본문*은 디스크에, 프롬프트엔 `path/skill-name.md` 인덱스만 — 에이전트가 필요할 때 Read |
 | **스레드 + 런** | 전체 라이프사이클, SSE 로그 스트리밍, 스레드별 git worktree, `run_changes` 영속화 |
-| **사무실 뷰** | 픽셀 디오라마, 캐릭터 상태머신(idle / walking / sitting), 라이브 말풍선 |
+| **사무실 뷰** | 픽셀 디오라마, 캐릭터 상태머신, 라이브 말풍선 |
 | **채팅 dock** | VS Code 터미널 패턴, ⌘J 토글, 높이 영속, ThreadList 사이드바 |
 | **파일 워크스페이스** | 라이브 presence 점, run별 diff 뷰어, 파일 히스토리 레일, ⌘P 팔레트 |
 | **IDE에서 열기** | VS Code / Cursor / Antigravity / Zed / IntelliJ — PATH → 앱 번들 → `open -a` 폴백 |
 | **프로젝트 단위 env** | 공유 API 키, 에이전트 단위 오버라이드, agent env보다 낮은 우선순위 |
-| **스펙 (markdown 스킬)** | 메시지마다 첨부, 자동 주입 절대 X |
 | **라이트 / 다크 테마** | 픽셀 sprite와 사무실 방까지 전부 적용 |
 
-### 🚧 개발 중 — 골격은 있지만 아직 주력 아님
+### CLI별 MCP 주입 (정직하게)
+
+| 어댑터 | loom이 어떻게 전달하나 | 사용자가 직접 해야 할 것 |
+|---|---|---|
+| **claude-code** | run마다 `.mcp.json`을 써서 `--mcp-config <path> --strict-mcp-config`로 전달. loom이 정본. | 없음. |
+| **gemini** | `--allowed-mcp-server-names <names>`로 사용자의 `~/.gemini/settings.json` 필터. | 서버를 `~/.gemini/settings.json`에 먼저 등록 — loom은 필터만. |
+| **codex** | 서버마다 `-c mcp_servers.<name>.command="..."` (+args/env/...) override 발행. loom이 정본. | 없음. |
+| **opencode** | **런타임 override 플래그 없음.** loom은 에이전트의 loadout README/프롬프트에 reference만 표시. | 별도로 `opencode.json`에 추가. |
+
+### 🚧 개발 중
 
 | 영역 | 남은 일 |
 |---|---|
-| **gemini 어댑터** | `defineCliAdapter` 골격 있음. registry 등록 + 스모크 테스트 필요 |
-| **codex 어댑터** | 동일 — stdin 대신 argv-mode 프롬프트 |
-| **opencode 어댑터** | 동일 — `opencode run <prompt>` |
-| **MCP 서버 칩** | 추출+책상 표시는 되지만 서버별 설정 UI 없음 |
+| **opencode MCP 주입** | upstream에 런타임 플래그가 없음. cwd(워크트리)에 `opencode.json`을 쓸 수도 있지만 사용자 체크아웃 파일을 덮어쓸 위험 |
 | **Diff 기반 PR 생성** | 브랜치 + before/after refs 캡처는 됨. PR 버튼이 아직 없음 |
 | **런 로그 전문 검색** | 로그는 디스크에 영속됨. 검색 인덱스가 아직 없음 |
 

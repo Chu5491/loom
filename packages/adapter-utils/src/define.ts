@@ -2,6 +2,7 @@ import type {
   AdapterConfig,
   BuiltCommand,
   CliAdapter,
+  McpServer,
   RunHandle,
   SpawnArgs,
   ToolUse,
@@ -39,6 +40,20 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
    *  file edits) so the Office view can show what each agent is reaching
    *  for in real time — Read / Bash / Grep / mcp__server__method, etc. */
   extractToolUses?(chunk: string): ToolUse[];
+  /** Optional: splice CLI flags / write files needed to expose the given
+   *  MCP servers to this run.
+   *    - claude-code → `--mcp-config <mcpConfigPath> --strict-mcp-config`
+   *    - gemini      → `--allowed-mcp-server-names <name...>` (filters
+   *                     the user's existing settings.json)
+   *    - codex       → `-c mcp_servers.<name>.command="..."` per server
+   *    - opencode    → no runtime override; this hook stays undefined.
+   *  Receives both the raw McpServer[] and the path to the pre-rendered
+   *  claude-code-format JSON if it was written. */
+  applyMcpServers?(args: {
+    args: string[];
+    servers: McpServer[];
+    mcpConfigPath: string | null;
+  }): string[];
 }
 
 export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
@@ -65,7 +80,17 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
         spawnArgs.resumeSessionId && def.applyResume
           ? def.applyResume(built.args, spawnArgs.resumeSessionId)
           : built.args;
-      const { args, stdin } = applyPrompt(baseArgs, spawnArgs.prompt, promptMode);
+      // MCP 주입은 prompt 적용 *전에* 한다. 프롬프트가 argv 마지막에 박히는
+      // 어댑터(opencode, gemini-via-arg)에선 그 뒤에 더 못 넣음.
+      const argsWithMcp =
+        def.applyMcpServers && (spawnArgs.mcpServers?.length ?? 0) > 0
+          ? def.applyMcpServers({
+              args: baseArgs,
+              servers: spawnArgs.mcpServers!,
+              mcpConfigPath: spawnArgs.mcpConfigPath ?? null,
+            })
+          : baseArgs;
+      const { args, stdin } = applyPrompt(argsWithMcp, spawnArgs.prompt, promptMode);
       return spawnProcess({
         command: built.command,
         args,

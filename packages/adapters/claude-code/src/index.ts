@@ -202,4 +202,11 @@ export const claudeCodeAdapter = defineCliAdapter<ClaudeCodeConfig>({
   extractTouchedPaths: extractClaudeTouchedPaths,
   extractTouchedEdits: extractClaudeTouchedEdits,
   extractToolUses: extractClaudeToolUses,
+  // MCP 주입 — loom이 미리 그려둔 .mcp.json 경로를 그대로 --mcp-config에. strict
+  // 모드를 같이 켜서 사용자의 ~/.claude/settings.json 등 다른 출처는 무시
+  // (loom이 권한 부여한 서버만 보임).
+  applyMcpServers: ({ args, mcpConfigPath }) => {
+    if (!mcpConfigPath) return args;
+    return [...args, "--mcp-config", mcpConfigPath, "--strict-mcp-config"];
+  },
 });

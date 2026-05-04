@@ -1,4 +1,4 @@
-import type { AdapterConfig } from "./types.js";
+import type { AdapterConfig, McpServer } from "./types.js";
 
 export interface SpawnArgs {
   prompt: string;
@@ -10,6 +10,14 @@ export interface SpawnArgs {
    *  Adapters that support session resume use it to continue the prior
    *  conversation; adapters that don't ignore it. */
   resumeSessionId?: string;
+  /** Filesystem path to a JSON file in claude-code `.mcp.json` format.
+   *  Adapters whose CLI supports `--mcp-config` (claude-code) splice this
+   *  in. Others may write their own format from `mcpServers` instead. */
+  mcpConfigPath?: string;
+  /** Resolved MCP server configs assigned to the agent. Adapters whose
+   *  CLI doesn't accept a config-file flag use this to emit per-key
+   *  overrides (codex `-c`) or to filter (gemini `--allowed-mcp-server-names`). */
+  mcpServers?: McpServer[];
   onStdout: (chunk: string) => void;
   onStderr: (chunk: string) => void;
 }

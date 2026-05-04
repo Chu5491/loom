@@ -108,33 +108,87 @@ describe("specs CRUD", () => {
 });
 
 describe("composePrompt", () => {
-  it("returns user prompt unchanged when no skills + empty agent prompt", () => {
-    expect(composePrompt("hi", [])).toBe("hi");
+  it("returns user prompt unchanged when no agent prompt / loadout", () => {
+    expect(composePrompt({ userPrompt: "hi" })).toBe("hi");
   });
 
-  it("prepends each skill with delimiters in order", () => {
-    const a = createSpec({ name: "First", content: "alpha" });
-    const b = createSpec({ name: "Second", content: "beta" });
-    const composed = composePrompt("user-task", [a, b]);
-    expect(composed).toBe(
-      "=== Skill: First ===\nalpha\n=== End Skill ===\n\n=== Skill: Second ===\nbeta\n=== End Skill ===\n\nuser-task",
-    );
+  it("includes a loadout pointer (path + skill list), not the skill content", () => {
+    const composed = composePrompt({
+      userPrompt: "user-task",
+      loadout: {
+        dir: "/tmp/loadout/abc",
+        readmePath: "/tmp/loadout/abc/README.md",
+        mcpConfigPath: null,
+        skills: [
+          { name: "First", relPath: "skills/first.md", blurb: "First rule" },
+          { name: "Second", relPath: "skills/second.md", blurb: "" },
+        ],
+        mcpServerNames: [],
+      },
+    });
+    // Loadout block is present with the path + filenames.
+    expect(composed).toContain("=== Loadout ===");
+    expect(composed).toContain("/tmp/loadout/abc");
+    expect(composed).toContain("skills/first.md");
+    expect(composed).toContain("skills/second.md");
+    // Crucially: the spec *content* is NOT inlined — only the pointer.
+    expect(composed).not.toContain("=== Skill: First ===");
+    expect(composed.endsWith("user-task")).toBe(true);
   });
 
-  it("prepends agent prompt before skills and user task", () => {
-    const a = createSpec({ name: "S", content: "skill" });
-    const composed = composePrompt("task", [a], "be terse");
-    expect(composed).toBe(
-      "=== Agent Instructions ===\nbe terse\n=== End Instructions ===\n\n=== Skill: S ===\nskill\n=== End Skill ===\n\ntask",
-    );
+  it("prepends agent prompt before loadout and user task", () => {
+    const composed = composePrompt({
+      userPrompt: "task",
+      agentPrompt: "be terse",
+      loadout: {
+        dir: "/x",
+        readmePath: "/x/README.md",
+        mcpConfigPath: null,
+        skills: [{ name: "S", relPath: "skills/s.md", blurb: "" }],
+        mcpServerNames: [],
+      },
+    });
+    const idxAgent = composed.indexOf("Agent Instructions");
+    const idxLoadout = composed.indexOf("=== Loadout ===");
+    const idxTask = composed.indexOf("task");
+    expect(idxAgent).toBeGreaterThanOrEqual(0);
+    expect(idxLoadout).toBeGreaterThan(idxAgent);
+    expect(idxTask).toBeGreaterThan(idxLoadout);
+  });
+
+  it("lists MCP server names in the loadout block", () => {
+    const composed = composePrompt({
+      userPrompt: "task",
+      loadout: {
+        dir: "/x",
+        readmePath: "/x/README.md",
+        mcpConfigPath: "/x/mcp.json",
+        skills: [],
+        mcpServerNames: ["github", "context7"],
+      },
+    });
+    expect(composed).toContain("MCP servers available");
+    expect(composed).toContain("github");
+    expect(composed).toContain("context7");
   });
 });
 
 describe("startRun with attached specs", () => {
-  it("attaches specs to run record AND prepends to CLI prompt", async () => {
+  // 새 모델: 스킬 내용은 디스크의 loadout 폴더로 가고, 프롬프트엔 포인터만.
+  // 따라서 captureAdapter.lastPrompt()는 "=== Loadout ===" 블록과 파일 경로를
+  // 포함하지만 spec 본문(rules-1 등)은 포함하지 않음.
+  it("attaches specs to run record AND adds a loadout pointer to the prompt", async () => {
     const agent = createAgent({ projectId: testProjectId, name: "cap", adapterKind: "capture-shell" });
-    const spec1 = createSpec({ name: "S1", content: "rules-1" });
-    const spec2 = createSpec({ name: "S2", content: "rules-2" });
+    // Multi-line content so the blurb (first heading) is distinct from the
+    // body marker — that's how we verify body content stays *off* the prompt.
+    const spec1 = createSpec({
+      name: "S1",
+      content: "# Headline 1\n\nBODY_MARKER_ALPHA in deeper paragraph.",
+    });
+    const spec2 = createSpec({
+      name: "S2",
+      content: "# Headline 2\n\nBODY_MARKER_BETA stuff.",
+    });
 
     const result = await startRun({
       agentId: agent.id,
@@ -149,22 +203,30 @@ describe("startRun with attached specs", () => {
 
     await waitFor(() => !isRunActive(result.run.id));
 
-    const sent = captureAdapter.lastPrompt();
-    expect(sent).toContain("=== Skill: S1 ===");
-    expect(sent).toContain("rules-1");
-    expect(sent).toContain("=== Skill: S2 ===");
-    expect(sent).toContain("rules-2");
-    expect(sent!.endsWith("do thing")).toBe(true);
+    const sent = captureAdapter.lastPrompt()!;
+    // Loadout pointer present, with the spec names + headline blurbs.
+    expect(sent).toContain("=== Loadout ===");
+    expect(sent).toContain("S1");
+    expect(sent).toContain("S2");
+    expect(sent).toContain("Headline 1");
+    // Crucially: deeper-body markers do NOT leak into the prompt.
+    expect(sent).not.toContain("BODY_MARKER_ALPHA");
+    expect(sent).not.toContain("BODY_MARKER_BETA");
+    expect(sent.endsWith("do thing")).toBe(true);
 
-    const final = getRun(result.run.id)!;
-    expect(final.status).toBe("succeeded");
-    const events = await readLogFile(final.logPath!);
-    const stdout = events
-      .filter((e) => e.kind === "chunk" && e.chunk.stream === "stdout")
-      .map((e) => (e as { kind: "chunk"; chunk: { data: string } }).chunk.data)
-      .join("");
-    expect(stdout).toContain("rules-1");
-    expect(stdout).toContain("rules-2");
+    // But the full body IS materialized to disk, so the agent can Read it.
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { paths } = await import("../src/config.js");
+    const dir = path.join(paths.agents, agent.id);
+    expect(fs.existsSync(path.join(dir, "README.md"))).toBe(true);
+    const skillFiles = fs.readdirSync(path.join(dir, "skills"));
+    expect(skillFiles.length).toBe(2);
+    const allContent = skillFiles
+      .map((f) => fs.readFileSync(path.join(dir, "skills", f), "utf8"))
+      .join("\n");
+    expect(allContent).toContain("BODY_MARKER_ALPHA");
+    expect(allContent).toContain("BODY_MARKER_BETA");
   });
 
   it("returns 404 when an attached spec id does not exist", async () => {
@@ -181,7 +243,7 @@ describe("startRun with attached specs", () => {
     }
   });
 
-  it("preserves spec order when composing", async () => {
+  it("preserves spec order in the loadout pointer", async () => {
     const agent = createAgent({ projectId: testProjectId, name: "cap", adapterKind: "capture-shell" });
     const a = createSpec({ name: "A", content: "first" });
     const b = createSpec({ name: "B", content: "second" });
@@ -196,20 +258,22 @@ describe("startRun with attached specs", () => {
     await waitFor(() => !isRunActive(result.run.id));
 
     const sent = captureAdapter.lastPrompt()!;
-    const idxA = sent.indexOf("first");
-    const idxB = sent.indexOf("second");
-    const idxC = sent.indexOf("third");
+    // 입력 순서대로(C, A, B) loadout 인덱스에 등장.
+    const idxA = sent.indexOf(" A");
+    const idxB = sent.indexOf(" B");
+    const idxC = sent.indexOf(" C");
     expect(idxC).toBeGreaterThan(0);
     expect(idxA).toBeGreaterThan(idxC);
     expect(idxB).toBeGreaterThan(idxA);
   });
 
-  it("works with no specs (backward compatible)", async () => {
+  it("emits no loadout block when there are no specs / mcp servers", async () => {
     const agent = createAgent({ projectId: testProjectId, name: "cap", adapterKind: "capture-shell" });
     const result = await startRun({ agentId: agent.id, prompt: "lonely" });
     if (!result.ok) throw new Error("expected ok");
     expect(result.run.attachedSpecIds).toEqual([]);
     await waitFor(() => !isRunActive(result.run.id));
+    // 빈 loadout이면 블록 자체가 없고 user prompt만.
     expect(captureAdapter.lastPrompt()).toBe("lonely");
   });
 });

@@ -22,6 +22,7 @@ import {
   setRunLogPath,
 } from "../db/runs.js";
 import { replaceRunChanges } from "../db/run-changes.js";
+import { getMcpServersByIds } from "../db/mcp-servers.js";
 import { getSpecsByIds } from "../db/specs.js";
 import { getThread, touchThread } from "../db/threads.js";
 import { runLogger } from "../logger.js";
@@ -33,6 +34,10 @@ import {
 import { diffStat, snapshotWorkTree } from "./git-snapshot.js";
 import { appendChunk, finishLog, startLog } from "./log-store.js";
 import { trackActiveRun, untrackActiveRun } from "./run/active-runs.js";
+import {
+  materializeAgentLoadout,
+  type AgentLoadout,
+} from "./run/agent-loadout.js";
 import { composePrompt } from "./run/prompt-composer.js";
 import {
   makeCostTapper,
@@ -141,12 +146,22 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     input.includeContext && thread?.contextBundle
       ? thread.contextBundle
       : "";
-  const composedPrompt = composePrompt(
-    input.prompt,
+
+  // Loadout — 스킬 파일 + (해당하면) MCP 설정을 ~/.loom/data/agents/<id>/에
+  // 펼쳐 두고, 그 경로를 프롬프트에 짧게 안내. 에이전트가 필요할 때 Read.
+  const mcpServers = getMcpServersByIds(agent.mcpServerIds ?? []);
+  const loadout: AgentLoadout = materializeAgentLoadout(
+    agent,
     allSkills,
-    agent.prompt,
-    threadContext,
+    mcpServers,
   );
+
+  const composedPrompt = composePrompt({
+    userPrompt: input.prompt,
+    agentPrompt: agent.prompt,
+    threadContext,
+    loadout,
+  });
 
   // 이 thread+agent에서 가장 최근 CLI session id (poison된 건 자동 스킵).
   // freshSession=true면 명시적으로 새로 시작 — 이전 컨텍스트가 엉킨 경우의 탈출구.
@@ -182,6 +197,8 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     composedPrompt,
     cwd,
     resumeSessionId,
+    loadout,
+    mcpServers,
     abort,
   );
 
@@ -195,6 +212,8 @@ async function executeRun(
   composedPrompt: string,
   cwd: string,
   resumeSessionId: string | undefined,
+  loadout: AgentLoadout,
+  mcpServers: ReturnType<typeof getMcpServersByIds>,
   abort: AbortController,
 ): Promise<void> {
   const log = runLogger(runId, {
@@ -236,6 +255,13 @@ async function executeRun(
         env: projectEnv,
         signal: abort.signal,
         resumeSessionId,
+        // MCP 주입 — 어댑터가 자기 CLI에 맞게 처리:
+        //   claude-code → --mcp-config <path> --strict-mcp-config
+        //   gemini      → --allowed-mcp-server-names ...
+        //   codex       → -c mcp_servers.X.{command|args|env|...}=...
+        //   opencode    → 미지원 (런타임 override 없음 — 카탈로그 ref만)
+        mcpConfigPath: loadout.mcpConfigPath ?? undefined,
+        mcpServers,
         onStdout: (chunk) => {
           appendChunk(runId, "stdout", chunk);
           tapCost(chunk);

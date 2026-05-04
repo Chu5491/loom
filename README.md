@@ -54,10 +54,10 @@ It looks like a chat app and a tiny pixel office — but underneath it's git wor
 
 | Adapter | Command | Input mode | What it surfaces |
 |---|---|---|---|
-| **Claude Code** | `claude` | stdin (`--print -`) | session_id · tool_use · cost · MCP calls |
-| **Gemini CLI** | `gemini` | stdin (non-TTY) | _adapter scaffolded_ |
-| **Codex** | `codex exec` | last arg | _adapter scaffolded_ |
-| **OpenCode** | `opencode run` | last arg | _adapter scaffolded_ |
+| **Claude Code** | `claude` | stdin (`--print -`) | session_id · tool_use · cost · MCP via `--mcp-config + --strict-mcp-config` |
+| **Gemini CLI** | `gemini` | `--prompt` arg | tool_use · MCP filtered via `--allowed-mcp-server-names` (servers must be in user's `settings.json`) |
+| **Codex** | `codex exec` | stdin | tool_use · MCP injected via `-c mcp_servers.<name>.…=…` overrides |
+| **OpenCode** | `opencode run` | last arg | tool_use · MCP catalog reference only (no runtime override flag) |
 
 _If it speaks stdout one event at a time, it can move into the office._
 
@@ -71,24 +71,32 @@ loom is **alpha** — usable locally, but not yet hardened for production or sha
 
 | Area | What works |
 |---|---|
-| **claude-code adapter** | stream-json parsing, session resume with poison cascade, cost capture, tool extraction |
+| **claude-code adapter** | stream-json parsing, session resume with poison cascade, cost capture, tool extraction, **MCP injection** (`--mcp-config + --strict-mcp-config`) |
+| **gemini / codex / opencode adapters** | wired in, prompt path verified, MCP injection per CLI (filter / per-key / catalog-ref — see below) |
+| **System skills + MCP catalog** | `/skills` and `/mcps` top-level, agent loadout writes per-agent files at `~/.loom/data/agents/<id>/` |
+| **Loadout-pointer prompts** | skill *content* lives on disk, prompt only carries `path/skill-name.md` index — agent reads on demand |
 | **Threads + Runs** | full lifecycle, SSE log streaming, per-thread git worktree, `run_changes` persistence |
-| **Office view** | pixel diorama, character state machine (idle / walking / sitting), live speech bubbles |
+| **Office view** | pixel diorama, character state machine, live speech bubbles |
 | **Chat dock** | VS Code-terminal pattern, ⌘J toggle, persisted height, ThreadList sidebar |
 | **File workspace** | live presence dots, diff viewer per run, file-history rail, ⌘P palette |
 | **Open in IDE** | VS Code / Cursor / Antigravity / Zed / IntelliJ — PATH → app bundle → `open -a` fallback |
 | **Per-project env** | shared API keys per project, agent-level overrides, lower priority than agent env |
-| **Specs (markdown skills)** | attach per message, never auto-injected |
 | **Light / dark theme** | full coverage including pixel sprites and the office room |
 
-### 🚧 In development — wired but not yet primary
+### MCP injection per CLI (real-world honesty)
+
+| Adapter | How loom delivers MCP servers | What you must do yourself |
+|---|---|---|
+| **claude-code** | Writes a `.mcp.json` per run, passes `--mcp-config <path> --strict-mcp-config`. loom is the source of truth. | Nothing. |
+| **gemini** | `--allowed-mcp-server-names <names>` filters the user's existing `~/.gemini/settings.json`. | Register the server in `~/.gemini/settings.json` first; loom only filters. |
+| **codex** | Emits one `-c mcp_servers.<name>.command="..."` (and args/env/...) per server. loom is the source of truth via overrides. | Nothing. |
+| **opencode** | **No runtime override flag.** loom shows the server in the agent's loadout README/prompt as a reference; you'd have to put it in `opencode.json` separately. | Add the server to `opencode.json` in the cwd. |
+
+### 🚧 In development
 
 | Area | What's missing |
 |---|---|
-| **gemini adapter** | `defineCliAdapter` skeleton in place; needs registry hookup + a smoke run |
-| **codex adapter** | same — argv-mode prompt instead of stdin |
-| **opencode adapter** | same — `opencode run <prompt>` |
-| **MCP server pills** | extracted and surfaced on desks, but no per-server config UI yet |
+| **opencode MCP injection** | upstream lacks a runtime flag; we'd need to write `opencode.json` to the (worktree) cwd, but that risks clobbering user-managed checkout files |
 | **Diff-driven PR creation** | branch + before/after refs are captured; no PR button yet |
 | **Run logs full-text search** | logs persist on disk; no search index yet |
 

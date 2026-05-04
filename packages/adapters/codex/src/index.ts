@@ -1,5 +1,5 @@
 import { defineCliAdapter } from "@loom/adapter-utils";
-import type { AdapterConfig, BuiltCommand } from "@loom/core";
+import type { AdapterConfig, BuiltCommand, McpServer } from "@loom/core";
 
 export { codexManifest } from "./manifest.js";
 export { codexProbe } from "./probe.js";
@@ -36,9 +36,48 @@ export function buildCodexCommand(config: CodexConfig = {}): BuiltCommand {
   return { command, args };
 }
 
+/** McpServer → codex `-c` 오버라이드 인자들. codex는 `-c key=value`로 TOML
+ *  설정 단일 키를 덮어쓸 수 있어, 한 서버의 모든 항목을 dot-path로 풀어 넘김.
+ *  값은 JSON 인코딩 (string은 따옴표로, array/number는 그대로). */
+export function toCodexMcpOverrides(server: McpServer): string[] {
+  const prefix = `mcp_servers.${server.name}`;
+  const out: string[] = [];
+  if (server.kind === "stdio") {
+    if (server.command) {
+      out.push("-c", `${prefix}.command=${JSON.stringify(server.command)}`);
+    }
+    if (server.args.length > 0) {
+      out.push("-c", `${prefix}.args=${JSON.stringify(server.args)}`);
+    }
+    for (const [k, v] of Object.entries(server.env)) {
+      out.push("-c", `${prefix}.env.${k}=${JSON.stringify(v)}`);
+    }
+  } else {
+    if (server.url) {
+      out.push("-c", `${prefix}.url=${JSON.stringify(server.url)}`);
+    }
+    for (const [k, v] of Object.entries(server.headers)) {
+      out.push("-c", `${prefix}.http_headers.${k}=${JSON.stringify(v)}`);
+    }
+  }
+  out.push("-c", `${prefix}.enabled=true`);
+  return out;
+}
+
 export const codexAdapter = defineCliAdapter<CodexConfig>({
   kind: "codex",
   buildCommand: buildCodexCommand,
   prompt: { via: "stdin" },
   resolveEnv: (cfg) => cfg.env ?? {},
+  // codex는 `-c key=value`로 TOML 한 줄씩 덮어쓰기. 서버마다 command/args/env를
+  // dot-path로 풀어 인자에 넣음. 트레일링 `-` (stdin marker) 앞에 splice.
+  applyMcpServers: ({ args, servers }) => {
+    if (servers.length === 0) return args;
+    const overrides = servers.flatMap(toCodexMcpOverrides);
+    const last = args[args.length - 1];
+    if (last === "-") {
+      return [...args.slice(0, -1), ...overrides, "-"];
+    }
+    return [...args, ...overrides];
+  },
 });

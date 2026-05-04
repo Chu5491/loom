@@ -35,4 +35,16 @@ export const geminiAdapter = defineCliAdapter<GeminiConfig>({
   buildCommand: buildGeminiCommand,
   prompt: { via: "arg", flag: "--prompt" },
   resolveEnv: (cfg) => cfg.env ?? {},
+  // gemini는 런타임에 새 MCP 서버를 등록할 수 없음 — 사용자가 자기
+  // ~/.gemini/settings.json에 등록해둔 서버 중에서 화이트리스트로 제한만 가능.
+  // 따라서 loom의 권한 모델은 "gemini가 이미 알고 있는 서버 중 이 에이전트에
+  // 허용된 이름들로 추렴"으로 동작. 설정에 없는 이름은 그냥 묻혀버림.
+  applyMcpServers: ({ args, servers }) => {
+    if (servers.length === 0) return args;
+    return [
+      ...args,
+      "--allowed-mcp-server-names",
+      ...servers.map((s) => s.name),
+    ];
+  },
 });
