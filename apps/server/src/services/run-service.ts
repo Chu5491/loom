@@ -66,6 +66,9 @@ export interface StartRunInput {
   attachedSpecIds?: string[];
   /** opt-in: thread.contextBundle을 *이 run의* 프롬프트 앞에 붙임. 자동 주입 절대 안 함. */
   includeContext?: boolean;
+  /** true면 이번 run에 `--resume <session_id>`를 안 붙임. CLI가 fresh
+   *  session id를 새로 발행하고, 다음 run부터는 그걸 이어가게 됨. */
+  freshSession?: boolean;
 }
 
 export type StartRunResult =
@@ -146,10 +149,12 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   );
 
   // 이 thread+agent에서 가장 최근 CLI session id (poison된 건 자동 스킵).
-  const resumeSessionId = threadId.id
-    ? getLatestSessionId({ threadId: threadId.id, agentId: agent.id }) ??
-      undefined
-    : undefined;
+  // freshSession=true면 명시적으로 새로 시작 — 이전 컨텍스트가 엉킨 경우의 탈출구.
+  const resumeSessionId =
+    !input.freshSession && threadId.id
+      ? getLatestSessionId({ threadId: threadId.id, agentId: agent.id }) ??
+        undefined
+      : undefined;
 
   const pendingRun = createRun({
     agentId: agent.id,

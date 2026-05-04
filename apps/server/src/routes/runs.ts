@@ -19,6 +19,9 @@ const createSchema = z.object({
   parentRunId: z.string().nullable().optional(),
   attachedSpecIds: z.array(z.string()).optional(),
   includeContext: z.boolean().optional(),
+  /** true면 이번 run에서 `--resume`을 넘기지 않음 — 이전 세션과 끊고 fresh.
+   *  CLI가 새 session_id를 발행하면 다음 run부터는 그걸 이어가게 됨. */
+  freshSession: z.boolean().optional(),
 });
 
 const runStatusSchema = z.enum([

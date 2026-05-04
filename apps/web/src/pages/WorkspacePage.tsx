@@ -454,15 +454,12 @@ export function WorkspacePage() {
           <section className="flex-1 min-w-0 min-h-0 flex flex-col">
             {view === "office" ? (
               <Office
-                projectId={p.id}
                 agents={agentList}
-                runs={projectRuns}
                 workingIds={workingIds}
                 touchingIds={touchingIds}
                 activeTouches={activeTouchesQuery.data?.touches ?? []}
                 activeTools={activeToolsQuery.data?.tools ?? []}
                 activeThread={activeThread}
-                onPickFile={openFile}
                 onPickAgent={(id) => setAgentIds([id])}
               />
             ) : showEditor ? (

@@ -118,6 +118,25 @@ export function AgentMessage({
             {isActive ? <span className="size-1 rounded-full bg-current animate-pulse" /> : null}
             {t(`status.${run.status}`)}
           </Badge>
+          {/* 세션 상태 — 이 run이 이전 대화를 이어왔는지(resumed) 새로
+              시작했는지(fresh)를 한 글자로 표시. 디버깅 + 컨텍스트 추적용. */}
+          {run.resumedSessionId ? (
+            <span
+              className="text-[9px] mono text-sky-700 dark:text-sky-400"
+              title={t("run.resume.fromSession", {
+                id: run.resumedSessionId.slice(0, 8),
+              })}
+            >
+              ↪
+            </span>
+          ) : (
+            <span
+              className="text-[9px] mono text-amber-700 dark:text-amber-400"
+              title={t("run.resume.fresh")}
+            >
+              ✦
+            </span>
+          )}
           {run.costUsd !== null && run.costUsd !== undefined ? (
             <span
               className="text-[10px] text-muted-foreground/70 mono"

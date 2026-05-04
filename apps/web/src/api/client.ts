@@ -113,6 +113,9 @@ export interface CreateRunBody {
   /** When true and the thread has a context bundle, prepend it to the
    *  composed prompt for this run. Opt-in per-send. */
   includeContext?: boolean;
+  /** When true, do not pass `--resume <id>` for this run. The CLI starts
+   *  a fresh session id; subsequent runs in the thread pick up from there. */
+  freshSession?: boolean;
 }
 
 export interface CreateThreadBody {

@@ -95,6 +95,15 @@ export function ChatDock({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // 외부에서 dock을 강제로 열 수 있게 — 사무실에서 캐릭터 클릭 시 "여기 채팅
+  // 시작해" 신호용. 닫기는 사용자가 명시적으로(닫기 버튼) 하길 바라므로 이 이벤트는
+  // open=true로만 동작.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("loom:openChatDock", onOpen);
+    return () => window.removeEventListener("loom:openChatDock", onOpen);
+  }, []);
+
   useEffect(() => {
     storeBool(OPEN_KEY, open);
   }, [open]);

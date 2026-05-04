@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
-import { Paperclip, Send } from "lucide-react";
+import { Paperclip, Send, Sparkles } from "lucide-react";
 import type { AdapterManifest, Agent } from "@loom/core";
 import { api } from "../../api/client.js";
 import { Button } from "../ui/button.js";
@@ -132,6 +132,11 @@ export function Composer({
     }
   }, [attachKey, attachContext]);
 
+  // "fresh session" 토글 — true면 다음 send에서 --resume 안 붙임. 한 번 켜면
+  // 그 thread 내내 켜진 채로 유지. 사용자가 의식적으로 새 세션을 시작하고
+  // 싶을 때(이전 컨텍스트가 다른 일이라 헷갈릴 때)의 명시적 탈출구.
+  const [freshSession, setFreshSession] = useState(false);
+
   const setTarget = (id: string) => onAgentIdsChange([id]);
   const target = agents.find((a) => a.id === agentIds[0]) ?? null;
   const placeholder = target
@@ -148,12 +153,16 @@ export function Composer({
         prompt: text,
         threadId: threadId ?? null,
         includeContext: attachContext && threadHasContext,
+        freshSession,
       });
       const newId = r.run.threadId;
       if (newId && newId !== threadId) onThreadCreated?.(newId);
       qc.invalidateQueries({ queryKey: ["runs"] });
       qc.invalidateQueries({ queryKey: ["threads"] });
       setText("");
+      // 한 번 보내고 나면 "fresh"는 이미 효과 봤으니 자동으로 꺼짐 — 무심코
+      // 다음 메시지에 또 fresh가 적용되어 컨텍스트가 끊기는 사고 방지.
+      setFreshSession(false);
       onSent();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -316,6 +325,30 @@ export function Composer({
                 </span>
               </button>
             ) : null}
+            {/* "fresh session" 토글 — 켜면 다음 send에 --resume 안 붙음. 이전
+                대화가 다른 일이라 헷갈리는 경우의 명시적 탈출구. 한 번 보내면
+                자동으로 꺼짐. */}
+            <button
+              type="button"
+              onClick={() => setFreshSession((v) => !v)}
+              title={
+                freshSession
+                  ? t("chat.composer.freshOn")
+                  : t("chat.composer.freshOff")
+              }
+              aria-pressed={freshSession}
+              className={cn(
+                "inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] transition-colors",
+                freshSession
+                  ? "text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted",
+              )}
+            >
+              <Sparkles className="size-3" />
+              <span className="hidden @[420px]:inline">
+                {t("chat.composer.fresh")}
+              </span>
+            </button>
             {/* Enter 힌트는 dock가 충분히 넓을 때만. 좁으면 잘림이 더 시끄러움. */}
             <span className="text-[10px] text-muted-foreground/70 hidden @[520px]:inline">
               {t("chat.composer.hint")}
