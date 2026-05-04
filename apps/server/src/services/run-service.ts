@@ -255,11 +255,14 @@ async function executeRun(
         env: projectEnv,
         signal: abort.signal,
         resumeSessionId,
-        // MCP 주입 — 어댑터가 자기 CLI에 맞게 처리:
-        //   claude-code → --mcp-config <path> --strict-mcp-config
+        // 로드아웃/MCP 주입 — 어댑터가 자기 CLI에 맞게 처리:
+        //   claude-code → --add-dir <loadoutDir> (Read 권한) +
+        //                  --mcp-config <path> --strict-mcp-config
         //   gemini      → --allowed-mcp-server-names ...
         //   codex       → -c mcp_servers.X.{command|args|env|...}=...
-        //   opencode    → 미지원 (런타임 override 없음 — 카탈로그 ref만)
+        //   opencode    → write loadoutDir/xdg/opencode/opencode.json +
+        //                  XDG_CONFIG_HOME / OPENCODE_DISABLE_PROJECT_CONFIG env
+        loadoutDir: loadout.dir,
         mcpConfigPath: loadout.mcpConfigPath ?? undefined,
         mcpServers,
         onStdout: (chunk) => {

@@ -57,7 +57,7 @@ It looks like a chat app and a tiny pixel office — but underneath it's git wor
 | **Claude Code** | `claude` | stdin (`--print -`) | session_id · tool_use · cost · MCP via `--mcp-config + --strict-mcp-config` |
 | **Gemini CLI** | `gemini` | `--prompt` arg | tool_use · MCP filtered via `--allowed-mcp-server-names` (servers must be in user's `settings.json`) |
 | **Codex** | `codex exec` | stdin | tool_use · MCP injected via `-c mcp_servers.<name>.…=…` overrides |
-| **OpenCode** | `opencode run` | last arg | tool_use · MCP catalog reference only (no runtime override flag) |
+| **OpenCode** | `opencode run` | last arg | tool_use · MCP via XDG override (`XDG_CONFIG_HOME` + `OPENCODE_DISABLE_PROJECT_CONFIG`) |
 
 _If it speaks stdout one event at a time, it can move into the office._
 
@@ -90,13 +90,12 @@ loom is **alpha** — usable locally, but not yet hardened for production or sha
 | **claude-code** | Writes a `.mcp.json` per run, passes `--mcp-config <path> --strict-mcp-config`. loom is the source of truth. | Nothing. |
 | **gemini** | `--allowed-mcp-server-names <names>` filters the user's existing `~/.gemini/settings.json`. | Register the server in `~/.gemini/settings.json` first; loom only filters. |
 | **codex** | Emits one `-c mcp_servers.<name>.command="..."` (and args/env/...) per server. loom is the source of truth via overrides. | Nothing. |
-| **opencode** | **No runtime override flag.** loom shows the server in the agent's loadout README/prompt as a reference; you'd have to put it in `opencode.json` separately. | Add the server to `opencode.json` in the cwd. |
+| **opencode** | Reads user's existing `~/.config/opencode/opencode.json`, merges loom's MCP servers in, writes the merged config to `<loadoutDir>/xdg/opencode/opencode.json`, then spawns with `XDG_CONFIG_HOME=<loadoutDir>/xdg` + `OPENCODE_DISABLE_PROJECT_CONFIG=1` so the CLI reads loom's file instead of the user's. | Nothing — model/auth from your real config carries over. |
 
 ### 🚧 In development
 
 | Area | What's missing |
 |---|---|
-| **opencode MCP injection** | upstream lacks a runtime flag; we'd need to write `opencode.json` to the (worktree) cwd, but that risks clobbering user-managed checkout files |
 | **Diff-driven PR creation** | branch + before/after refs are captured; no PR button yet |
 | **Run logs full-text search** | logs persist on disk; no search index yet |
 

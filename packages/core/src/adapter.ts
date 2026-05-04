@@ -18,6 +18,12 @@ export interface SpawnArgs {
    *  CLI doesn't accept a config-file flag use this to emit per-key
    *  overrides (codex `-c`) or to filter (gemini `--allowed-mcp-server-names`). */
   mcpServers?: McpServer[];
+  /** Path to the agent's per-run loadout directory — contains skills/<>.md
+   *  and (optionally) mcp.json. Adapters use this to grant the CLI access
+   *  to those files (claude-code `--add-dir`) or to render their own
+   *  CLI-format config inside it (opencode `<dir>/opencode/opencode.json`
+   *  + XDG_CONFIG_HOME override). */
+  loadoutDir?: string;
   onStdout: (chunk: string) => void;
   onStderr: (chunk: string) => void;
 }

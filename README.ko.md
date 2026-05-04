@@ -57,7 +57,7 @@ loom은 Node.js 서버 + React UI로, 여러 CLI 코딩 에이전트(Claude Code
 | **Claude Code** | `claude` | stdin (`--print -`) | session_id · tool_use · 비용 · MCP는 `--mcp-config + --strict-mcp-config`로 주입 |
 | **Gemini CLI** | `gemini` | `--prompt` 인자 | tool_use · MCP는 `--allowed-mcp-server-names`로 필터 (서버는 사용자 `settings.json`에 등록되어 있어야 함) |
 | **Codex** | `codex exec` | stdin | tool_use · MCP는 `-c mcp_servers.<name>.…=…` override로 주입 |
-| **OpenCode** | `opencode run` | 마지막 인자 | tool_use · MCP는 카탈로그 reference만 (런타임 override 플래그 없음) |
+| **OpenCode** | `opencode run` | 마지막 인자 | tool_use · MCP는 XDG override (`XDG_CONFIG_HOME` + `OPENCODE_DISABLE_PROJECT_CONFIG`) |
 
 _stdout으로 한 이벤트씩 말할 수 있다면, 사무실에 입주 가능._
 
@@ -90,13 +90,12 @@ loom은 **알파**입니다 — 로컬에서 쓸 수 있지만, 운영이나 공
 | **claude-code** | run마다 `.mcp.json`을 써서 `--mcp-config <path> --strict-mcp-config`로 전달. loom이 정본. | 없음. |
 | **gemini** | `--allowed-mcp-server-names <names>`로 사용자의 `~/.gemini/settings.json` 필터. | 서버를 `~/.gemini/settings.json`에 먼저 등록 — loom은 필터만. |
 | **codex** | 서버마다 `-c mcp_servers.<name>.command="..."` (+args/env/...) override 발행. loom이 정본. | 없음. |
-| **opencode** | **런타임 override 플래그 없음.** loom은 에이전트의 loadout README/프롬프트에 reference만 표시. | 별도로 `opencode.json`에 추가. |
+| **opencode** | 사용자의 기존 `~/.config/opencode/opencode.json`을 읽어 loom의 MCP 서버만 합쳐서 `<loadoutDir>/xdg/opencode/opencode.json`에 저장, `XDG_CONFIG_HOME=<loadoutDir>/xdg` + `OPENCODE_DISABLE_PROJECT_CONFIG=1`로 spawn → CLI가 사용자 파일이 아닌 loom 파일을 읽음. | 없음 — 모델/auth 같은 사용자 설정은 그대로 보존. |
 
 ### 🚧 개발 중
 
 | 영역 | 남은 일 |
 |---|---|
-| **opencode MCP 주입** | upstream에 런타임 플래그가 없음. cwd(워크트리)에 `opencode.json`을 쓸 수도 있지만 사용자 체크아웃 파일을 덮어쓸 위험 |
 | **Diff 기반 PR 생성** | 브랜치 + before/after refs 캡처는 됨. PR 버튼이 아직 없음 |
 | **런 로그 전문 검색** | 로그는 디스크에 영속됨. 검색 인덱스가 아직 없음 |
 

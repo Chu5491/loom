@@ -72,12 +72,12 @@ export const codexAdapter = defineCliAdapter<CodexConfig>({
   // codex는 `-c key=value`로 TOML 한 줄씩 덮어쓰기. 서버마다 command/args/env를
   // dot-path로 풀어 인자에 넣음. 트레일링 `-` (stdin marker) 앞에 splice.
   applyMcpServers: ({ args, servers }) => {
-    if (servers.length === 0) return args;
+    if (servers.length === 0) return { args };
     const overrides = servers.flatMap(toCodexMcpOverrides);
     const last = args[args.length - 1];
     if (last === "-") {
-      return [...args.slice(0, -1), ...overrides, "-"];
+      return { args: [...args.slice(0, -1), ...overrides, "-"] };
     }
-    return [...args, ...overrides];
+    return { args: [...args, ...overrides] };
   },
 });

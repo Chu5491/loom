@@ -40,20 +40,29 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
    *  file edits) so the Office view can show what each agent is reaching
    *  for in real time — Read / Bash / Grep / mcp__server__method, etc. */
   extractToolUses?(chunk: string): ToolUse[];
-  /** Optional: splice CLI flags / write files needed to expose the given
-   *  MCP servers to this run.
-   *    - claude-code → `--mcp-config <mcpConfigPath> --strict-mcp-config`
+  /** Optional: splice CLI flags / write files / set env vars needed to
+   *  expose the agent's loadout (skills + MCP servers) to this run. Called
+   *  on every spawn when there's anything to expose (servers OR a loadout
+   *  dir). Adapter decides what's relevant.
+   *    - claude-code → `--add-dir <loadoutDir>` so Read permits the loadout
+   *                     files; `--mcp-config <mcpConfigPath> --strict-mcp-config`
+   *                     when servers are assigned.
    *    - gemini      → `--allowed-mcp-server-names <name...>` (filters
-   *                     the user's existing settings.json)
-   *    - codex       → `-c mcp_servers.<name>.command="..."` per server
-   *    - opencode    → no runtime override; this hook stays undefined.
-   *  Receives both the raw McpServer[] and the path to the pre-rendered
-   *  claude-code-format JSON if it was written. */
-  applyMcpServers?(args: {
+   *                     the user's existing settings.json).
+   *    - codex       → `-c mcp_servers.<name>.command="..."` per server.
+   *    - opencode    → write `<loadoutDir>/xdg/opencode/opencode.json`,
+   *                     return env { XDG_CONFIG_HOME, OPENCODE_DISABLE_PROJECT_CONFIG }.
+   *  Returns possibly-modified args + optional env additions. The env
+   *  layers on top of (and wins over) project + adapter resolveEnv. */
+  applyMcpServers?(input: {
     args: string[];
     servers: McpServer[];
     mcpConfigPath: string | null;
-  }): string[];
+    loadoutDir: string | null;
+  }): {
+    args: string[];
+    env?: Record<string, string>;
+  };
 }
 
 export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
@@ -80,25 +89,32 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
         spawnArgs.resumeSessionId && def.applyResume
           ? def.applyResume(built.args, spawnArgs.resumeSessionId)
           : built.args;
-      // MCP 주입은 prompt 적용 *전에* 한다. 프롬프트가 argv 마지막에 박히는
-      // 어댑터(opencode, gemini-via-arg)에선 그 뒤에 더 못 넣음.
-      const argsWithMcp =
-        def.applyMcpServers && (spawnArgs.mcpServers?.length ?? 0) > 0
+      // 로드아웃/MCP 적용은 prompt 적용 *전에* — 프롬프트가 argv 마지막에 박히는
+      // 어댑터(opencode trailing positional, gemini --prompt)에선 그 뒤에 더
+      // 못 넣음. servers가 비어도 loadoutDir만으로 호출 — claude-code의 --add-dir
+      // 같은 권한 부여가 servers와 무관하게 필요할 수 있어서.
+      const hasLoadout = !!spawnArgs.loadoutDir;
+      const hasServers = (spawnArgs.mcpServers?.length ?? 0) > 0;
+      const mcpApplied =
+        def.applyMcpServers && (hasLoadout || hasServers)
           ? def.applyMcpServers({
               args: baseArgs,
-              servers: spawnArgs.mcpServers!,
+              servers: spawnArgs.mcpServers ?? [],
               mcpConfigPath: spawnArgs.mcpConfigPath ?? null,
+              loadoutDir: spawnArgs.loadoutDir ?? null,
             })
-          : baseArgs;
-      const { args, stdin } = applyPrompt(argsWithMcp, spawnArgs.prompt, promptMode);
+          : { args: baseArgs };
+      const { args, stdin } = applyPrompt(mcpApplied.args, spawnArgs.prompt, promptMode);
       return spawnProcess({
         command: built.command,
         args,
         cwd: spawnArgs.cwd,
-        // Priority (last-spread-wins): caller spawnArgs.env (project-level)
-        // < cfgEnv (adapter resolveEnv → agent's adapterConfig.env). Agent
-        // settings override project defaults; adapter knows its own needs.
-        env: { ...spawnArgs.env, ...cfgEnv },
+        // Priority (last-spread-wins):
+        //   spawnArgs.env (project-level) < cfgEnv (adapter resolveEnv →
+        //   agent's adapterConfig.env) < mcpApplied.env (run-time overrides
+        //   for XDG_CONFIG_HOME / OPENCODE_DISABLE_PROJECT_CONFIG / etc.).
+        // mcpApplied.env wins because it's the most specific to this run.
+        env: { ...spawnArgs.env, ...cfgEnv, ...(mcpApplied.env ?? {}) },
         stdin,
         signal: spawnArgs.signal,
         onStdout: spawnArgs.onStdout,

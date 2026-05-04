@@ -40,11 +40,13 @@ export const geminiAdapter = defineCliAdapter<GeminiConfig>({
   // 따라서 loom의 권한 모델은 "gemini가 이미 알고 있는 서버 중 이 에이전트에
   // 허용된 이름들로 추렴"으로 동작. 설정에 없는 이름은 그냥 묻혀버림.
   applyMcpServers: ({ args, servers }) => {
-    if (servers.length === 0) return args;
-    return [
-      ...args,
-      "--allowed-mcp-server-names",
-      ...servers.map((s) => s.name),
-    ];
+    if (servers.length === 0) return { args };
+    return {
+      args: [
+        ...args,
+        "--allowed-mcp-server-names",
+        ...servers.map((s) => s.name),
+      ],
+    };
   },
 });
