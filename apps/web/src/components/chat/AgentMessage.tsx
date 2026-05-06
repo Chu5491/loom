@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import {
@@ -96,6 +96,12 @@ export function AgentMessage({
   const finalText = resultText ?? restingResult.data?.resultText ?? null;
   const hasContent = events.length > 0 || finalText !== null;
 
+  // run 상세 페이지는 /projects/:id/runs/:runId 라우트 — 메시지가 워크스페이스
+  // 안에서 그려지므로 이 useParams 가 항상 채워짐. agent.projectId 도 fallback.
+  const { id: routeProjectId } = useParams<{ id: string }>();
+  const projectId = routeProjectId ?? agent?.projectId ?? "";
+  const runHref = projectId ? `/projects/${projectId}/runs/${run.id}` : "#";
+
   return (
     <MessageRow
       avatar={
@@ -179,7 +185,7 @@ export function AgentMessage({
             />
           )}
           <Button asChild variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-foreground">
-            <Link to={`/runs/${run.id}`} aria-label={t("chat.message.openLog")}>
+            <Link to={runHref} aria-label={t("chat.message.openLog")}>
               <MoreHorizontal />
             </Link>
           </Button>
@@ -241,6 +247,8 @@ function FailedReason({
   status: RunStatus;
 }) {
   const { t } = useI18n();
+  const { id: projectId } = useParams<{ id: string }>();
+  const runHref = projectId ? `/projects/${projectId}/runs/${runId}` : "#";
   const enabled = status === "failed" || status === "cancelled";
   const q = useQuery({
     queryKey: ["run", runId, "error"],
@@ -257,7 +265,7 @@ function FailedReason({
           {t(`status.${status}`)}
         </Badge>
         <Link
-          to={`/runs/${runId}`}
+          to={runHref}
           className="ml-2 text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
         >
           {t("chat.message.openLog")}
@@ -274,7 +282,7 @@ function FailedReason({
         {stderr}
       </pre>
       <Link
-        to={`/runs/${runId}`}
+        to={runHref}
         className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
       >
         {t("chat.message.openLog")}

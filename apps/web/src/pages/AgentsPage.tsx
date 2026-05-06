@@ -230,7 +230,7 @@ function AgentRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 min-w-0">
             <Link
-              to={`/runs?agentId=${a.id}`}
+              to={`/projects/${a.projectId}/runs?agentId=${a.id}`}
               className={cn(
                 "font-semibold tracking-tight hover:underline truncate",
                 cls.text,
