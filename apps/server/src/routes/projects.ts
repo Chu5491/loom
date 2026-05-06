@@ -12,6 +12,7 @@ import {
   replaceProjectEnv,
 } from "../db/project-env.js";
 import { listFileHistoryHydrated, listTouchedPaths } from "../db/run-changes.js";
+import { listActiveRunsByProject } from "../db/runs.js";
 import { listForProject as listActiveTouches } from "../services/active-touches.js";
 import { listToolsForProject } from "../services/active-tools.js";
 import { listAllFiles, listTree, readProjectFile } from "../services/project-fs.js";
@@ -151,6 +152,17 @@ projectsRoute.get("/:id/active-touches", (c) => {
   const project = getProject(id);
   if (!project) return c.json({ error: "not_found" }, 404);
   return c.json({ touches: listActiveTouches(id) });
+});
+
+/**
+ * 진행 중(queued/running) 인 run 목록. 사용자가 프로젝트를 떠나려고 할 때
+ * "지금 N개 돌고 있어요" 알림을 띄우기 위한 가벼운 카운트 + 본문.
+ */
+projectsRoute.get("/:id/active-runs", (c) => {
+  const id = c.req.param("id");
+  const project = getProject(id);
+  if (!project) return c.json({ error: "not_found" }, 404);
+  return c.json({ runs: listActiveRunsByProject(id) });
 });
 
 /**

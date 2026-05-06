@@ -135,6 +135,21 @@ export function listRuns(filter: ListRunsFilter = {}): Run[] {
   return rows.map(rowToRun);
 }
 
+/** 한 프로젝트 안에서 진행 중(queued/running) 인 run 들. agent_id 로 join 해
+ *  필터. 사용자가 프로젝트를 떠나기 전에 "지금 N개 돌고 있어요" 알림 띄울 때 사용. */
+export function listActiveRunsByProject(projectId: string): Run[] {
+  const rows = getDb()
+    .prepare<[string], RunRow>(
+      `SELECT r.* FROM runs r
+       JOIN agents a ON r.agent_id = a.id
+       WHERE a.project_id = ?
+         AND r.status IN ('queued', 'running')
+       ORDER BY r.created_at DESC`,
+    )
+    .all(projectId);
+  return rows.map(rowToRun);
+}
+
 export function setRunLogPath(id: string, logPath: string): void {
   getDb().prepare("UPDATE runs SET log_path = ? WHERE id = ?").run(logPath, id);
 }

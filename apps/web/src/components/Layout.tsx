@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useMatch } from "react-router-dom";
 import { ActivityBar, type ActivityKind } from "./ActivityBar.js";
 import { ActivityPanel } from "./ActivityPanel.js";
+import { MainSidebar } from "./MainSidebar.js";
 import { TooltipProvider } from "./ui/tooltip.js";
 
 const ACTIVITY_KEY = "loom:layout:activity";
@@ -15,15 +16,26 @@ export interface LayoutOutletContext {
   setChatFullModal: (next: boolean) => void;
 }
 
-/** Activity bar + optional panel + main outlet. Activity state lives
- *  here so it survives navigation between project routes. */
+/**
+ * 라우트에 따라 사이드바 자체가 바뀜:
+ *
+ *   /  /projects  /skills  /mcps  →  MainSidebar  (200px, labeled, lobby 톤)
+ *   /projects/:id/*                 →  ActivityBar (48px icon rail, IDE 톤)
+ *
+ * lobby 의 페이지들은 풀 너비로 자기 콘텐츠를 다 그리므로 보조 ActivityPanel 이
+ * 따라붙지 않음. project 모드에선 기존처럼 rail + panel 동시.
+ */
 export function Layout() {
+  const projectMatch = useMatch("/projects/:id/*");
+  const inProject = !!projectMatch?.params?.id;
+
   const [activity, setActivity] = useState<ActivityKind>(() => {
     if (typeof window === "undefined") return "projects";
     const raw = window.localStorage.getItem(ACTIVITY_KEY);
     if (raw === "null") return null;
     if (
       raw === "projects" ||
+      raw === "files" ||
       raw === "agents" ||
       raw === "skills" ||
       raw === "mcps" ||
@@ -115,19 +127,32 @@ export function Layout() {
     return () => window.removeEventListener("keydown", onKey);
   }, [chatFullModal]);
 
-  // Full-modal hides the activity panel; clicking any icon exits.
-  const showActivityPanel = !chatFullModal && activity !== null;
+  // lobby 에선 settings 만 패널을 띄움 — 다른 항목은 풀 페이지가 책임.
+  // workshop 에선 모든 active activity 가 패널을 띄움.
+  const showActivityPanel = !chatFullModal && activity !== null && (
+    inProject || activity === "settings"
+  );
 
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen overflow-hidden bg-background">
-        <ActivityBar
-          active={activity}
-          onSelect={(next) => {
-            if (chatFullModal) setChatFullModalState(false);
-            selectActivity(next);
-          }}
-        />
+        {inProject ? (
+          <ActivityBar
+            active={activity}
+            onSelect={(next) => {
+              if (chatFullModal) setChatFullModalState(false);
+              selectActivity(next);
+            }}
+          />
+        ) : (
+          <MainSidebar
+            settingsActive={activity === "settings"}
+            onSettingsClick={() => {
+              if (chatFullModal) setChatFullModalState(false);
+              selectActivity(activity === "settings" ? null : "settings");
+            }}
+          />
+        )}
         {showActivityPanel ? (
           <ActivityPanel
             activity={activity}
