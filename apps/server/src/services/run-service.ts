@@ -23,6 +23,7 @@ import {
 } from "../db/runs.js";
 import { replaceRunChanges } from "../db/run-changes.js";
 import { getMcpServersByIds } from "../db/mcp-servers.js";
+import { getGlobalRule } from "../db/settings.js";
 import { getSpecsByIds } from "../db/specs.js";
 import { getThread, touchThread } from "../db/threads.js";
 import { runLogger } from "../logger.js";
@@ -158,6 +159,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
 
   const composedPrompt = composePrompt({
     userPrompt: input.prompt,
+    globalRule: getGlobalRule(),
     agentPrompt: agent.prompt,
     threadContext,
     loadout,

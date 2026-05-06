@@ -171,6 +171,30 @@ describe("composePrompt", () => {
     expect(composed).toContain("github");
     expect(composed).toContain("context7");
   });
+
+  it("prepends workspace rules above the agent prompt when set", () => {
+    const composed = composePrompt({
+      userPrompt: "task",
+      globalRule: "Always reply in Korean.",
+      agentPrompt: "be terse",
+    });
+    const idxRules = composed.indexOf("=== Workspace Rules ===");
+    const idxAgent = composed.indexOf("=== Agent Instructions ===");
+    const idxTask = composed.indexOf("task");
+    expect(idxRules).toBe(0); // 가장 앞
+    expect(idxAgent).toBeGreaterThan(idxRules);
+    expect(idxTask).toBeGreaterThan(idxAgent);
+    expect(composed).toContain("Always reply in Korean.");
+  });
+
+  it("omits the workspace rules block when global rule is empty / whitespace", () => {
+    expect(
+      composePrompt({ userPrompt: "task", globalRule: "" }),
+    ).not.toContain("Workspace Rules");
+    expect(
+      composePrompt({ userPrompt: "task", globalRule: "   \n\t " }),
+    ).not.toContain("Workspace Rules");
+  });
 });
 
 describe("startRun with attached specs", () => {

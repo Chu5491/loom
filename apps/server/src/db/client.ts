@@ -263,6 +263,23 @@ function applyMigrations(db: DB): void {
       db.exec(`ALTER TABLE mcp_servers ADD COLUMN gemini_synced_at TEXT`);
     }
   });
+
+  migration(db, 16, "loom_settings (single row, global rule)", () => {
+    // 워크스페이스 단위의 단일 설정 묶음. 지금은 global_rule 하나뿐이지만,
+    // 단일 행 KV 테이블로 두면 다음 워크스페이스 settings(예: 기본 모델, default
+    // autonomy)도 컬럼만 추가해 같은 자리에 모이게 됨. gemini_sync 와 같은 패턴.
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS loom_settings (
+         id           INTEGER PRIMARY KEY CHECK (id = 1),
+         global_rule  TEXT NOT NULL DEFAULT '',
+         updated_at   TEXT NOT NULL
+       )`,
+    );
+    db.exec(
+      `INSERT OR IGNORE INTO loom_settings (id, global_rule, updated_at)
+       VALUES (1, '', datetime('now'))`,
+    );
+  });
 }
 
 interface OrphanRunRow {

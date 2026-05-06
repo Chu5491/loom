@@ -12,6 +12,7 @@ import { geminiSyncRoute } from "./routes/gemini-sync.js";
 import { mcpServersRoute } from "./routes/mcp-servers.js";
 import { projectsRoute } from "./routes/projects.js";
 import { runsRoute } from "./routes/runs.js";
+import { settingsRoute } from "./routes/settings.js";
 import { specsRoute } from "./routes/specs.js";
 import { threadsRoute } from "./routes/threads.js";
 
@@ -32,6 +33,7 @@ app.route("/api/specs", specsRoute);
 app.route("/api/mcp-servers", mcpServersRoute);
 app.route("/api/gemini-sync", geminiSyncRoute);
 app.route("/api/runs", runsRoute);
+app.route("/api/settings", settingsRoute);
 app.route("/api/threads", threadsRoute);
 app.route("/api", gitRoute);
 

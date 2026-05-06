@@ -12,6 +12,9 @@ import type { AgentLoadout } from "./agent-loadout.js";
 
 export interface ComposePromptInput {
   userPrompt: string;
+  /** 워크스페이스 전역 룰 — 모든 에이전트가 공통으로 받음. 매 턴 prefix 가
+   *  같으므로 provider 의 prompt cache 가 잘 먹힘. */
+  globalRule?: string;
   agentPrompt?: string;
   threadContext?: string;
   /** 디스크에 펼쳐진 loadout. null이면 인덱스 블록 생략. */
@@ -20,6 +23,14 @@ export interface ComposePromptInput {
 
 export function composePrompt(input: ComposePromptInput): string {
   const sections: string[] = [];
+  // Global rule 이 가장 위 — 사용자가 명시적으로 워크스페이스 단위로 적은 규약.
+  // 자동 주입(AGENTS.md 자동 발견 등)이 아니라 메인 화면에서 사용자가 적은 본문.
+  const g = input.globalRule?.trim();
+  if (g) {
+    sections.push(
+      `=== Workspace Rules ===\n${g}\n=== End Workspace Rules ===`,
+    );
+  }
   const a = input.agentPrompt?.trim();
   if (a) {
     sections.push(
