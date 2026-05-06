@@ -6,12 +6,17 @@ import { getProject } from "../db/projects.js";
 import {
   checkout,
   commit,
+  fetch as gitFetchOp,
+  getCommitFileDiff,
+  getCommitInfo,
   getDiff,
   getLog,
   getStatus,
   getUntrackedDiff,
   listBranches,
   NotAGitRepoError,
+  pull as gitPullOp,
+  push as gitPushOp,
   stage,
   unstage,
 } from "../services/git.js";
@@ -27,6 +32,27 @@ const commitSchema = z.object({
 const checkoutSchema = z.object({
   branch: z.string().min(1),
 });
+const fetchSchema = z
+  .object({
+    remote: z.string().optional(),
+    prune: z.boolean().optional(),
+  })
+  .optional();
+const pullSchema = z
+  .object({
+    remote: z.string().optional(),
+    branch: z.string().optional(),
+    rebase: z.boolean().optional(),
+  })
+  .optional();
+const pushSchema = z
+  .object({
+    remote: z.string().optional(),
+    branch: z.string().optional(),
+    setUpstream: z.boolean().optional(),
+    force: z.boolean().optional(),
+  })
+  .optional();
 
 // 라우트 내부에서 인라인으로 응답 생성 — 헬퍼 추출하면 Context 제네릭 분기가
 // `never`로 좁혀지는 Hono 타입 이슈 발생.
@@ -162,6 +188,101 @@ gitRoute.post("/projects/:id/git/checkout", async (c) => {
   try {
     await checkout(project.path, parsed.data.branch);
     return c.json({ ok: true });
+  } catch (err) {
+    if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
+    return c.json(
+      { error: "git_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
+
+gitRoute.get("/projects/:id/git/commits/:sha", async (c) => {
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "project_not_found" }, 404);
+  const sha = c.req.param("sha");
+  // sha 형식 가벼운 검증 — 영숫자만, 4-64.
+  if (!/^[0-9a-f]{4,64}$/i.test(sha)) {
+    return c.json({ error: "invalid_sha" }, 400);
+  }
+  try {
+    const info = await getCommitInfo(project.path, sha);
+    return c.json({ commit: info });
+  } catch (err) {
+    if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
+    return c.json(
+      { error: "git_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
+
+gitRoute.get("/projects/:id/git/commits/:sha/diff", async (c) => {
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "project_not_found" }, 404);
+  const sha = c.req.param("sha");
+  const path = c.req.query("path");
+  if (!/^[0-9a-f]{4,64}$/i.test(sha)) {
+    return c.json({ error: "invalid_sha" }, 400);
+  }
+  if (!path) return c.json({ error: "missing_path" }, 400);
+  try {
+    const diff = await getCommitFileDiff(project.path, sha, path);
+    return c.json({ diff });
+  } catch (err) {
+    if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
+    return c.json(
+      { error: "git_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
+
+gitRoute.post("/projects/:id/git/fetch", async (c) => {
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "project_not_found" }, 404);
+  const body = await c.req.json().catch(() => null);
+  const parsed = fetchSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid_body" }, 400);
+  try {
+    const result = await gitFetchOp(project.path, parsed.data ?? {});
+    return c.json({ ok: true, output: result.output });
+  } catch (err) {
+    if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
+    return c.json(
+      { error: "git_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
+
+gitRoute.post("/projects/:id/git/pull", async (c) => {
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "project_not_found" }, 404);
+  const body = await c.req.json().catch(() => null);
+  const parsed = pullSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid_body" }, 400);
+  try {
+    const result = await gitPullOp(project.path, parsed.data ?? {});
+    return c.json({ ok: true, output: result.output });
+  } catch (err) {
+    if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
+    return c.json(
+      { error: "git_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
+
+gitRoute.post("/projects/:id/git/push", async (c) => {
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "project_not_found" }, 404);
+  const body = await c.req.json().catch(() => null);
+  const parsed = pushSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid_body" }, 400);
+  try {
+    const result = await gitPushOp(project.path, parsed.data ?? {});
+    return c.json({ ok: true, output: result.output });
   } catch (err) {
     if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
     return c.json(

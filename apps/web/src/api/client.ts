@@ -53,6 +53,18 @@ export interface GitBranchInfo {
   current: boolean;
   upstream: string | null;
   head: string;
+  kind: "local" | "remote";
+}
+export interface GitCommitInfo {
+  sha: string;
+  shortSha: string;
+  parents: string[];
+  authorName: string;
+  authorEmail: string;
+  authoredAt: string;
+  subject: string;
+  body: string;
+  files: GitWorkingChange[];
 }
 
 async function request<T>(
@@ -179,8 +191,23 @@ export interface UpdateSpecBody {
   tags?: string[];
 }
 
+export interface LoomSettings {
+  globalRule: string;
+  updatedAt: string;
+}
+
 export const api = {
   health: () => request<{ status: string; name: string; version: string }>("/api/health"),
+
+  getSettings: () => request<{ settings: LoomSettings }>("/api/settings"),
+  getGlobalRule: () =>
+    request<{ content: string }>("/api/settings/global-rule"),
+  putGlobalRule: (content: string) =>
+    request<{ settings: LoomSettings }>("/api/settings/global-rule", {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    }),
+
 
   listAdapters: () => request<{ adapters: AdapterManifest[] }>("/api/adapters"),
   getAdapter: (kind: string) =>
@@ -257,6 +284,8 @@ export const api = {
     request<{ paths: TouchedPath[] }>(`/api/projects/${id}/touched`),
   getProjectActiveTouches: (id: string) =>
     request<{ touches: ActiveTouch[] }>(`/api/projects/${id}/active-touches`),
+  getProjectActiveRuns: (id: string) =>
+    request<{ runs: Run[] }>(`/api/projects/${id}/active-runs`),
   getProjectActiveTools: (id: string) =>
     request<{ tools: ActiveToolsForAgent[] }>(
       `/api/projects/${id}/active-tools`,
@@ -314,10 +343,47 @@ export const api = {
     request<{ branches: GitBranchInfo[] }>(
       `/api/projects/${id}/git/branches`,
     ),
+  getCommit: (id: string, sha: string) =>
+    request<{ commit: GitCommitInfo }>(
+      `/api/projects/${id}/git/commits/${sha}`,
+    ),
+  getCommitFileDiff: (id: string, sha: string, path: string) =>
+    request<{ diff: string }>(
+      `/api/projects/${id}/git/commits/${sha}/diff?path=${encodeURIComponent(path)}`,
+    ),
   gitCheckout: (id: string, branch: string) =>
     request<{ ok: true }>(`/api/projects/${id}/git/checkout`, {
       method: "POST",
       body: JSON.stringify({ branch }),
+    }),
+  gitFetch: (
+    id: string,
+    opts: { remote?: string; prune?: boolean } = {},
+  ) =>
+    request<{ ok: true; output: string }>(`/api/projects/${id}/git/fetch`, {
+      method: "POST",
+      body: JSON.stringify(opts),
+    }),
+  gitPull: (
+    id: string,
+    opts: { remote?: string; branch?: string; rebase?: boolean } = {},
+  ) =>
+    request<{ ok: true; output: string }>(`/api/projects/${id}/git/pull`, {
+      method: "POST",
+      body: JSON.stringify(opts),
+    }),
+  gitPush: (
+    id: string,
+    opts: {
+      remote?: string;
+      branch?: string;
+      setUpstream?: boolean;
+      force?: boolean;
+    } = {},
+  ) =>
+    request<{ ok: true; output: string }>(`/api/projects/${id}/git/push`, {
+      method: "POST",
+      body: JSON.stringify(opts),
     }),
 
   listAgents: (filter: { projectId?: string } = {}) => {

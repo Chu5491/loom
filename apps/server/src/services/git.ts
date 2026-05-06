@@ -330,27 +330,39 @@ export async function getLog(
 export interface BranchInfo {
   name: string;
   current: boolean;
-  /** 추적하는 upstream의 짧은 이름, 예: origin/main. */
+  /** 추적하는 upstream의 짧은 이름, 예: origin/main. local 만 의미. */
   upstream: string | null;
   head: string;
+  /** local: refs/heads, remote: refs/remotes. UI 가 그룹핑할 때 사용. */
+  kind: "local" | "remote";
 }
 
 export async function listBranches(cwd: string): Promise<BranchInfo[]> {
   if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  // local + remote 둘 다 한 번에 — refs/heads 와 refs/remotes 를 같이 훑음.
+  // remote-tracking 의 origin/HEAD 는 alias 라 필터링.
   const out = await git(cwd, [
     "for-each-ref",
-    "--format=%(refname:short)%x1f%(HEAD)%x1f%(upstream:short)%x1f%(objectname:short)",
+    "--format=%(refname:short)%x1f%(HEAD)%x1f%(upstream:short)%x1f%(objectname:short)%x1f%(refname)",
     "refs/heads",
+    "refs/remotes",
   ]);
   const entries: BranchInfo[] = [];
   for (const line of out.split("\n")) {
     if (!line) continue;
-    const [name, head, upstream, sha] = line.split("\x1f");
+    const [name, head, upstream, sha, fullRef] = line.split("\x1f");
+    if (!name || !fullRef) continue;
+    // origin/HEAD 같은 symref alias 는 스킵 — 실제 브랜치 entry 가 따로 있음.
+    if (fullRef.endsWith("/HEAD")) continue;
+    const kind: "local" | "remote" = fullRef.startsWith("refs/remotes/")
+      ? "remote"
+      : "local";
     entries.push({
-      name: name ?? "",
+      name,
       current: head === "*",
       upstream: upstream ? upstream : null,
       head: sha ?? "",
+      kind,
     });
   }
   return entries;
@@ -359,4 +371,190 @@ export async function listBranches(cwd: string): Promise<BranchInfo[]> {
 export async function checkout(cwd: string, branch: string): Promise<void> {
   if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
   await git(cwd, ["checkout", branch]);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// commit detail (show)
+
+export interface CommitInfo {
+  sha: string;
+  shortSha: string;
+  parents: string[];
+  authorName: string;
+  authorEmail: string;
+  authoredAt: string;
+  subject: string;
+  /** subject 다음 줄들 — body 가 없으면 ""다. */
+  body: string;
+  /** 이 커밋이 건드린 파일들 (M / A / D / R / C 코드 + path). */
+  files: WorkingChange[];
+}
+
+export async function getCommitInfo(
+  cwd: string,
+  sha: string,
+): Promise<CommitInfo> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  // Header (hash, parents, author, subject+body) + body sentinel + name-status.
+  // -z 로 NUL 구분이 가장 안전. %x00 = NUL, %B 는 subject + body.
+  const SEP = "\x1f";
+  const out = await git(cwd, [
+    "show",
+    "--no-patch",
+    "--name-status",
+    "-z",
+    `--format=%H${SEP}%h${SEP}%P${SEP}%an${SEP}%ae${SEP}%aI${SEP}%s${SEP}%b%x00`,
+    sha,
+  ]);
+  // 헤더 + body 까지 첫 NUL 까지 스캔, 그 후가 name-status (NUL 구분).
+  const nullIdx = out.indexOf("\x00");
+  if (nullIdx < 0) {
+    throw new GitCommandError("unexpected git show output", out.slice(0, 200));
+  }
+  const header = out.slice(0, nullIdx);
+  const tail = out.slice(nullIdx + 1);
+  const parts = header.split(SEP);
+  const [
+    fullSha,
+    shortSha,
+    parentsRaw,
+    authorName,
+    authorEmail,
+    authoredAt,
+    subject,
+    body,
+  ] = parts as [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  const parents = parentsRaw ? parentsRaw.split(" ").filter(Boolean) : [];
+
+  // name-status 는 R100\tfrom\tto 또는 status\tpath 형태가 NUL 로 구분.
+  const tokens = tail.split("\x00").filter((t) => t.length > 0);
+  const files: WorkingChange[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const code = tokens[i++]!;
+    const status = code[0]!; // R100 → 'R'
+    if (status === "R" || status === "C") {
+      const fromPath = tokens[i++];
+      const toPath = tokens[i++];
+      if (toPath) files.push({ path: toPath, fromPath, status });
+    } else {
+      const p = tokens[i++];
+      if (p) files.push({ path: p, status });
+    }
+  }
+
+  return {
+    sha: fullSha ?? sha,
+    shortSha: shortSha ?? "",
+    parents,
+    authorName: authorName ?? "",
+    authorEmail: authorEmail ?? "",
+    authoredAt: authoredAt ?? "",
+    subject: subject ?? "",
+    body: body ?? "",
+    files,
+  };
+}
+
+/** 단일 커밋이 한 파일에 가한 변경의 unified diff. parent 가 없는 root 커밋은
+ *  empty-tree 와 비교. merge 커밋(parent 2+) 은 first-parent 와 비교 — 충분치
+ *  않으면 추후 m 옵션 노출. */
+export async function getCommitFileDiff(
+  cwd: string,
+  sha: string,
+  path: string,
+): Promise<string> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  const out = await git(
+    cwd,
+    ["show", "--format=", "--first-parent", sha, "--", path],
+    { maxBuffer: 16 * 1024 * 1024 },
+  );
+  return out;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// remote — fetch / pull / push
+//
+// 인증은 사용자의 git credential helper / ssh-agent 에 위임. loom 은 자격증명을
+// 만지지 않음 — credential 프롬프트가 떠야 하는 상황(HTTPS without helper)이면
+// non-interactive 환경에선 실패. UI 가 stderr 를 보여주면 사용자가 터미널에서
+// 처리할 수 있게.
+
+export interface RemoteResult {
+  /** stdout + stderr 합본 — git 의 진행 출력은 stderr 로 나감. */
+  output: string;
+}
+
+export async function fetch(
+  cwd: string,
+  opts: { remote?: string; prune?: boolean } = {},
+): Promise<RemoteResult> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  const args = ["fetch"];
+  if (opts.prune ?? true) args.push("--prune");
+  // 기본은 --all — 사용자가 특정 remote 만 원하면 명시. 단일 origin 환경에선
+  // --all 이 그대로 origin 가져옴.
+  if (opts.remote) args.push(opts.remote);
+  else args.push("--all");
+  return runRemote(cwd, args);
+}
+
+export async function pull(
+  cwd: string,
+  opts: { remote?: string; branch?: string; rebase?: boolean } = {},
+): Promise<RemoteResult> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  const args = ["pull"];
+  if (opts.rebase) args.push("--rebase");
+  if (opts.remote) args.push(opts.remote);
+  if (opts.branch) args.push(opts.branch);
+  return runRemote(cwd, args);
+}
+
+export async function push(
+  cwd: string,
+  opts: { remote?: string; branch?: string; setUpstream?: boolean; force?: boolean } = {},
+): Promise<RemoteResult> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  const args = ["push"];
+  // setUpstream 이 명시 true 거나, 현재 브랜치가 upstream 없을 때 자동으로 -u.
+  if (opts.setUpstream) args.push("-u");
+  // force-with-lease — 사용자 의도가 force 면 lease 가 그래도 안전망.
+  // 단순 force 는 다른 사람의 푸시를 덮어쓸 수 있어서 lease 만 노출.
+  if (opts.force) args.push("--force-with-lease");
+  if (opts.remote) args.push(opts.remote);
+  if (opts.branch) args.push(opts.branch);
+  return runRemote(cwd, args);
+}
+
+/** fetch/pull/push 공통 실행 — stderr 도 같이 캡처해서 진행 메시지를 살림.
+ *  실패 시 GitCommandError 그대로 던져 라우트가 4xx 매핑. */
+async function runRemote(cwd: string, args: string[]): Promise<RemoteResult> {
+  try {
+    const { stdout, stderr } = await execFile("git", args, {
+      cwd,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return { output: [stderr, stdout].filter(Boolean).join("").trim() };
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message?: string };
+    const stderr = (e.stderr ?? "").toString();
+    if (
+      stderr.includes("not a git repository") ||
+      stderr.includes("fatal: not a git repository")
+    ) {
+      throw new NotAGitRepoError();
+    }
+    throw new GitCommandError(e.message ?? "git failed", stderr);
+  }
 }
