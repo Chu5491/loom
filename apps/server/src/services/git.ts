@@ -341,9 +341,12 @@ export async function listBranches(cwd: string): Promise<BranchInfo[]> {
   if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
   // local + remote 둘 다 한 번에 — refs/heads 와 refs/remotes 를 같이 훑음.
   // remote-tracking 의 origin/HEAD 는 alias 라 필터링.
+  // for-each-ref 의 hex escape 는 `%xx` (e.g. `%1f`) 형태 — `git log` /
+  // `git show` 의 `%xNN` 과 *다름*. `%x1f` 라고 쓰면 실제 0x1f 바이트가 아니라
+  // 리터럴 문자열 "%x1f" 가 박혀나옴. 이전 코드가 그래서 빈 배열을 반환했음.
   const out = await git(cwd, [
     "for-each-ref",
-    "--format=%(refname:short)%x1f%(HEAD)%x1f%(upstream:short)%x1f%(objectname:short)%x1f%(refname)",
+    "--format=%(refname:short)%1f%(HEAD)%1f%(upstream:short)%1f%(objectname:short)%1f%(refname)",
     "refs/heads",
     "refs/remotes",
   ]);
@@ -398,9 +401,10 @@ export async function getCommitInfo(
   // Header (hash, parents, author, subject+body) + body sentinel + name-status.
   // -z 로 NUL 구분이 가장 안전. %x00 = NUL, %B 는 subject + body.
   const SEP = "\x1f";
+  // `--no-patch` 와 `--name-status` 는 같이 못 씀 — `--name-status` 만으로
+  // 이미 patch 없이 이름+상태만. (git 2.45+ 에서 명시적 에러.)
   const out = await git(cwd, [
     "show",
-    "--no-patch",
     "--name-status",
     "-z",
     `--format=%H${SEP}%h${SEP}%P${SEP}%an${SEP}%ae${SEP}%aI${SEP}%s${SEP}%b%x00`,
@@ -435,8 +439,13 @@ export async function getCommitInfo(
   ];
   const parents = parentsRaw ? parentsRaw.split(" ").filter(Boolean) : [];
 
-  // name-status 는 R100\tfrom\tto 또는 status\tpath 형태가 NUL 로 구분.
-  const tokens = tail.split("\x00").filter((t) => t.length > 0);
+  // git show 는 헤더 다음에 빈 줄(`\n`) 을 끼운 뒤 name-status 를 출력.
+  // -z 모드에선 entry 들이 NUL 로 끝나지만, 헤더-바디 사이의 `\n` 은 여전히
+  // 살아있어 첫 token 의 status 코드 앞에 붙음. trimStart 로 잘라줌.
+  const tokens = tail
+    .split("\x00")
+    .map((t) => t.replace(/^\s+/, ""))
+    .filter((t) => t.length > 0);
   const files: WorkingChange[] = [];
   let i = 0;
   while (i < tokens.length) {
