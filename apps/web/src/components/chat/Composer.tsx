@@ -1,11 +1,18 @@
-// 메시지 작성 영역 — 텍스트박스 + 슬래시 메뉴 + 타깃 에이전트 선택 + 컨텍스트 토글 + 전송.
+// 메시지 작성 영역 — 텍스트박스 + @ 파일 / 스킬·MCP 자동완성 + 타깃 에이전트
+// 선택 + 컨텍스트 토글 + 전송.
+//
+// 자동완성 규칙:
+//   `@` → 현재 프로젝트의 파일들. token: `@<path>` (CLI 가 파일 ref 로 인식)
+//   `/` → 현재 에이전트가 가진 skill / MCP. token: `[skill: name]` / `[mcp: name]`
+//          — 본문은 매 run loadout 디렉터리에 펼쳐지므로 이름 언급만으로 충분.
 
-import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { Paperclip, Send, Sparkles } from "lucide-react";
 import type { AdapterManifest, Agent } from "@loom/core";
+import { useParams } from "react-router-dom";
 import { api } from "../../api/client.js";
 import { Button } from "../ui/button.js";
 import {
@@ -19,7 +26,14 @@ import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
 import { agentColorOf, classesFor } from "../agentColor.js";
 import { AgentAvatar } from "./AgentAvatar.js";
-import { SLASH_COMMANDS, type SlashCommand } from "./slashCommands.js";
+import {
+  MentionPicker,
+  applyPick,
+  detectTrigger,
+  type PickItem,
+} from "./MentionPicker.js";
+
+const MAX_FILES_SHOWN = 30;
 
 export function Composer({
   agents,
@@ -48,32 +62,104 @@ export function Composer({
 }) {
   const { t } = useI18n();
   const qc = useQueryClient();
+  const { id: projectId } = useParams<{ id: string }>();
   const [text, setText] = useState(initialDraft ?? "");
+  const [caret, setCaret] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // 슬래시 커맨드 팔레트 — `/`로 시작하고 공백 전까지만 활성.
-  const slashMatch = /^\/([a-z]*)$/i.exec(text);
-  const slashOpen = !!slashMatch;
-  const slashQuery = slashMatch?.[1] ?? "";
-  const slashMatches = slashOpen
-    ? SLASH_COMMANDS.filter((c) =>
-        c.cmd.slice(1).toLowerCase().startsWith(slashQuery.toLowerCase()),
-      )
-    : [];
-  const [slashIndex, setSlashIndex] = useState(0);
-  useEffect(() => {
-    setSlashIndex(0);
-  }, [slashQuery]);
+  const target = agents.find((a) => a.id === agentIds[0]) ?? null;
 
-  const commitSlash = (cmd: SlashCommand) => {
-    const next = `${cmd.cmd} `;
-    setText(next);
+  // 트리거 감지 — text + caret 의 함수.
+  const trigger = useMemo(() => detectTrigger(text, caret), [text, caret]);
+
+  // `@` 일 때만 fetch — 프로젝트 파일은 양이 클 수 있고 picker 가 안 떠있는데
+  // 미리 끌어올 이유가 없음.
+  const filesQuery = useQuery({
+    queryKey: ["projectFilesFlat", projectId],
+    queryFn: () => api.getProjectFilesFlat(projectId!),
+    enabled: !!projectId && trigger?.trigger === "@",
+    staleTime: 30_000,
+  });
+
+  // `/` 일 때만 fetch — 에이전트의 skillIds / mcpServerIds 를 spec / server 로
+  // 풀어옴. listSpecs/listMcpServers 는 풀 카탈로그라 클라가 필터링.
+  const specsQuery = useQuery({
+    queryKey: ["specs"],
+    queryFn: () => api.listSpecs(),
+    enabled: trigger?.trigger === "/",
+    staleTime: 30_000,
+  });
+  const mcpQuery = useQuery({
+    queryKey: ["mcpServers"],
+    queryFn: () => api.listMcpServers(),
+    enabled: trigger?.trigger === "/",
+    staleTime: 30_000,
+  });
+
+  // 트리거에 따라 목록 구성.
+  const items = useMemo<PickItem[]>(() => {
+    if (!trigger) return [];
+    const q = trigger.query.toLowerCase();
+
+    if (trigger.trigger === "@") {
+      const paths = filesQuery.data?.paths ?? [];
+      const filtered = paths.filter((p) => p.toLowerCase().includes(q));
+      return filtered.slice(0, MAX_FILES_SHOWN).map<PickItem>((p) => {
+        const slash = p.lastIndexOf("/");
+        const dir = slash >= 0 ? p.slice(0, slash) : "";
+        return {
+          kind: "file",
+          token: `@${p}`,
+          label: p,
+          meta: dir || undefined,
+        };
+      });
+    }
+
+    // `/` — 현재 에이전트의 skill + MCP. 에이전트 없으면 빈 배열.
+    if (!target) return [];
+    const skillIds = new Set(target.skillIds);
+    const mcpIds = new Set(target.mcpServerIds);
+    const skills = (specsQuery.data?.specs ?? [])
+      .filter((s) => skillIds.has(s.id))
+      .filter((s) => s.name.toLowerCase().includes(q))
+      .map<PickItem>((s) => ({
+        kind: "skill",
+        token: `[skill: ${s.name}]`,
+        label: s.name,
+      }));
+    const mcps = (mcpQuery.data?.servers ?? [])
+      .filter((m) => mcpIds.has(m.id))
+      .filter((m) => m.name.toLowerCase().includes(q))
+      .map<PickItem>((m) => ({
+        kind: "mcp",
+        token: `[mcp: ${m.name}]`,
+        label: m.name,
+        meta: m.kind,
+      }));
+    return [...skills, ...mcps];
+  }, [trigger, filesQuery.data, specsQuery.data, mcpQuery.data, target]);
+
+  const [pickerIndex, setPickerIndex] = useState(0);
+  useEffect(() => {
+    setPickerIndex(0);
+  }, [trigger?.trigger, trigger?.query]);
+
+  // 트리거가 살아있는 동안은 picker 가 떠있다고 판단 — items 가 비어 있어도
+  // empty hint 를 보여주고 Enter 가 send 로 새지 않게 막음.
+  const pickerOpen = !!trigger;
+
+  const commitPick = (item: PickItem) => {
+    if (!trigger) return;
+    const next = applyPick(text, trigger, item.token);
+    setText(next.text);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (el) {
         el.focus();
-        el.setSelectionRange(next.length, next.length);
+        el.setSelectionRange(next.caret, next.caret);
+        setCaret(next.caret);
       }
     });
   };
@@ -84,9 +170,10 @@ export function Composer({
       const el = textareaRef.current;
       if (el) {
         el.focus();
-        requestAnimationFrame(() =>
-          el.setSelectionRange(el.value.length, el.value.length),
-        );
+        requestAnimationFrame(() => {
+          el.setSelectionRange(el.value.length, el.value.length);
+          setCaret(el.value.length);
+        });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,7 +225,6 @@ export function Composer({
   const [freshSession, setFreshSession] = useState(false);
 
   const setTarget = (id: string) => onAgentIdsChange([id]);
-  const target = agents.find((a) => a.id === agentIds[0]) ?? null;
   const placeholder = target
     ? t("chat.composer.placeholder", { agent: target.name })
     : t("chat.composer.placeholderNoAgent");
@@ -184,18 +270,23 @@ export function Composer({
     <div className="mx-auto w-full max-w-3xl pl-9 pr-2 py-1.5 @[480px]:pl-12 @[480px]:pr-4 @[480px]:py-2 bg-card shrink-0">
       <div className="relative rounded-md border bg-background focus-within:ring-1 focus-within:ring-ring transition-shadow">
         <AnimatePresence>
-          {slashOpen && slashMatches.length > 0 ? (
+          {pickerOpen ? (
             <motion.div
-              key="slash-menu"
+              key="mention-picker"
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.14, ease: "easeOut" }}
             >
-              <SlashMenu
-                matches={slashMatches}
-                highlight={slashIndex}
-                onPick={commitSlash}
+              <MentionPicker
+                items={items}
+                highlight={Math.min(pickerIndex, Math.max(0, items.length - 1))}
+                onPick={commitPick}
+                emptyHint={
+                  trigger?.trigger === "@"
+                    ? t("chat.mention.fileEmpty")
+                    : t("chat.mention.slashEmpty")
+                }
               />
             </motion.div>
           ) : null}
@@ -204,34 +295,70 @@ export function Composer({
           ref={textareaRef}
           rows={1}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={(e) => {
+            const el = e.currentTarget;
+            setCaret(el.selectionStart ?? 0);
+          }}
           onKeyDown={(e) => {
-            if (slashOpen && slashMatches.length > 0) {
-              if (e.key === "ArrowDown") {
+            if (pickerOpen) {
+              if (items.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setPickerIndex((i) => (i + 1) % items.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setPickerIndex(
+                    (i) => (i - 1 + items.length) % items.length,
+                  );
+                  return;
+                }
+                if (
+                  (e.key === "Enter" || e.key === "Tab") &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing &&
+                  e.nativeEvent.keyCode !== 229
+                ) {
+                  e.preventDefault();
+                  const item = items[pickerIndex] ?? items[0];
+                  if (item) commitPick(item);
+                  return;
+                }
+              }
+              if (e.key === "Escape") {
                 e.preventDefault();
-                setSlashIndex((i) => (i + 1) % slashMatches.length);
+                // 트리거 char + query 만 지움 — 본문은 보존.
+                if (trigger) {
+                  const before = text.slice(0, trigger.triggerPos);
+                  const after = text.slice(
+                    trigger.triggerPos + 1 + trigger.query.length,
+                  );
+                  setText(before + after);
+                  requestAnimationFrame(() => {
+                    const el = textareaRef.current;
+                    if (el) {
+                      el.focus();
+                      el.setSelectionRange(before.length, before.length);
+                      setCaret(before.length);
+                    }
+                  });
+                }
                 return;
               }
-              if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setSlashIndex(
-                  (i) => (i - 1 + slashMatches.length) % slashMatches.length,
-                );
-                return;
-              }
+              // picker 가 떠있는 동안 Enter 는 send 로 안 새게 — 빈 항목이라도
+              // 무심코 Enter 로 보내면 의도와 다르게 트리거 char 가 prompt 에 박힘.
               if (
-                (e.key === "Enter" || e.key === "Tab") &&
+                e.key === "Enter" &&
                 !e.shiftKey &&
                 !e.nativeEvent.isComposing &&
                 e.nativeEvent.keyCode !== 229
               ) {
                 e.preventDefault();
-                commitSlash(slashMatches[slashIndex]!);
-                return;
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setText("");
                 return;
               }
             }
@@ -365,51 +492,6 @@ export function Composer({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** textarea 위에 떠 있는 슬래시 커맨드 메뉴. */
-function SlashMenu({
-  matches,
-  highlight,
-  onPick,
-}: {
-  matches: SlashCommand[];
-  highlight: number;
-  onPick: (cmd: SlashCommand) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border bg-popover shadow-lg overflow-hidden z-30">
-      <ul className="max-h-56 overflow-y-auto py-1">
-        {matches.map((c, i) => (
-          <li key={c.cmd}>
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                // textarea blur 방지 — onMouseDown이 onClick보다 먼저 발생, blur는 메뉴 닫음.
-                e.preventDefault();
-              }}
-              onClick={() => onPick(c)}
-              className={cn(
-                "flex w-full items-baseline gap-2 px-3 py-1.5 text-left",
-                i === highlight ? "bg-muted" : "hover:bg-muted/60",
-              )}
-            >
-              <span className="mono text-sm font-semibold text-foreground shrink-0">
-                {c.cmd}
-              </span>
-              <span className="text-sm text-foreground/80">
-                {t(c.i18nLabel)}
-              </span>
-              <span className="ml-auto text-[10px] text-muted-foreground/70 truncate">
-                {t(c.i18nHint)}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
