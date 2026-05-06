@@ -82,18 +82,9 @@ export function GitPage() {
                   ? t("git.section.commitChanges")
                   : t("git.section.workingTree")
               }
-              action={
-                selectedSha ? (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSha(null)}
-                    className="text-[11px] text-muted-foreground hover:text-foreground"
-                  >
-                    {t("git.backToWorking")}
-                  </button>
-                ) : null
-              }
             />
+            {/* 같은 커밋을 다시 클릭하면 deselect — 그래프의 토글 동작이
+                explicit "back" 버튼을 redundant 하게 만듬. */}
             {selectedSha ? (
               <CommitDetailPanel projectId={projectId} sha={selectedSha} />
             ) : (
@@ -106,19 +97,12 @@ export function GitPage() {
   );
 }
 
-function SectionHeader({
-  label,
-  action,
-}: {
-  label: string;
-  action?: React.ReactNode;
-}) {
+function SectionHeader({ label }: { label: string }) {
   return (
-    <div className="flex items-center justify-between h-8 px-3 border-b border-border/50 bg-muted/30 shrink-0 select-none">
+    <div className="flex items-center h-8 px-3 border-b border-border/50 bg-muted/30 shrink-0 select-none">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
-      {action}
     </div>
   );
 }

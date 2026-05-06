@@ -1,19 +1,20 @@
-// Git 활동 패널.
-// 두 모드: Status(스테이지/언스테이지/커밋) | Graph(커밋 토폴로지 SVG).
-// 둘 다 같은 프로젝트의 cwd에 대해 서버 git 라우트를 호출. clean 트리거나
-// non-git repo면 안내 카피만 표시.
+// Git 활동 패널 — 사이드 컴팩트 staging.
+//
+// 그래프 / 커밋 디테일 / 브랜치 트리 같은 풀 워크플로우는 GitPage(메인 화면)
+// 가 담당. 사이드 패널은 워킹 트리 변경 + 메시지 작성 + Commit 같은 빠른
+// 동작에 집중 — 코드 짜다가 잠깐 staging 만 손보고 싶을 때 메인 화면 안 떠나도
+// 되게.
 
-import { useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useState } from "react";
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useParams } from "react-router-dom";
 import {
   ChevronRight,
   GitCommit,
-  GitMerge,
   Plus,
   Minus,
   RefreshCw,
@@ -21,7 +22,6 @@ import {
 import { toast } from "sonner";
 import {
   api,
-  type GitLogEntry,
   type GitStatus,
   type GitWorkingChange,
 } from "../../api/client.js";
@@ -31,15 +31,11 @@ import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
 import { basename } from "../../lib/path.js";
 import { emit } from "../../lib/loomEvents.js";
-import { formatTimeAgo } from "../../lib/timeAgo.js";
 import { NoProjectState, PanelHeader } from "./shared.js";
-
-type Mode = "status" | "graph";
 
 export function GitTab() {
   const { t } = useI18n();
   const { id: projectId } = useParams<{ id: string }>();
-  const [mode, setMode] = useState<Mode>("status");
 
   if (!projectId) {
     return (
@@ -52,54 +48,9 @@ export function GitTab() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <PanelHeader
-        title={t("activity.git")}
-        action={
-          <div className="flex items-center rounded-md border border-border/70 p-0.5 text-[10px] mono uppercase tracking-wider">
-            <ModeButton
-              active={mode === "status"}
-              label={t("git.mode.status")}
-              onClick={() => setMode("status")}
-            />
-            <ModeButton
-              active={mode === "graph"}
-              label={t("git.mode.graph")}
-              onClick={() => setMode("graph")}
-            />
-          </div>
-        }
-      />
-      {mode === "status" ? (
-        <StatusView projectId={projectId} />
-      ) : (
-        <GraphView projectId={projectId} />
-      )}
+      <PanelHeader title={t("activity.git")} />
+      <StatusView projectId={projectId} />
     </div>
-  );
-}
-
-function ModeButton({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "px-2 h-5 rounded transition-colors",
-        active
-          ? "bg-foreground/[0.08] text-foreground"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -401,260 +352,6 @@ function EmptyHint({ message }: { message: string }) {
     <div className="flex-1 flex items-center justify-center px-4 text-center">
       <p className="text-xs text-muted-foreground/70 italic">{message}</p>
     </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Graph — SVG로 커밋 토폴로지 그리기.
-// 각 커밋은 한 행을 차지하고, 부모 SHA를 따라 레인이 연결됨.
-
-function GraphView({ projectId }: { projectId: string }) {
-  const { t } = useI18n();
-  const log = useQuery({
-    queryKey: ["gitLog", projectId, { all: true }],
-    queryFn: () => api.getGitLog(projectId, { limit: 200, all: true }),
-    refetchInterval: 30_000,
-    retry: false,
-  });
-
-  if (log.isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
-        {t("common.loading")}
-      </div>
-    );
-  }
-  if (log.isError) {
-    const msg = (log.error as Error).message;
-    if (msg.includes("not_a_git_repo")) {
-      return <EmptyHint message={t("git.notRepo")} />;
-    }
-    return (
-      <div className="flex-1 flex items-center justify-center px-4 text-center text-xs text-destructive">
-        {msg}
-      </div>
-    );
-  }
-  const entries = log.data?.entries ?? [];
-  if (entries.length === 0) {
-    return <EmptyHint message={t("git.emptyHistory")} />;
-  }
-
-  return <GitGraph entries={entries} />;
-}
-
-// 레인 컬러 — agentColor의 일부를 재활용해도 되지만 그래프 가독성 우선.
-const LANE_COLORS = [
-  "#3b82f6", // blue
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#ef4444", // rose
-  "#a855f7", // violet
-  "#06b6d4", // cyan
-  "#ec4899", // pink
-  "#84cc16", // lime
-];
-
-const ROW_H = 28;
-const LANE_W = 14;
-const PAD_X = 12;
-
-interface PlacedCommit extends GitLogEntry {
-  lane: number;
-  parentLanes: number[];
-}
-
-function placeOnLanes(commits: GitLogEntry[]): {
-  placed: PlacedCommit[];
-  laneCount: number;
-} {
-  // commits는 reverse-chronological 순. lanes[i]는 그 레인이 다음에
-  // 기다리는 자식 sha. 자식이 매칭되면 그 레인이 그 자식의 레인이 되고,
-  // 자식이 부모를 발표하면 부모를 그 레인 또는 새 레인에 등록.
-  const lanes: (string | null)[] = [];
-  const placed: PlacedCommit[] = [];
-
-  for (const c of commits) {
-    let myLane = lanes.indexOf(c.sha);
-    if (myLane === -1) {
-      myLane = lanes.findIndex((s) => s === null);
-      if (myLane === -1) {
-        myLane = lanes.length;
-        lanes.push(null);
-      }
-    }
-    // 내 레인 비움 (부모 등록에서 다시 차지할 수 있음).
-    lanes[myLane] = null;
-
-    const parentLanes: number[] = [];
-    for (let i = 0; i < c.parents.length; i++) {
-      const p = c.parents[i]!;
-      let pLane = lanes.indexOf(p);
-      if (pLane === -1) {
-        if (i === 0 && lanes[myLane] === null) {
-          pLane = myLane;
-          lanes[myLane] = p;
-        } else {
-          pLane = lanes.findIndex((s) => s === null);
-          if (pLane === -1) {
-            pLane = lanes.length;
-            lanes.push(p);
-          } else {
-            lanes[pLane] = p;
-          }
-        }
-      }
-      parentLanes.push(pLane);
-    }
-    placed.push({ ...c, lane: myLane, parentLanes });
-  }
-
-  return {
-    placed,
-    laneCount: Math.max(1, ...placed.map((c) => c.lane + 1)),
-  };
-}
-
-function GitGraph({ entries }: { entries: GitLogEntry[] }) {
-  const [active, setActive] = useState<string | null>(null);
-  const { placed, laneCount } = useMemo(() => placeOnLanes(entries), [entries]);
-  const graphWidth = PAD_X + laneCount * LANE_W;
-  const totalH = placed.length * ROW_H;
-
-  return (
-    <div className="flex-1 min-h-0 overflow-y-auto subtle-scrollbar">
-      <div className="relative">
-        <svg
-          width={graphWidth}
-          height={totalH}
-          className="absolute left-0 top-0 pointer-events-none"
-        >
-          {placed.map((c, i) => {
-            const cx = PAD_X + c.lane * LANE_W;
-            const cy = i * ROW_H + ROW_H / 2;
-            return c.parentLanes.map((pLane, pi) => {
-              // 부모를 row 인덱스에서 찾아 좌표 계산.
-              const parentIdx = placed.findIndex((p) => p.sha === c.parents[pi]);
-              if (parentIdx === -1) return null;
-              const px = PAD_X + pLane * LANE_W;
-              const py = parentIdx * ROW_H + ROW_H / 2;
-              const color =
-                LANE_COLORS[pLane % LANE_COLORS.length] ?? LANE_COLORS[0]!;
-              // straight if same lane, else bezier curve.
-              if (pLane === c.lane) {
-                return (
-                  <line
-                    key={`${c.sha}:${pi}`}
-                    x1={cx}
-                    y1={cy}
-                    x2={px}
-                    y2={py}
-                    stroke={color}
-                    strokeWidth={2}
-                  />
-                );
-              }
-              const midY = cy + (py - cy) * 0.5;
-              return (
-                <path
-                  key={`${c.sha}:${pi}`}
-                  d={`M${cx} ${cy} C ${cx} ${midY}, ${px} ${midY}, ${px} ${py}`}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={2}
-                />
-              );
-            });
-          })}
-          {placed.map((c, i) => {
-            const cx = PAD_X + c.lane * LANE_W;
-            const cy = i * ROW_H + ROW_H / 2;
-            const color =
-              LANE_COLORS[c.lane % LANE_COLORS.length] ?? LANE_COLORS[0]!;
-            return (
-              <circle
-                key={c.sha}
-                cx={cx}
-                cy={cy}
-                r={4}
-                fill={c.parents.length > 1 ? "var(--background)" : color}
-                stroke={color}
-                strokeWidth={2}
-              />
-            );
-          })}
-        </svg>
-        <ul style={{ paddingLeft: graphWidth }}>
-          {placed.map((c) => (
-            <CommitRow
-              key={c.sha}
-              commit={c}
-              active={active === c.sha}
-              onClick={() => setActive(active === c.sha ? null : c.sha)}
-            />
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-function CommitRow({
-  commit,
-  active,
-  onClick,
-}: {
-  commit: PlacedCommit;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <li
-      style={{ height: ROW_H }}
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-2 pr-3 cursor-pointer transition-colors text-[11px]",
-        active ? "bg-muted/70" : "hover:bg-muted/40",
-      )}
-    >
-      <span className="mono text-muted-foreground/70 shrink-0">
-        {commit.shortSha}
-      </span>
-      {commit.parents.length > 1 ? (
-        <GitMerge className="size-3 text-sky-500 shrink-0" />
-      ) : null}
-      <span className="truncate flex-1">{commit.subject}</span>
-      {commit.refs.length > 0 ? (
-        <RefBadges refs={commit.refs} />
-      ) : null}
-      <span className="text-muted-foreground/60 mono text-[10px] shrink-0">
-        {formatTimeAgo(commit.authoredAt, t)}
-      </span>
-    </li>
-  );
-}
-
-function RefBadges({ refs }: { refs: string[] }) {
-  return (
-    <span className="flex items-center gap-1 shrink-0">
-      {refs.slice(0, 3).map((r) => {
-        const isHead = r.startsWith("HEAD");
-        return (
-          <span
-            key={r}
-            className={cn(
-              "inline-flex items-center px-1 h-4 rounded text-[9px] mono uppercase tracking-wide",
-              isHead
-                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                : "bg-muted text-muted-foreground",
-            )}
-          >
-            {r.replace(/^HEAD -> /, "")}
-          </span>
-        );
-      })}
-    </span>
   );
 }
 
