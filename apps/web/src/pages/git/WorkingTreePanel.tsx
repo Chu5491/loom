@@ -12,6 +12,7 @@ import { Button } from "../../components/ui/button.js";
 import { Textarea } from "../../components/ui/textarea.js";
 import { StatusBadge } from "../../components/git/StatusBadge.js";
 import { DiffView } from "../../components/git/DiffView.js";
+import { HunkDiffView } from "../../components/git/HunkDiffView.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
 import { basename } from "../../lib/path.js";
@@ -356,6 +357,7 @@ function FileDiffView({
   selection: FileSelection;
 }) {
   const { t } = useI18n();
+  const qc = useQueryClient();
   const diff = useQuery({
     queryKey: [
       "gitDiff",
@@ -370,6 +372,20 @@ function FileDiffView({
         untracked: selection.untracked,
       }),
     retry: false,
+  });
+
+  // hunk 단위 stage/unstage. 성공 시 status + diff 둘 다 갱신해야 다음
+  // 그림이 정확.
+  const applyHunk = useMutation({
+    mutationFn: (input: { patch: string; cached: true; reverse: boolean }) =>
+      api.gitApplyPatch(projectId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["gitStatus", projectId] });
+      qc.invalidateQueries({
+        queryKey: ["gitDiff", projectId, selection.path],
+      });
+    },
+    onError: (err) => toast.error((err as Error).message),
   });
 
   return (
@@ -393,8 +409,16 @@ function FileDiffView({
           <p className="px-3 py-4 text-xs text-destructive">
             {(diff.error as Error).message}
           </p>
-        ) : (
+        ) : selection.untracked ? (
+          // untracked 는 hunk 단위 stage 가 의미 없음 — 통째로 plain DiffView.
           <DiffView text={diff.data?.diff ?? ""} />
+        ) : (
+          <HunkDiffView
+            text={diff.data?.diff ?? ""}
+            staged={selection.staged}
+            disableHunkActions={applyHunk.isPending}
+            onApplyHunk={(input) => applyHunk.mutate(input)}
+          />
         )}
       </div>
     </div>

@@ -66,6 +66,21 @@ export interface GitCommitInfo {
   body: string;
   files: GitWorkingChange[];
 }
+export interface GitStashEntry {
+  index: number;
+  message: string;
+  branch: string | null;
+  createdAt: string;
+}
+export interface GhProbe {
+  installed: boolean;
+  version: string;
+}
+export interface CreatePrResult {
+  ok: true;
+  url: string;
+  output: string;
+}
 
 async function request<T>(
   path: string,
@@ -426,6 +441,72 @@ export const api = {
     request<{ ok: true }>(`/api/projects/${id}/git/checkout`, {
       method: "POST",
       body: JSON.stringify({ branch }),
+    }),
+
+  // ── branches: create / rename / delete
+  gitCreateBranch: (
+    id: string,
+    body: { name: string; startPoint?: string; checkout?: boolean },
+  ) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/branches`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  gitRenameBranch: (id: string, oldName: string, newName: string) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/branches`, {
+      method: "PATCH",
+      body: JSON.stringify({ oldName, newName }),
+    }),
+  gitDeleteBranch: (id: string, name: string, opts: { force?: boolean } = {}) =>
+    request<{ ok: true }>(
+      `/api/projects/${id}/git/branches/${encodeURIComponent(name)}${opts.force ? "?force=1" : ""}`,
+      { method: "DELETE" },
+    ),
+
+  // ── stash
+  gitListStash: (id: string) =>
+    request<{ entries: GitStashEntry[] }>(`/api/projects/${id}/git/stash`),
+  gitSaveStash: (
+    id: string,
+    body: { message?: string; includeUntracked?: boolean } = {},
+  ) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/stash`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  gitPopStash: (id: string, idx: number) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/stash/${idx}/pop`, {
+      method: "POST",
+    }),
+  gitApplyStash: (id: string, idx: number) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/stash/${idx}/apply`, {
+      method: "POST",
+    }),
+  gitDropStash: (id: string, idx: number) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/stash/${idx}`, {
+      method: "DELETE",
+    }),
+
+  // ── apply-patch (hunk staging)
+  gitApplyPatch: (
+    id: string,
+    body: { patch: string; cached?: boolean; reverse?: boolean },
+  ) =>
+    request<{ ok: true }>(`/api/projects/${id}/git/apply-patch`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // ── PR (gh)
+  gitProbeGh: (id: string) =>
+    request<GhProbe>(`/api/projects/${id}/git/pr-probe`),
+  gitCreatePr: (
+    id: string,
+    body: { title: string; body: string; base?: string; draft?: boolean },
+  ) =>
+    request<CreatePrResult>(`/api/projects/${id}/git/pr`, {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
   gitFetch: (
     id: string,

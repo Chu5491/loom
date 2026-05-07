@@ -19,6 +19,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   GitBranch,
+  GitPullRequest,
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +31,8 @@ import { cn } from "../lib/utils.js";
 import { BranchTree } from "./git/BranchTree.js";
 import { WorkingTreePanel } from "./git/WorkingTreePanel.js";
 import { CommitDetailPanel } from "./git/CommitDetailPanel.js";
+import { StashPanel } from "./git/StashPanel.js";
+import { CreatePrDialog } from "./git/CreatePrDialog.js";
 
 export function GitPage() {
   const { t } = useI18n();
@@ -59,7 +62,11 @@ export function GitPage() {
     <div className="flex-1 min-h-0 flex flex-col bg-background">
       <Toolbar projectId={projectId} />
       <div className="flex-1 min-h-0 flex">
-        <BranchTree projectId={projectId} />
+        {/* 좌측 220px — 상단에 BranchTree, 하단에 Stash. */}
+        <aside className="w-[220px] shrink-0 border-r border-border bg-card flex flex-col">
+          <BranchTree projectId={projectId} />
+          <StashPanelMount projectId={projectId} />
+        </aside>
         <div className="flex-1 min-w-0 flex flex-col">
           {/* 상단 — 커밋 그래프. 절반 높이. */}
           <div className="flex-1 min-h-0 border-b border-border flex flex-col">
@@ -95,6 +102,24 @@ export function GitPage() {
       </div>
     </div>
   );
+}
+
+/** StashPanel 은 "현재 변경 있음?" 게이트가 필요. gitStatus 쿼리는 Toolbar 가
+ *  이미 들고 있어 dedup 되므로 추가 호출 비용 없음. */
+function StashPanelMount({ projectId }: { projectId: string }) {
+  const status = useQuery({
+    queryKey: ["gitStatus", projectId],
+    queryFn: () => api.getGitStatus(projectId),
+    refetchInterval: 5_000,
+    retry: false,
+  });
+  const s = status.data?.status;
+  const hasChanges =
+    !!s &&
+    (s.staged.length > 0 ||
+      s.unstaged.length > 0 ||
+      s.untracked.length > 0);
+  return <StashPanel projectId={projectId} hasChanges={hasChanges} />;
 }
 
 function SectionHeader({ label }: { label: string }) {
@@ -174,11 +199,20 @@ function GraphArea({
 function Toolbar({ projectId }: { projectId: string }) {
   const { t } = useI18n();
   const qc = useQueryClient();
+  const [prOpen, setPrOpen] = useState(false);
 
   const status = useQuery({
     queryKey: ["gitStatus", projectId],
     queryFn: () => api.getGitStatus(projectId),
     refetchInterval: 5_000,
+    retry: false,
+  });
+
+  // gh 설치 여부는 한 번만 — installed=false 면 PR 버튼 숨김. probe 가 가벼워서 함께 돌려도 됨.
+  const ghProbe = useQuery({
+    queryKey: ["ghProbe", projectId],
+    queryFn: () => api.gitProbeGh(projectId),
+    staleTime: 5 * 60_000,
     retry: false,
   });
 
@@ -242,6 +276,28 @@ function Toolbar({ projectId }: { projectId: string }) {
       </div>
 
       <div className="ml-auto flex items-center gap-1.5">
+        {ghProbe.data?.installed ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5"
+              onClick={() => setPrOpen(true)}
+              disabled={busy}
+              title={ghProbe.data.version}
+            >
+              <GitPullRequest className="size-3.5" />
+              {t("git.pr.button")}
+            </Button>
+            <CreatePrDialog
+              open={prOpen}
+              onOpenChange={setPrOpen}
+              projectId={projectId}
+              currentBranch={s?.branch ?? null}
+            />
+            <span className="mx-1 h-5 w-px bg-border/60" aria-hidden />
+          </>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"

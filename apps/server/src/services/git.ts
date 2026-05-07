@@ -3,7 +3,7 @@
 // 모든 entry-point는 git 저장소가 아니거나 실패 시 명시적 에러를 던짐 — 라우트가
 // 매핑해서 4xx/5xx 응답.
 
-import { execFile as execFileCb } from "node:child_process";
+import { execFile as execFileCb, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFile = promisify(execFileCb);
@@ -374,6 +374,229 @@ export async function listBranches(cwd: string): Promise<BranchInfo[]> {
 export async function checkout(cwd: string, branch: string): Promise<void> {
   if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
   await git(cwd, ["checkout", branch]);
+}
+
+export async function createBranch(
+  cwd: string,
+  name: string,
+  opts: { startPoint?: string; checkout?: boolean } = {},
+): Promise<void> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  const args = opts.checkout ? ["checkout", "-b", name] : ["branch", name];
+  if (opts.startPoint) args.push(opts.startPoint);
+  await git(cwd, args);
+}
+
+export async function deleteBranch(
+  cwd: string,
+  name: string,
+  opts: { force?: boolean } = {},
+): Promise<void> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  // -d 는 머지 안 된 브랜치 거부, -D 는 강제. 사용자가 force 명시했을 때만.
+  await git(cwd, ["branch", opts.force ? "-D" : "-d", name]);
+}
+
+export async function renameBranch(
+  cwd: string,
+  oldName: string,
+  newName: string,
+): Promise<void> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  await git(cwd, ["branch", "-m", oldName, newName]);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// stash
+
+export interface StashEntry {
+  /** stash@{N} 의 N. */
+  index: number;
+  /** "WIP on main: ..." 같은 git 의 자체 메시지 (사용자 메시지가 들어 있는 그 본문). */
+  message: string;
+  /** 스태시할 때 있던 브랜치. parse 실패하면 null. */
+  branch: string | null;
+  /** ISO. */
+  createdAt: string;
+}
+
+export async function listStash(cwd: string): Promise<StashEntry[]> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  // %gd = stash@{N}, %gs = subject, %ai = author date.
+  const out = await git(cwd, [
+    "stash",
+    "list",
+    "--format=%gd%x1f%gs%x1f%ai",
+  ]);
+  const entries: StashEntry[] = [];
+  for (const line of out.split("\n")) {
+    if (!line) continue;
+    const [refRaw, subject, ai] = line.split("\x1f");
+    const m = /stash@\{(\d+)\}/.exec(refRaw ?? "");
+    if (!m) continue;
+    const index = Number(m[1]);
+    if (!Number.isFinite(index)) continue;
+    const branch = parseStashBranch(subject ?? "");
+    entries.push({
+      index,
+      message: subject ?? "",
+      branch,
+      createdAt: ai ?? "",
+    });
+  }
+  return entries;
+}
+
+/** "WIP on main: 1234567 …" / "On main: …" 패턴에서 브랜치만 뽑음. */
+function parseStashBranch(subject: string): string | null {
+  const m = /^(?:WIP on|On)\s+([^:]+):/i.exec(subject);
+  return m ? m[1]!.trim() : null;
+}
+
+export async function saveStash(
+  cwd: string,
+  opts: { message?: string; includeUntracked?: boolean } = {},
+): Promise<void> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  const args = ["stash", "push"];
+  if (opts.includeUntracked) args.push("--include-untracked");
+  if (opts.message?.trim()) {
+    args.push("--message", opts.message.trim());
+  }
+  await git(cwd, args);
+}
+
+export async function popStash(cwd: string, index: number): Promise<void> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  await git(cwd, ["stash", "pop", `stash@{${index}}`]);
+}
+
+export async function applyStash(cwd: string, index: number): Promise<void> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  await git(cwd, ["stash", "apply", `stash@{${index}}`]);
+}
+
+export async function dropStash(cwd: string, index: number): Promise<void> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  await git(cwd, ["stash", "drop", `stash@{${index}}`]);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// hunk-level staging — partial patch apply
+//
+// 클라가 다이프 텍스트를 hunk 단위로 잘라 우리에게 보내면, 우리는 git apply 에
+// stdin 으로 그대로 흘려넣는다. 파서는 클라가 가짐 — 어차피 클라가 diff 를
+// 표시하고 있어서 같은 데이터로 만든 patch 가 가장 정확.
+
+export interface ApplyPatchResult {
+  ok: true;
+}
+
+export async function applyPatch(
+  cwd: string,
+  patch: string,
+  opts: { cached?: boolean; reverse?: boolean } = {},
+): Promise<ApplyPatchResult> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  const args = ["apply"];
+  if (opts.cached) args.push("--cached");
+  if (opts.reverse) args.push("-R");
+  // unidiff zero-context hunks 도 통과시킴.
+  args.push("--unidiff-zero", "-");
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn("git", args, {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stderr = "";
+    proc.stderr?.on("data", (d: Buffer) => {
+      stderr += d.toString();
+    });
+    proc.on("error", reject);
+    proc.on("close", (code: number | null) => {
+      if (code === 0) resolve();
+      else
+        reject(
+          new GitCommandError(
+            `git apply exited ${code ?? "?"}`.trim(),
+            stderr,
+          ),
+        );
+    });
+    proc.stdin?.end(patch);
+  });
+  return { ok: true };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PR — wraps `gh pr create`. gh 자체의 auth / scope 를 그대로 신뢰.
+
+export interface PrProbe {
+  installed: boolean;
+  /** `gh --version` 의 첫 줄 — UI 에 짧게 표시하려고. installed=false 면 빈 문자열. */
+  version: string;
+}
+
+export async function probeGh(): Promise<PrProbe> {
+  try {
+    const { stdout } = await execFile("gh", ["--version"], {});
+    const version = stdout.split("\n")[0]?.trim() ?? "";
+    return { installed: true, version };
+  } catch {
+    return { installed: false, version: "" };
+  }
+}
+
+export class GhNotInstalledError extends Error {
+  constructor() {
+    super("gh_not_installed");
+    this.name = "GhNotInstalledError";
+  }
+}
+
+export interface CreatePrInput {
+  title: string;
+  body: string;
+  base?: string;
+  draft?: boolean;
+}
+
+export interface CreatePrResult {
+  /** gh 가 출력하는 PR URL. */
+  url: string;
+  /** 추가로 보여줄 출력 — gh 가 가끔 경고 등을 같이 출력. */
+  output: string;
+}
+
+export async function createPullRequest(
+  cwd: string,
+  input: CreatePrInput,
+): Promise<CreatePrResult> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  const args = ["pr", "create", "--title", input.title, "--body", input.body];
+  if (input.base) args.push("--base", input.base);
+  if (input.draft) args.push("--draft");
+  try {
+    const { stdout, stderr } = await execFile("gh", args, {
+      cwd,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    const out = `${stderr ?? ""}${stdout ?? ""}`.trim();
+    // gh 의 PR create 는 URL 을 stdout 마지막 줄에 출력. fallback 으로 본문에서 첫 https URL.
+    const lastLine = stdout.split("\n").filter(Boolean).pop() ?? "";
+    const urlMatch = /(https?:\/\/[^\s]+)/.exec(lastLine);
+    const url = urlMatch
+      ? urlMatch[1]!
+      : (/(https?:\/\/[^\s]+)/.exec(out)?.[1] ?? "");
+    return { url, output: out };
+  } catch (err) {
+    const e = err as { code?: string; stderr?: string; message?: string };
+    if (e.code === "ENOENT") throw new GhNotInstalledError();
+    throw new GitCommandError(
+      e.message ?? "gh failed",
+      (e.stderr ?? "").toString(),
+    );
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────

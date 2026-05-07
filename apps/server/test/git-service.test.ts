@@ -9,11 +9,22 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { describe, beforeAll, afterAll, it, expect } from "vitest";
 import {
+  applyPatch,
+  applyStash,
+  createBranch,
+  deleteBranch,
+  dropStash,
   getCommitInfo,
   getCommitFileDiff,
+  getStatus,
   listBranches,
+  listStash,
+  popStash,
+  probeGh,
   pull as gitPullOp,
   push as gitPushOp,
+  renameBranch,
+  saveStash,
   GitCommandError,
 } from "../src/services/git.js";
 
@@ -115,5 +126,106 @@ describe("git service — real-binary integration", () => {
     // 실패하므로 그쪽으로 검증.
     await expect(gitPushOp(repoDir)).rejects.toBeInstanceOf(GitCommandError);
     await expect(gitPullOp(repoDir)).rejects.toBeInstanceOf(GitCommandError);
+  });
+
+  it("createBranch + renameBranch + deleteBranch: round trip", async () => {
+    await createBranch(repoDir, "feature/foo");
+    let branches = await listBranches(repoDir);
+    expect(branches.find((b) => b.name === "feature/foo")).toBeDefined();
+
+    await renameBranch(repoDir, "feature/foo", "feature/bar");
+    branches = await listBranches(repoDir);
+    expect(branches.find((b) => b.name === "feature/foo")).toBeUndefined();
+    expect(branches.find((b) => b.name === "feature/bar")).toBeDefined();
+
+    await deleteBranch(repoDir, "feature/bar");
+    branches = await listBranches(repoDir);
+    expect(branches.find((b) => b.name === "feature/bar")).toBeUndefined();
+  });
+
+  it("createBranch with checkout=true switches HEAD", async () => {
+    await createBranch(repoDir, "tmp-checkout-test", { checkout: true });
+    const branches = await listBranches(repoDir);
+    const created = branches.find((b) => b.name === "tmp-checkout-test");
+    expect(created?.current).toBe(true);
+    // cleanup — 다른 테스트에 영향 안 가게 main 으로 돌려놓고 삭제.
+    await execFile("git", ["checkout", "main"], { cwd: repoDir });
+    await deleteBranch(repoDir, "tmp-checkout-test");
+  });
+
+  it("stash save + list + drop", async () => {
+    // 워킹트리에 변경을 만들어야 stash 가 의미 있음.
+    fs.writeFileSync(path.join(repoDir, "stash-target.txt"), "dirty\n");
+    await execFile("git", ["add", "stash-target.txt"], { cwd: repoDir });
+    await saveStash(repoDir, { message: "test stash" });
+    const list = await listStash(repoDir);
+    expect(list.length).toBeGreaterThan(0);
+    expect(list[0]!.index).toBe(0);
+    expect(list[0]!.message).toContain("test stash");
+
+    // pop 으로 워킹트리 복원되는지 확인.
+    await popStash(repoDir, 0);
+    const after = await listStash(repoDir);
+    expect(after.length).toBe(0);
+    // 파일이 다시 워킹트리에 있어야 함.
+    expect(fs.existsSync(path.join(repoDir, "stash-target.txt"))).toBe(true);
+
+    // cleanup — staged 인 파일 unstage + 삭제.
+    await execFile("git", ["reset", "HEAD", "stash-target.txt"], {
+      cwd: repoDir,
+    });
+    fs.rmSync(path.join(repoDir, "stash-target.txt"));
+  });
+
+  it("stash apply + drop: keeps stash until drop", async () => {
+    fs.writeFileSync(path.join(repoDir, "stash-apply.txt"), "x\n");
+    await execFile("git", ["add", "stash-apply.txt"], { cwd: repoDir });
+    await saveStash(repoDir, { message: "apply test" });
+    await applyStash(repoDir, 0);
+    let list = await listStash(repoDir);
+    expect(list.length).toBe(1); // apply 는 stash 를 남김
+    await dropStash(repoDir, 0);
+    list = await listStash(repoDir);
+    expect(list.length).toBe(0);
+    // cleanup
+    await execFile("git", ["reset", "HEAD", "stash-apply.txt"], {
+      cwd: repoDir,
+    });
+    fs.rmSync(path.join(repoDir, "stash-apply.txt"));
+  });
+
+  it("applyPatch: stages a hunk via git apply --cached", async () => {
+    // 새 파일 만들어 변경 → diff → 그 diff 의 첫 hunk 만 stage.
+    fs.writeFileSync(path.join(repoDir, "hunk.txt"), "first\nsecond\nthird\n");
+    await execFile("git", ["add", "hunk.txt"], { cwd: repoDir });
+    await execFile("git", ["commit", "-q", "-m", "seed"], { cwd: repoDir });
+    fs.writeFileSync(
+      path.join(repoDir, "hunk.txt"),
+      "first changed\nsecond\nthird changed\n",
+    );
+
+    // diff 를 그대로 patch 로 사용 — git apply 가 정확히 받아야 함.
+    const { stdout } = await execFile("git", ["diff", "hunk.txt"], {
+      cwd: repoDir,
+    });
+    await applyPatch(repoDir, stdout, { cached: true });
+    const status = await getStatus(repoDir);
+    expect(status.staged.find((c) => c.path === "hunk.txt")).toBeDefined();
+
+    // cleanup — 다 reset.
+    await execFile("git", ["reset", "--hard", "HEAD"], { cwd: repoDir });
+    fs.rmSync(path.join(repoDir, "hunk.txt"));
+  });
+
+  it("probeGh: returns installed=false gracefully when gh missing", async () => {
+    // 이 머신에 gh 가 없는 환경에서 돌면 false 를, 있으면 true + version 을
+    // 받음. 어느 쪽이든 throw 안 하고 안전하게 반환.
+    const r = await probeGh();
+    expect(typeof r.installed).toBe("boolean");
+    if (r.installed) {
+      expect(r.version.length).toBeGreaterThan(0);
+    } else {
+      expect(r.version).toBe("");
+    }
   });
 });
