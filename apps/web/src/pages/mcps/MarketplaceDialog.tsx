@@ -11,6 +11,7 @@ import { ExternalLink, Plug, Search, X } from "lucide-react";
 import { api, type McpMarketplaceEntry } from "../../api/client.js";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
+import { InlineApiKey } from "../../components/marketplace/InlineApiKey.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
 
@@ -109,6 +110,9 @@ export function MarketplaceDialog({
                 onChange={setSource}
                 smitheryEnabled={!!list.data?.sources.smitheryEnabled}
               />
+              {/* smithery 탭에 들어왔는데 키가 없으면 같은 자리에 inline 입력
+                  banner. 사용자가 굳이 Settings 까지 가지 않아도 됨. */}
+              {source === "smithery" ? <InlineApiKey provider="smithery" /> : null}
             </div>
 
             <div className="flex-1 overflow-y-auto subtle-scrollbar p-3 space-y-2">
@@ -147,21 +151,19 @@ function SourceTabs({
   smitheryEnabled: boolean;
 }) {
   const { t } = useI18n();
+  // smithery 키 없을 때도 탭은 *클릭 가능* 하게 — 누르면 안에서 InlineApiKey 가
+  // 키 입력 안내. 비활성화하고 tooltip 만 띄우면 사용자가 어디서 키 넣는지 모름.
   const tabs: Array<{
     key: "all" | "official" | "smithery" | "builtin";
     label: string;
-    disabled?: boolean;
-    hint?: string;
+    needsKey?: boolean;
   }> = [
     { key: "all", label: t("mcps.marketplace.source.all") },
     { key: "official", label: t("mcps.marketplace.source.official") },
     {
       key: "smithery",
       label: t("mcps.marketplace.source.smithery"),
-      disabled: !smitheryEnabled,
-      hint: smitheryEnabled
-        ? undefined
-        : t("mcps.marketplace.source.smitheryDisabled"),
+      needsKey: !smitheryEnabled,
     },
     { key: "builtin", label: t("mcps.marketplace.source.builtin") },
   ];
@@ -171,19 +173,21 @@ function SourceTabs({
         <button
           key={tab.key}
           type="button"
-          onClick={() => !tab.disabled && onChange(tab.key)}
-          disabled={tab.disabled}
-          title={tab.hint}
+          onClick={() => onChange(tab.key)}
           className={cn(
-            "px-2 h-5 rounded transition-colors",
-            tab.disabled
-              ? "text-muted-foreground/40 cursor-not-allowed"
-              : value === tab.key
-                ? "bg-foreground/[0.08] text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+            "px-2 h-5 rounded transition-colors inline-flex items-center gap-1",
+            value === tab.key
+              ? "bg-foreground/[0.08] text-foreground"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
           )}
         >
           {tab.label}
+          {tab.needsKey ? (
+            <span
+              className="size-1 rounded-full bg-amber-500"
+              aria-label="needs API key"
+            />
+          ) : null}
         </button>
       ))}
     </div>

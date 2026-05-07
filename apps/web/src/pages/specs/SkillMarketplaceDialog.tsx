@@ -10,6 +10,7 @@ import { ExternalLink, FileText, Search, X } from "lucide-react";
 import { api, type SkillMarketplaceEntry } from "../../api/client.js";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
+import { InlineApiKey } from "../../components/marketplace/InlineApiKey.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
 
@@ -104,6 +105,9 @@ export function SkillMarketplaceDialog({
                 onChange={setSource}
                 skillsShEnabled={!!list.data?.sources.skillsShEnabled}
               />
+              {source === "skills.sh" ? (
+                <InlineApiKey provider="skillsSh" />
+              ) : null}
             </div>
 
             <div className="flex-1 overflow-y-auto subtle-scrollbar p-3 space-y-2">
@@ -145,17 +149,13 @@ function SkillSourceTabs({
   const tabs: Array<{
     key: "all" | "skills.sh" | "builtin";
     label: string;
-    disabled?: boolean;
-    hint?: string;
+    needsKey?: boolean;
   }> = [
     { key: "all", label: t("specs.marketplace.source.all") },
     {
       key: "skills.sh",
       label: t("specs.marketplace.source.skillsSh"),
-      disabled: !skillsShEnabled,
-      hint: skillsShEnabled
-        ? undefined
-        : t("specs.marketplace.source.skillsShDisabled"),
+      needsKey: !skillsShEnabled,
     },
     { key: "builtin", label: t("specs.marketplace.source.builtin") },
   ];
@@ -165,19 +165,21 @@ function SkillSourceTabs({
         <button
           key={tab.key}
           type="button"
-          onClick={() => !tab.disabled && onChange(tab.key)}
-          disabled={tab.disabled}
-          title={tab.hint}
+          onClick={() => onChange(tab.key)}
           className={cn(
-            "px-2 h-5 rounded transition-colors",
-            tab.disabled
-              ? "text-muted-foreground/40 cursor-not-allowed"
-              : value === tab.key
-                ? "bg-foreground/[0.08] text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+            "px-2 h-5 rounded transition-colors inline-flex items-center gap-1",
+            value === tab.key
+              ? "bg-foreground/[0.08] text-foreground"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
           )}
         >
           {tab.label}
+          {tab.needsKey ? (
+            <span
+              className="size-1 rounded-full bg-amber-500"
+              aria-label="needs API key"
+            />
+          ) : null}
         </button>
       ))}
     </div>
