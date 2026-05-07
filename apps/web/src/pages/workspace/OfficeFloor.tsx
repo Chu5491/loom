@@ -68,22 +68,45 @@ function deskSlot(index: number): { x: number; y: number } {
 
 // 사무실의 "쉬는 곳" — 데코 아이템 앞에 캐릭터가 멈춰 머무는 spot.
 // 좌표는 OfficeDecor의 시각 위치와 1:1 매칭 (해당 데코 아래쪽 통로).
-type DestKind = "coffee" | "books" | "plant-l" | "plant-r" | "window";
+// `icons`는 머리 위에 띄울 이모지 풀 — 머무는 동안 ~2초마다 하나씩 사이클되어
+// "같은 자리에 박제"된 인상을 깬다.
+type DestKind =
+  | "coffee"
+  | "books"
+  | "plant-l"
+  | "plant-r"
+  | "window"
+  | "whiteboard"
+  | "cooler"
+  | "chat-corner";
 const DESTINATIONS: ReadonlyArray<{
   kind: DestKind;
   x: number;
   y: number;
-  /** 머무는 동안 머리 위에 띄울 이모지. */
-  icon: string;
+  icons: ReadonlyArray<string>;
   /** 호버 카드/디버그용 라벨 키. */
   labelKey: string;
 }> = [
-  { kind: "window", x: 14, y: 30, icon: "🌤", labelKey: "office.dest.window" },
-  { kind: "coffee", x: 44, y: 32, icon: "☕", labelKey: "office.dest.coffee" },
-  { kind: "books", x: 86, y: 30, icon: "📚", labelKey: "office.dest.books" },
-  { kind: "plant-l", x: 8, y: 50, icon: "🪴", labelKey: "office.dest.plant" },
-  { kind: "plant-r", x: 92, y: 50, icon: "🪴", labelKey: "office.dest.plant" },
+  { kind: "window", x: 14, y: 30, icons: ["🌤", "🐦", "💭", "🌳"], labelKey: "office.dest.window" },
+  { kind: "coffee", x: 44, y: 32, icons: ["☕", "🥐", "😌", "💬"], labelKey: "office.dest.coffee" },
+  { kind: "books", x: 86, y: 30, icons: ["📚", "✏️", "🤔", "💡"], labelKey: "office.dest.books" },
+  { kind: "plant-l", x: 8, y: 50, icons: ["🪴", "💧", "🌱", "😊"], labelKey: "office.dest.plant" },
+  { kind: "plant-r", x: 92, y: 50, icons: ["🪴", "💧", "🌱", "😊"], labelKey: "office.dest.plant" },
+  { kind: "whiteboard", x: 62, y: 30, icons: ["🧠", "📝", "✏️", "💡"], labelKey: "office.dest.whiteboard" },
+  { kind: "cooler", x: 30, y: 50, icons: ["💧", "🥤", "😮‍💨", "💭"], labelKey: "office.dest.cooler" },
+  { kind: "chat-corner", x: 70, y: 55, icons: ["💬", "😄", "🗣", "✨"], labelKey: "office.dest.chat" },
 ];
+
+// idle 중간에 가끔 끼워넣는 micro-action — 진짜 정지가 아니라 살아있는 인상.
+// 매 idle round마다 30% 확률로 발현, 1.5~2.5초 후 사라지고 정상 idle 흐름으로 복귀.
+const IDLE_ACTIONS = [
+  "🙆", // stretch
+  "🥱", // yawn
+  "💭", // daydream
+  "📱", // phone
+  "🎵", // hum
+  "👀", // glance around
+] as const;
 
 export function OfficeFloor({
   agents,
@@ -248,13 +271,14 @@ function AgentCharacter({
   const { t } = useI18n();
 
   // 캐릭터 personality — 같은 사무실에 똑같은 사람만 있으면 재미없음. agent.id
-  // 해시로 약간씩 다른 속도/대기시간 multiplier (0.7~1.3) 부여. 어떤 에이전트는
-  // 부지런하게 움직이고 어떤 에이전트는 느긋함.
+  // 해시로 약간씩 다른 속도/대기시간 multiplier 부여, 거기에 "favorite destination"
+  // 까지 — 어떤 에이전트는 커피 광이고 어떤 에이전트는 책장에만 박혀있음.
   const personality = useMemo(() => {
     const seed = hashSeed(agent.id);
-    const speedMul = 0.7 + ((seed % 100) / 100) * 0.6; // 0.7~1.3
-    const waitMul = 0.6 + (((seed >> 8) % 100) / 100) * 0.8; // 0.6~1.4
-    return { speedMul, waitMul };
+    const speedMul = 0.8 + ((seed % 100) / 100) * 0.5; // 0.8~1.3
+    const waitMul = 0.7 + (((seed >> 8) % 100) / 100) * 0.6; // 0.7~1.3
+    const favorite = DESTINATIONS[(seed >> 16) % DESTINATIONS.length]!;
+    return { speedMul, waitMul, favorite };
   }, [agent.id]);
 
   // 마운트 시 `working`이 이미 true면 캐릭터는 책상에 앉은 상태로 시작해야 함
@@ -288,6 +312,10 @@ function AgentCharacter({
   const [state, setState] = useState<CharState>(initial.state);
   /** 현재 머무는/가는 destination — linger 시 머리 위 아이콘에 사용. */
   const [destKind, setDestKind] = useState<DestKind | null>(null);
+  /** linger 동안 destination 이모지 풀에서 선택된 인덱스 (2초마다 회전). */
+  const [iconIdx, setIconIdx] = useState(0);
+  /** idle 중에 끼워넣는 micro-action 이모지 (stretch/yawn/think...). null 이면 평범 idle. */
+  const [idleAction, setIdleAction] = useState<string | null>(null);
   /** 호버 시 정보 카드 표시. */
   const [hovered, setHovered] = useState(false);
   // ref 초기값을 `working`으로 — 마운트 후 첫 effect 실행에서 wasWorking === working이
@@ -326,14 +354,15 @@ function AgentCharacter({
           else if (state === "wander") setState("linger");
           return cur;
         }
+        // 0.025 였을 땐 화면 한 번 가로지르는 데 ~20초 걸려서 정지로 보였음. 3~4배 가속.
         const baseSpeed =
           state === "working"
             ? 0
             : state === "going"
-              ? 0.05
+              ? 0.18
               : state === "linger"
                 ? 0
-                : 0.025;
+                : 0.10; // wander / leaving
         const speed = baseSpeed * personality.speedMul;
         const step = Math.min(dist, speed);
         return {
@@ -347,31 +376,64 @@ function AgentCharacter({
     return () => cancelAnimationFrame(raf);
   }, [target, state, personality.speedMul]);
 
-  // idle → 몇 초 후 새 destination으로 wander.
+  // idle → 짧게 쉬다가 새 destination으로 wander. 30% 확률로 favorite, 70% 랜덤.
+  // 8~22초 → 2.5~6.5초로 단축. "안 움직이는" 인상 제거.
   useEffect(() => {
     if (state !== "idle") return;
-    const wait = (8000 + Math.random() * 14000) * personality.waitMul;
+    const wait = (2500 + Math.random() * 4000) * personality.waitMul;
     const id = window.setTimeout(() => {
-      // 25% 확률로 가만히 한 라운드 더.
-      if (Math.random() < 0.25) return;
-      const dest = pickDestination();
-      // dest 좌표 주변 ±3 jitter — 매번 정확히 같은 자리에 모이지 않게.
+      const dest =
+        Math.random() < 0.3 ? personality.favorite : pickDestination();
       const jx = (Math.random() - 0.5) * 6;
       const jy = (Math.random() - 0.5) * 4;
       setTarget({
         x: clamp(dest.x + jx, 8, 92),
-        y: clamp(dest.y + jy, 28, 52),
+        y: clamp(dest.y + jy, 28, 55),
       });
       setDestKind(dest.kind);
       setState("wander");
     }, wait);
     return () => window.clearTimeout(id);
-  }, [state, personality.waitMul]);
+  }, [state, personality.waitMul, personality.favorite]);
 
-  // linger → 목적지에서 5~12초 머무름 → idle (다음 wander 추첨으로).
+  // idle 도중 30% 확률로 micro-action 발현 (stretch / yawn / think...). 1.5~2.5초 후 사라짐.
+  // wander 트리거 타이머와 별개라 두 개가 동시에 돌 수 있음 — 그게 의도.
+  useEffect(() => {
+    if (state !== "idle") {
+      setIdleAction(null);
+      return;
+    }
+    const onset = 600 + Math.random() * 1500;
+    const onsetId = window.setTimeout(() => {
+      if (Math.random() < 0.3) {
+        const action = IDLE_ACTIONS[Math.floor(Math.random() * IDLE_ACTIONS.length)]!;
+        setIdleAction(action);
+        const offsetId = window.setTimeout(
+          () => setIdleAction(null),
+          1500 + Math.random() * 1000,
+        );
+        return () => window.clearTimeout(offsetId);
+      }
+    }, onset);
+    return () => window.clearTimeout(onsetId);
+  }, [state]);
+
+  // linger 진입 시 이모지 인덱스 리셋 + 2초마다 다음 이모지로 회전. 같은 자리에
+  // 박제된 인상을 깨고 "뭐 하나 하다 다른 거 하다" 같은 인상.
+  useEffect(() => {
+    if (state !== "linger" || !destKind) return;
+    setIconIdx(Math.floor(Math.random() * 4));
+    const id = window.setInterval(() => {
+      setIconIdx((i) => i + 1);
+    }, 1800 + Math.random() * 800);
+    return () => window.clearInterval(id);
+  }, [state, destKind]);
+
+  // linger → 목적지에서 2.5~5.5초 머무름 → idle (다음 wander 추첨으로).
+  // 5~12초 → 절반으로 단축. 더 자주 새 자리로 옮겨감.
   useEffect(() => {
     if (state !== "linger") return;
-    const wait = (5000 + Math.random() * 7000) * personality.waitMul;
+    const wait = (2500 + Math.random() * 3000) * personality.waitMul;
     const id = window.setTimeout(() => {
       setState("idle");
       setDestKind(null);
@@ -403,10 +465,12 @@ function AgentCharacter({
     if (state === "leaving") return t("office.bubble.done");
     if (state === "linger" && destKind) {
       const dest = DESTINATIONS.find((d) => d.kind === destKind);
-      return dest?.icon ?? null;
+      if (!dest || dest.icons.length === 0) return null;
+      return dest.icons[iconIdx % dest.icons.length] ?? null;
     }
+    if (state === "idle" && idleAction) return idleAction;
     return null;
-  }, [state, activeTouch, activeTool, destKind, t]);
+  }, [state, activeTouch, activeTool, destKind, iconIdx, idleAction, t]);
 
   const isMoving = state === "going" || state === "leaving" || state === "wander";
   const movingLeft = target.x < pos.x;
