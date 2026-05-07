@@ -24,10 +24,11 @@ export function MarketplaceDialog({
   const { t } = useI18n();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [source, setSource] = useState<"all" | "official" | "smithery">("all");
 
   const list = useQuery({
-    queryKey: ["mcp-marketplace"],
-    queryFn: api.listMcpMarketplace,
+    queryKey: ["mcp-marketplace", source],
+    queryFn: () => api.listMcpMarketplace(source),
     enabled: open,
     staleTime: 60 * 60_000, // 정적 카탈로그 — 한 시간 안 바뀜.
   });
@@ -90,7 +91,7 @@ export function MarketplaceDialog({
               </button>
             </header>
 
-            <div className="px-4 py-2.5 border-b border-border/60 shrink-0">
+            <div className="px-4 py-2.5 border-b border-border/60 shrink-0 space-y-2">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60 pointer-events-none" />
                 <Input
@@ -101,6 +102,11 @@ export function MarketplaceDialog({
                   className="pl-7 h-8 text-sm"
                 />
               </div>
+              <SourceTabs
+                value={source}
+                onChange={setSource}
+                smitheryEnabled={!!list.data?.sources.smitheryEnabled}
+              />
             </div>
 
             <div className="flex-1 overflow-y-auto subtle-scrollbar p-3 space-y-2">
@@ -126,6 +132,58 @@ export function MarketplaceDialog({
         </>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+function SourceTabs({
+  value,
+  onChange,
+  smitheryEnabled,
+}: {
+  value: "all" | "official" | "smithery";
+  onChange: (next: "all" | "official" | "smithery") => void;
+  smitheryEnabled: boolean;
+}) {
+  const { t } = useI18n();
+  const tabs: Array<{
+    key: "all" | "official" | "smithery";
+    label: string;
+    disabled?: boolean;
+    hint?: string;
+  }> = [
+    { key: "all", label: t("mcps.marketplace.source.all") },
+    { key: "official", label: t("mcps.marketplace.source.official") },
+    {
+      key: "smithery",
+      label: t("mcps.marketplace.source.smithery"),
+      disabled: !smitheryEnabled,
+      hint: smitheryEnabled
+        ? undefined
+        : t("mcps.marketplace.source.smitheryDisabled"),
+    },
+  ];
+  return (
+    <div className="flex items-center gap-0.5 text-[11px] mono uppercase tracking-wider">
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          onClick={() => !tab.disabled && onChange(tab.key)}
+          disabled={tab.disabled}
+          title={tab.hint}
+          className={cn(
+            "px-2 h-5 rounded transition-colors",
+            tab.disabled
+              ? "text-muted-foreground/40 cursor-not-allowed"
+              : value === tab.key
+                ? "bg-foreground/[0.08] text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

@@ -10,6 +10,10 @@ import {
 import { runGeminiSync } from "../services/gemini-sync.js";
 import { logger } from "../logger.js";
 import { MARKETPLACE } from "../marketplace/mcp-catalog.js";
+import {
+  fetchSmitheryCatalog,
+  smitheryAvailable,
+} from "../services/smithery.js";
 
 /** mcp 카탈로그 변경 후 — gemini settings.json 자동 머지. enabled=false면 no-op.
  *  실패해도 CRUD는 성공 응답을 그대로 보냄(sync 실패가 카탈로그 변경을 막으면 안 됨). */
@@ -71,13 +75,31 @@ export const mcpServersRoute = new Hono();
 mcpServersRoute.get("/", (c) => c.json({ servers: listMcpServers() }));
 
 /**
- * 큐레이팅된 MCP 마켓플레이스 카탈로그. 빌드 타임에 src/data/mcp-marketplace.ts
- * 에 박아둔 공식 reference servers 를 그대로 반환. 런타임 fetch 안 함 — 오프라인
- * 동작 + 동일 결과 보장. 새 서버를 더하려면 그 파일을 수정해 리빌드.
+ * MCP 마켓플레이스. 두 소스를 섞어 보여줌:
+ *   - "official": src/marketplace/mcp-catalog.ts (build-time, 항상 가용)
+ *   - "smithery": registry.smithery.ai (LOOM_SMITHERY_API_KEY 있을 때만)
+ *
+ * `?source=` 가 없으면 둘 다. `?source=official|smithery` 로 한쪽만.
  */
-mcpServersRoute.get("/marketplace", (c) =>
-  c.json({ entries: MARKETPLACE }),
-);
+mcpServersRoute.get("/marketplace", async (c) => {
+  const source = c.req.query("source") ?? "all";
+  const sources = {
+    smitheryEnabled: smitheryAvailable(),
+  };
+  if (source === "official") {
+    return c.json({ entries: MARKETPLACE, sources });
+  }
+  if (source === "smithery") {
+    const smithery = await fetchSmitheryCatalog();
+    return c.json({ entries: smithery, sources });
+  }
+  // all — official + smithery 합쳐서.
+  const smithery = await fetchSmitheryCatalog();
+  return c.json({
+    entries: [...MARKETPLACE, ...smithery],
+    sources,
+  });
+});
 
 mcpServersRoute.post("/", async (c) => {
   const body = await c.req.json().catch(() => null);

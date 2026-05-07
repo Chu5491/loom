@@ -657,10 +657,11 @@ export const api = {
 
   listMcpServers: () =>
     request<{ servers: McpServer[] }>("/api/mcp-servers"),
-  listMcpMarketplace: () =>
-    request<{ entries: McpMarketplaceEntry[] }>(
-      "/api/mcp-servers/marketplace",
-    ),
+  listMcpMarketplace: (source: "all" | "official" | "smithery" = "all") =>
+    request<{
+      entries: McpMarketplaceEntry[];
+      sources: { smitheryEnabled: boolean };
+    }>(`/api/mcp-servers/marketplace?source=${source}`),
   getMcpServer: (id: string) =>
     request<{ server: McpServer }>(`/api/mcp-servers/${id}`),
   createMcpServer: (body: CreateMcpServerBody) =>

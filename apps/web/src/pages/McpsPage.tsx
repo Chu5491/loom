@@ -180,8 +180,8 @@ function NewServerEditor() {
   const [params] = useSearchParams();
   const fromId = params.get("from");
   const marketplace = useQuery({
-    queryKey: ["mcp-marketplace"],
-    queryFn: api.listMcpMarketplace,
+    queryKey: ["mcp-marketplace", "all"] as const,
+    queryFn: () => api.listMcpMarketplace("all"),
     enabled: !!fromId,
     staleTime: 60 * 60_000,
   });

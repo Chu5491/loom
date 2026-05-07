@@ -250,6 +250,10 @@ const en: Dictionary = {
   "mcps.marketplace.source": "Source",
   "mcps.marketplace.noMatch": "No matching servers.",
   "mcps.marketplace.needsInput": "Needs: {{fields}}",
+  "mcps.marketplace.source.all": "All",
+  "mcps.marketplace.source.official": "Official",
+  "mcps.marketplace.source.smithery": "Smithery",
+  "mcps.marketplace.source.smitheryDisabled": "Set LOOM_SMITHERY_API_KEY to enable",
   "mcps.subtitle":
     "Configure once, pick from this list when you build an agent. Each entry is one MCP server config — name, transport, and runtime args.",
   "mcps.new": "New MCP server",
@@ -985,6 +989,10 @@ const ko: Dictionary = {
   "mcps.marketplace.source": "소스",
   "mcps.marketplace.noMatch": "일치하는 서버가 없어요.",
   "mcps.marketplace.needsInput": "필요: {{fields}}",
+  "mcps.marketplace.source.all": "전체",
+  "mcps.marketplace.source.official": "공식",
+  "mcps.marketplace.source.smithery": "Smithery",
+  "mcps.marketplace.source.smitheryDisabled": "LOOM_SMITHERY_API_KEY 환경변수가 필요해요",
   "mcps.subtitle":
     "한 번 등록해두면 어떤 프로젝트의 어떤 에이전트라도 이 목록에서 골라 쓸 수 있어요. 각 항목은 MCP 서버 한 개의 설정 — 이름·전송 방식·실행 인자.",
   "mcps.new": "MCP 서버 추가",
