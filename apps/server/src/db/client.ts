@@ -280,6 +280,14 @@ function applyMigrations(db: DB): void {
        VALUES (1, '', datetime('now'))`,
     );
   });
+
+  migration(db, 17, "projects.clone_url", () => {
+    if (!columnExists(db, "projects", "clone_url")) {
+      // git URL 로 만든 프로젝트면 채워짐. 사용자가 "Local path" 로 만들었으면
+      // NULL — 기존 동작과 100% 호환.
+      db.exec(`ALTER TABLE projects ADD COLUMN clone_url TEXT`);
+    }
+  });
 }
 
 interface OrphanRunRow {

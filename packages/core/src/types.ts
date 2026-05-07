@@ -23,6 +23,9 @@ export interface Project {
   description: string | null;
   /** 사용자가 "Open in IDE"로 호출하는 외부 에디터. NULL이면 vscode. */
   preferredEditor: PreferredEditor | null;
+  /** git URL — 이 프로젝트가 git clone 으로 만들어졌으면 origin. NULL 이면
+   *  사용자가 로컬 path 로 직접 추가한 프로젝트. */
+  cloneUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }

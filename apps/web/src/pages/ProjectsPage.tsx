@@ -201,33 +201,70 @@ function CreateProjectForm({
   onCancel: () => void;
 }) {
   const { t } = useI18n();
+  const [mode, setMode] = useState<"local" | "clone">("local");
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
+  const [cloneUrl, setCloneUrl] = useState("");
   const [description, setDescription] = useState("");
   const [editor, setEditor] = useState<PreferredEditor>("vscode");
+
+  // git URL → 자동 추천 폴더 이름. 사용자 미수정 시에만 적용해 입력 덮어쓰기 회피.
+  const [autoName, setAutoName] = useState(true);
+  const onCloneUrlChange = (v: string) => {
+    setCloneUrl(v);
+    if (autoName) {
+      const inferred = v.split("/").pop()?.replace(/\.git$/i, "")?.trim() ?? "";
+      if (inferred) setName(inferred);
+    }
+  };
+  const onNameChange = (v: string) => {
+    setName(v);
+    setAutoName(false);
+  };
+
+  const canSubmit = (() => {
+    if (submitting || !name) return false;
+    if (mode === "local") return !!path;
+    return !!cloneUrl;
+  })();
 
   return (
     <Card className="space-y-4">
       <h2 className="font-medium">{t("projects.new")}</h2>
+      <ModeTabs value={mode} onChange={setMode} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={t("projects.field.name")}>
           <Input
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => onNameChange(e.target.value)}
             placeholder={t("projects.placeholder.name")}
           />
         </Field>
-        <Field
-          label={t("projects.field.path")}
-          hint={t("projects.field.pathHint")}
-        >
-          <Input
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder={t("projects.placeholder.path")}
-            className="mono"
-          />
-        </Field>
+        {mode === "local" ? (
+          <Field
+            label={t("projects.field.path")}
+            hint={t("projects.field.pathHint")}
+          >
+            <Input
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder={t("projects.placeholder.path")}
+              className="mono"
+            />
+          </Field>
+        ) : (
+          <Field
+            label={t("projects.field.cloneUrl")}
+            hint={t("projects.field.cloneUrlHint")}
+          >
+            <Input
+              value={cloneUrl}
+              onChange={(e) => onCloneUrlChange(e.target.value)}
+              placeholder={t("projects.placeholder.cloneUrl")}
+              className="mono"
+            />
+          </Field>
+        )}
       </div>
       <Field label={t("projects.field.description")}>
         <Textarea
@@ -245,19 +282,67 @@ function CreateProjectForm({
           {t("common.cancel")}
         </Button>
         <Button
-          disabled={submitting || !name || !path}
+          disabled={!canSubmit}
           onClick={() =>
-            onSubmit({
-              name,
-              path,
-              description: description || null,
-              preferredEditor: editor,
-            })
+            onSubmit(
+              mode === "clone"
+                ? {
+                    name,
+                    cloneUrl: cloneUrl.trim(),
+                    description: description || null,
+                    preferredEditor: editor,
+                  }
+                : {
+                    name,
+                    path,
+                    description: description || null,
+                    preferredEditor: editor,
+                  },
+            )
           }
         >
-          {submitting ? t("common.creating") : t("common.create")}
+          {submitting
+            ? mode === "clone"
+              ? t("projects.cloning")
+              : t("common.creating")
+            : mode === "clone"
+              ? t("projects.cloneAndCreate")
+              : t("common.create")}
         </Button>
       </div>
     </Card>
+  );
+}
+
+function ModeTabs({
+  value,
+  onChange,
+}: {
+  value: "local" | "clone";
+  onChange: (next: "local" | "clone") => void;
+}) {
+  const { t } = useI18n();
+  const tabs: Array<{ key: "local" | "clone"; label: string }> = [
+    { key: "local", label: t("projects.mode.local") },
+    { key: "clone", label: t("projects.mode.clone") },
+  ];
+  return (
+    <div className="inline-flex rounded-md border border-border/70 p-0.5">
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          onClick={() => onChange(tab.key)}
+          className={
+            "px-3 h-7 text-xs rounded transition-colors " +
+            (value === tab.key
+              ? "bg-foreground/[0.08] text-foreground font-medium"
+              : "text-muted-foreground hover:text-foreground")
+          }
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
   );
 }

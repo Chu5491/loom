@@ -229,6 +229,42 @@ describe("git service — real-binary integration", () => {
     }
   });
 
+  it("project-clone: cloneRepo + removeClonedRepo round-trip", async () => {
+    const { cloneRepo, removeClonedRepo } = await import(
+      "../src/services/project-clone.js"
+    );
+    const { paths } = await import("../src/config.js");
+
+    // 다른 임시 dir 을 'origin' 으로 — bare repo 만들어 clone 가능하게.
+    const origin = fs.mkdtempSync(path.join(os.tmpdir(), "loom-origin-"));
+    await execFile("git", ["init", "-q", "--bare"], { cwd: origin });
+
+    // origin 에 한 커밋 시드 — 빈 bare 는 clone 시 'warning: empty repo' 만
+    // 뜨고 진행되지만, 진짜 시나리오 가깝게 한 줄 박음.
+    const seed = fs.mkdtempSync(path.join(os.tmpdir(), "loom-seed-"));
+    await execFile("git", ["init", "-q", "-b", "main"], { cwd: seed });
+    await execFile("git", ["config", "user.email", "t@t"], { cwd: seed });
+    await execFile("git", ["config", "user.name", "t"], { cwd: seed });
+    fs.writeFileSync(path.join(seed, "README.md"), "hello\n");
+    await execFile("git", ["add", "."], { cwd: seed });
+    await execFile("git", ["commit", "-q", "-m", "init"], { cwd: seed });
+    await execFile("git", ["push", "-q", origin, "main"], { cwd: seed });
+
+    const projectId = "test-clone-" + Date.now();
+    const r = await cloneRepo(projectId, origin);
+    expect(r.path).toBe(path.join(paths.repos, projectId));
+    expect(fs.existsSync(path.join(r.path, ".git"))).toBe(true);
+    expect(fs.existsSync(path.join(r.path, "README.md"))).toBe(true);
+
+    // remove 가 그 폴더만 정확히 정리.
+    removeClonedRepo(projectId);
+    expect(fs.existsSync(r.path)).toBe(false);
+
+    // cleanup
+    fs.rmSync(origin, { recursive: true, force: true });
+    fs.rmSync(seed, { recursive: true, force: true });
+  });
+
   it("restoreWorkTree: rolls workspace back to a snapshot ref", async () => {
     const { snapshotWorkTree, restoreWorkTree } = await import(
       "../src/services/git-snapshot.js"

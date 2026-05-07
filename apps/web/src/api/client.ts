@@ -103,12 +103,19 @@ async function request<T>(
 
 export interface CreateProjectBody {
   name: string;
-  path: string;
+  /** Local path 모드 — 둘 중 하나는 필수. */
+  path?: string;
+  /** Clone 모드 — git URL. 서버가 ~/.loom/data/repos/<id>/ 로 clone 하고
+   *  project.path 를 그 위치로 채움. */
+  cloneUrl?: string;
   description?: string | null;
   preferredEditor?: PreferredEditor | null;
 }
 
-export type UpdateProjectBody = Partial<CreateProjectBody>;
+/** Update 는 path 와 cloneUrl 둘 다 안 받음 — 정체성에 가까운 필드라 변경 막음. */
+export type UpdateProjectBody = Partial<
+  Omit<CreateProjectBody, "path" | "cloneUrl">
+> & { path?: string };
 
 export interface GeminiSyncStatus {
   enabled: boolean;

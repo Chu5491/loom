@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS projects (
   -- 외부 IDE — vscode | cursor | antigravity | zed | intellij. NULL이면
   -- 클라이언트의 기본값(vscode) 사용. "Open in IDE" 버튼이 spawn할 CLI 결정.
   preferred_editor  TEXT,
+  -- git 으로 clone 해서 만든 프로젝트의 origin URL. NULL = 사용자가 로컬 path
+  -- 로 직접 추가한 프로젝트. UI 가 "View on GitHub" 같은 링크 띄우는 용도.
+  clone_url         TEXT,
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL
 );

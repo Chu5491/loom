@@ -1,12 +1,20 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import {
   createProject,
+  createProjectWithId,
   deleteProject,
   getProject,
   listProjects,
   updateProject,
 } from "../db/projects.js";
+import {
+  cloneRepo,
+  CloneError,
+  inferRepoName,
+  removeClonedRepo,
+} from "../services/project-clone.js";
 import {
   listProjectEnv,
   replaceProjectEnv,
@@ -28,12 +36,18 @@ const editorSchema = z.enum([
   "intellij",
 ]);
 
-const createSchema = z.object({
-  name: z.string().min(1),
-  path: z.string().min(1),
-  description: z.string().nullable().optional(),
-  preferredEditor: editorSchema.nullable().optional(),
-});
+// 두 모드 — local path 또는 git clone. 둘 중 하나만 명시. 둘 다 없으면 invalid.
+const createSchema = z
+  .object({
+    name: z.string().min(1),
+    path: z.string().min(1).optional(),
+    cloneUrl: z.string().min(1).optional(),
+    description: z.string().nullable().optional(),
+    preferredEditor: editorSchema.nullable().optional(),
+  })
+  .refine((v) => !!v.path || !!v.cloneUrl, {
+    message: "path or cloneUrl is required",
+  });
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -52,7 +66,52 @@ projectsRoute.post("/", async (c) => {
   if (!parsed.success) {
     return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
   }
-  const project = createProject(parsed.data);
+  const data = parsed.data;
+
+  // 1) Clone 모드 — projectId 를 미리 결정해 그 id 로 폴더 만들고, 성공하면 row.
+  if (data.cloneUrl) {
+    const id = randomUUID();
+    let cloned;
+    try {
+      cloned = await cloneRepo(id, data.cloneUrl);
+    } catch (err) {
+      if (err instanceof CloneError) {
+        return c.json(
+          { error: "clone_failed", message: err.message, stderr: err.stderr },
+          422,
+        );
+      }
+      return c.json(
+        { error: "clone_failed", message: (err as Error).message },
+        500,
+      );
+    }
+    try {
+      const project = createProjectWithId(id, {
+        name: data.name || inferRepoName(data.cloneUrl),
+        path: cloned.path,
+        description: data.description,
+        preferredEditor: data.preferredEditor,
+        cloneUrl: data.cloneUrl,
+      });
+      return c.json({ project }, 201);
+    } catch (err) {
+      // DB insert 실패 → clone 한 폴더 정리.
+      removeClonedRepo(id);
+      throw err;
+    }
+  }
+
+  // 2) Local path 모드 — 기존 흐름 그대로.
+  if (!data.path) {
+    return c.json({ error: "invalid_body" }, 400);
+  }
+  const project = createProject({
+    name: data.name,
+    path: data.path,
+    description: data.description,
+    preferredEditor: data.preferredEditor,
+  });
   return c.json({ project }, 201);
 });
 
@@ -74,8 +133,20 @@ projectsRoute.patch("/:id", async (c) => {
 });
 
 projectsRoute.delete("/:id", (c) => {
-  const ok = deleteProject(c.req.param("id"));
+  const id = c.req.param("id");
+  const project = getProject(id);
+  if (!project) return c.json({ error: "not_found" }, 404);
+  const ok = deleteProject(id);
   if (!ok) return c.json({ error: "not_found" }, 404);
+  // clone 으로 만든 프로젝트면 디스크의 clone 도 정리. 사용자가 직접 추가한
+  // 로컬 path 면 절대 안 건드림.
+  if (project.cloneUrl) {
+    try {
+      removeClonedRepo(id);
+    } catch {
+      // 디스크 정리는 best-effort — 실패해도 row 는 이미 지웠음.
+    }
+  }
   return c.body(null, 204);
 });
 
