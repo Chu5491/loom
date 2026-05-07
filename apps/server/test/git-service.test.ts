@@ -228,4 +228,28 @@ describe("git service — real-binary integration", () => {
       expect(r.version).toBe("");
     }
   });
+
+  it("restoreWorkTree: rolls workspace back to a snapshot ref", async () => {
+    const { snapshotWorkTree, restoreWorkTree } = await import(
+      "../src/services/git-snapshot.js"
+    );
+
+    // before 스냅샷.
+    const before = await snapshotWorkTree(repoDir);
+    expect(before).toBeTruthy();
+
+    // 변경: 새 파일 추가, 기존 파일 수정.
+    fs.writeFileSync(path.join(repoDir, "rollback-new.txt"), "new\n");
+    fs.writeFileSync(path.join(repoDir, "a.txt"), "alpha\nrollback-modified\n");
+
+    // 되돌리기 — before 시점으로.
+    const r = await restoreWorkTree(repoDir, before!);
+    expect(r.safetyRef).toBeTruthy();
+    // 그 사이에 만든 파일은 사라지고…
+    expect(fs.existsSync(path.join(repoDir, "rollback-new.txt"))).toBe(false);
+    // 수정한 파일은 원상복귀.
+    expect(fs.readFileSync(path.join(repoDir, "a.txt"), "utf8")).toBe(
+      "alpha\nbeta\n",
+    );
+  });
 });

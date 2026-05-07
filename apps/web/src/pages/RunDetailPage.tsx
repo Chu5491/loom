@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
-import type { RunStatus } from "@loom/core";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
+import { ChevronDown, GitCompare, RotateCcw, Undo2 } from "lucide-react";
+import type { Agent, Run, RunStatus } from "@loom/core";
 import { api } from "../api/client.js";
 import { Badge, Button, Card } from "../components/ui.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu.js";
 import { PageScroll } from "../components/PageScroll.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
 import { useI18n } from "../context/I18nContext.js";
@@ -66,6 +75,23 @@ export function RunDetailPage() {
   const cancel = useMutation({
     mutationFn: () => api.cancelRun(id!),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["run", id] }),
+  });
+
+  // Replay / Compare 에 필요한 보조 데이터.
+  const agents = useQuery({
+    queryKey: ["agents", { projectId }],
+    queryFn: () => api.listAgents({ projectId }),
+    enabled: !!projectId,
+  });
+  // 같은 thread 의 다른 run 들 — Compare picker 의 후보.
+  const threadRuns = useQuery({
+    queryKey: ["runs", { threadId: run.data?.run.threadId }],
+    queryFn: () =>
+      api.listRuns({
+        threadId: run.data?.run.threadId ?? undefined,
+        limit: 50,
+      }),
+    enabled: !!run.data?.run.threadId,
   });
 
   const [lines, setLines] = useState<ParsedLine[]>([]);
@@ -228,7 +254,14 @@ export function RunDetailPage() {
             >
               {cancel.isPending ? t("common.cancelling") : t("runDetail.button.cancel")}
             </Button>
-          ) : null}
+          ) : (
+            <RunActions
+              run={r}
+              agents={agents.data?.agents ?? []}
+              threadRuns={threadRuns.data?.runs ?? []}
+              projectId={projectId}
+            />
+          )}
         </div>
         <div>
           <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
@@ -516,5 +549,175 @@ function PrettyLine({ line }: { line: ParsedLine }) {
         {JSON.stringify(j, null, 2)}
       </pre>
     </details>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// RunActions — finished run 의 우측 상단 액션 모음.
+//
+// 1) Rollback — workspace 를 이 run 직전 상태로 되돌림. before_ref 가 없으면
+//    버튼 자체를 disabled.
+// 2) Replay   — 같은 prompt + 같은 thread + parentRunId=this 로 새 run 시작.
+//               agent picker 가 dropdown 으로 뜨고, 같은 agent 도 선택 가능.
+// 3) Compare  — 같은 thread 의 다른 run 을 골라 /runs/compare?a=&b= 로 이동.
+
+function RunActions(props: {
+  run: Run;
+  agents: Agent[];
+  threadRuns: Run[];
+  projectId: string | undefined;
+}) {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const confirm = useConfirm();
+  const qc = useQueryClient();
+  const { run: r, agents, threadRuns, projectId } = props;
+
+  const rollback = useMutation({
+    mutationFn: () => api.rollbackRun(r.id),
+    onSuccess: (res) => {
+      toast.success(t("runDetail.rollback.done"), {
+        description: res.safetyRef
+          ? t("runDetail.rollback.safetyRef", {
+              sha: res.safetyRef.slice(0, 7),
+            })
+          : undefined,
+      });
+      qc.invalidateQueries({ queryKey: ["gitStatus", projectId] });
+      qc.invalidateQueries({ queryKey: ["projectTouched", projectId] });
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const replay = useMutation({
+    mutationFn: (agentId: string) =>
+      api.createRun({
+        agentId,
+        prompt: r.prompt,
+        threadId: r.threadId ?? null,
+        parentRunId: r.id,
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["runs"] });
+      if (projectId) {
+        navigate(`/projects/${projectId}/runs/${res.run.id}`);
+      }
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const onRollback = async () => {
+    if (!r.beforeRef) return;
+    const ok = await confirm({
+      title: t("runDetail.rollback.title"),
+      description: t("runDetail.rollback.desc"),
+      confirmLabel: t("runDetail.rollback.confirm"),
+      destructive: true,
+    });
+    if (ok) rollback.mutate();
+  };
+
+  // Compare 후보 = 같은 thread 의 다른 run (자기 자신 제외).
+  const compareCandidates = threadRuns.filter((x) => x.id !== r.id);
+  const canCompare = compareCandidates.length > 0;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={!r.beforeRef || rollback.isPending}
+        onClick={onRollback}
+        title={
+          r.beforeRef
+            ? t("runDetail.rollback.button")
+            : t("runDetail.rollback.unavailable")
+        }
+      >
+        <Undo2 className="size-3.5 mr-1" />
+        {rollback.isPending
+          ? t("runDetail.rollback.rolling")
+          : t("runDetail.rollback.button")}
+      </Button>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" disabled={replay.isPending}>
+            <RotateCcw className="size-3.5 mr-1" />
+            {replay.isPending
+              ? t("runDetail.replay.starting")
+              : t("runDetail.replay.button")}
+            <ChevronDown className="size-3 ml-1" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[12rem]">
+          <DropdownMenuLabel>
+            {t("runDetail.replay.pickAgent")}
+          </DropdownMenuLabel>
+          {agents.length === 0 ? (
+            <DropdownMenuItem disabled>
+              {t("runDetail.replay.noAgents")}
+            </DropdownMenuItem>
+          ) : (
+            agents.map((a) => (
+              <DropdownMenuItem
+                key={a.id}
+                onSelect={() => replay.mutate(a.id)}
+              >
+                @{a.name}
+                <span className="ml-auto text-[10px] text-muted-foreground/70 mono">
+                  {a.adapterKind}
+                </span>
+              </DropdownMenuItem>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" disabled={!canCompare}>
+            <GitCompare className="size-3.5 mr-1" />
+            {t("runDetail.compare.button")}
+            {canCompare ? <ChevronDown className="size-3 ml-1" /> : null}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[18rem]">
+          <DropdownMenuLabel>
+            {t("runDetail.compare.pickRun")}
+          </DropdownMenuLabel>
+          {!canCompare ? (
+            <DropdownMenuItem disabled>
+              {t("runDetail.compare.none")}
+            </DropdownMenuItem>
+          ) : (
+            compareCandidates.slice(0, 20).map((other) => {
+              const agent = agents.find((a) => a.id === other.agentId);
+              return (
+                <DropdownMenuItem
+                  key={other.id}
+                  onSelect={() => {
+                    if (!projectId) return;
+                    navigate(
+                      `/projects/${projectId}/runs/compare?a=${r.id}&b=${other.id}`,
+                    );
+                  }}
+                >
+                  <span className="mono text-[10px] text-muted-foreground/70 mr-2">
+                    {other.id.slice(0, 6)}
+                  </span>
+                  <span className="truncate flex-1">
+                    {agent ? `@${agent.name}` : other.agentId.slice(0, 8)}
+                  </span>
+                  <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                    {other.status}
+                  </span>
+                </DropdownMenuItem>
+              );
+            })
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }

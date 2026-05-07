@@ -596,6 +596,11 @@ export const api = {
     }),
   cancelRun: (id: string) =>
     request<{ ok: true }>(`/api/runs/${id}/cancel`, { method: "POST" }),
+  rollbackRun: (id: string) =>
+    request<{ ok: true; safetyRef: string | null }>(
+      `/api/runs/${id}/rollback`,
+      { method: "POST" },
+    ),
 
   listSpecs: (filter: { agentId?: string } = {}) => {
     const qs = new URLSearchParams();

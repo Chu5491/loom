@@ -36,6 +36,11 @@ const RunDetailPage = lazy(() =>
     default: m.RunDetailPage,
   })),
 );
+const RunComparePage = lazy(() =>
+  import("./pages/RunComparePage.js").then((m) => ({
+    default: m.RunComparePage,
+  })),
+);
 const ReviewPage = lazy(() =>
   import("./pages/ReviewPage.js").then((m) => ({ default: m.ReviewPage })),
 );
@@ -146,6 +151,14 @@ export function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <RunsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="runs/compare"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <RunComparePage />
               </Suspense>
             }
           />

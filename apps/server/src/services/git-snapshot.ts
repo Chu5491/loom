@@ -142,6 +142,48 @@ export async function diffStat(
 }
 
 /**
+ * 워킹 트리를 어떤 snapshot SHA(=run.beforeRef) 의 상태로 되돌림.
+ *
+ * 안전망:
+ *   1. 되돌리기 전 *현재* 상태를 새 snapshot 으로 떠 둠 — 원하면 다시 되돌릴
+ *      수 있게. 그 SHA 를 `safetyRef` 로 반환.
+ *   2. tracked 파일은 `git read-tree --reset -u` 로 index + worktree 를 같이.
+ *   3. ref 시점에 없었지만 지금 worktree 에 있는 untracked 파일은 `git clean`
+ *      으로 제거 — 단, .gitignore 항목은 유지(`-d -f`, `-x` 안 붙임).
+ *
+ * 호출자는 이 함수가 실패해도 데이터를 잃지 않게 — 실패면 throw 하고 worktree
+ * 는 호출 전 상태에 가까이 남음.
+ */
+export interface RestoreResult {
+  safetyRef: string | null;
+}
+
+export async function restoreWorkTree(
+  cwd: string,
+  ref: string,
+): Promise<RestoreResult> {
+  if (!(await isGitRepo(cwd))) {
+    throw new Error("not_a_git_repo");
+  }
+  // 현재 상태 안전 snapshot 먼저. 실패해도 진행 — 안전망이 없는 거지 막아야
+  // 할 이유는 아님.
+  const safetyRef = await snapshotWorkTree(cwd);
+
+  // ref 가 valid commit 인지 확인 — invalid 면 read-tree 가 깨진 뒤에 알게
+  // 되는 것보단 일찍 throw.
+  await execFile("git", ["rev-parse", "--verify", `${ref}^{commit}`], { cwd });
+
+  // index + worktree 동시 reset. tracked 파일은 ref 의 내용으로.
+  await execFile("git", ["read-tree", "--reset", "-u", ref], { cwd });
+
+  // ref 에 없던 untracked 파일은 cleanup. -d 디렉터리까지, -f 강제. -x 는
+  // 안 붙임 — gitignore 된 빌드 산출물은 유저 데이터일 수 있어 보존.
+  await execFile("git", ["clean", "-d", "-f"], { cwd });
+
+  return { safetyRef };
+}
+
+/**
  * Unified diff for a single path between two snapshots. Returns null when
  * git fails or refs are missing — UI should treat that as "diff
  * unavailable" rather than empty (an empty diff would mean "no changes").

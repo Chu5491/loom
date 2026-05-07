@@ -4,7 +4,11 @@ import { z } from "zod";
 import { getRun, listRuns } from "../db/runs.js";
 import { listChangesForRun } from "../db/run-changes.js";
 import { cancelRun, startRun } from "../services/run-service.js";
-import { diffPatch, diffStat } from "../services/git-snapshot.js";
+import {
+  diffPatch,
+  diffStat,
+  restoreWorkTree,
+} from "../services/git-snapshot.js";
 import {
   readLogFile,
   subscribeActive,
@@ -163,6 +167,29 @@ runsRoute.post("/:id/cancel", (c) => {
   const result = cancelRun(c.req.param("id"));
   if (!result.ok) return c.json({ error: result.error }, result.status);
   return c.json({ ok: true });
+});
+
+/**
+ * 워킹 트리를 이 run 직전 상태(=before_ref)로 되돌림. 안전망으로 현재 상태를
+ * 새 snapshot 으로 떠 두고 (`safetyRef`), 실패해도 사용자가 잃은 게 없게.
+ * before_ref 가 null 이면 (예: cwd 가 git 저장소가 아니어서 snapshot 못 떴던
+ * run) 412 — 되돌릴 기준이 없음을 명시적으로 알림.
+ */
+runsRoute.post("/:id/rollback", async (c) => {
+  const run = getRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not_found" }, 404);
+  if (!run.beforeRef) {
+    return c.json({ error: "no_snapshot" }, 412);
+  }
+  try {
+    const r = await restoreWorkTree(run.cwd, run.beforeRef);
+    return c.json({ ok: true, safetyRef: r.safetyRef });
+  } catch (err) {
+    return c.json(
+      { error: "rollback_failed", message: (err as Error).message },
+      500,
+    );
+  }
 });
 
 runsRoute.get("/:id/logs", (c) => {
