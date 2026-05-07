@@ -99,7 +99,11 @@ export function SkillMarketplaceDialog({
                   className="pl-7 h-8 text-sm"
                 />
               </div>
-              <SkillSourceTabs value={source} onChange={setSource} />
+              <SkillSourceTabs
+                value={source}
+                onChange={setSource}
+                skillsShEnabled={!!list.data?.sources.skillsShEnabled}
+              />
             </div>
 
             <div className="flex-1 overflow-y-auto subtle-scrollbar p-3 space-y-2">
@@ -131,17 +135,28 @@ export function SkillMarketplaceDialog({
 function SkillSourceTabs({
   value,
   onChange,
+  skillsShEnabled,
 }: {
   value: "all" | "skills.sh" | "builtin";
   onChange: (next: "all" | "skills.sh" | "builtin") => void;
+  skillsShEnabled: boolean;
 }) {
   const { t } = useI18n();
   const tabs: Array<{
     key: "all" | "skills.sh" | "builtin";
     label: string;
+    disabled?: boolean;
+    hint?: string;
   }> = [
     { key: "all", label: t("specs.marketplace.source.all") },
-    { key: "skills.sh", label: t("specs.marketplace.source.skillsSh") },
+    {
+      key: "skills.sh",
+      label: t("specs.marketplace.source.skillsSh"),
+      disabled: !skillsShEnabled,
+      hint: skillsShEnabled
+        ? undefined
+        : t("specs.marketplace.source.skillsShDisabled"),
+    },
     { key: "builtin", label: t("specs.marketplace.source.builtin") },
   ];
   return (
@@ -150,12 +165,16 @@ function SkillSourceTabs({
         <button
           key={tab.key}
           type="button"
-          onClick={() => onChange(tab.key)}
+          onClick={() => !tab.disabled && onChange(tab.key)}
+          disabled={tab.disabled}
+          title={tab.hint}
           className={cn(
             "px-2 h-5 rounded transition-colors",
-            value === tab.key
-              ? "bg-foreground/[0.08] text-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+            tab.disabled
+              ? "text-muted-foreground/40 cursor-not-allowed"
+              : value === tab.key
+                ? "bg-foreground/[0.08] text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
           )}
         >
           {tab.label}

@@ -663,9 +663,10 @@ export const api = {
       body: JSON.stringify(body),
     }),
   listSkillMarketplace: (source: "all" | "builtin" | "skills.sh" = "all") =>
-    request<{ entries: SkillMarketplaceEntry[] }>(
-      `/api/specs/marketplace?source=${source}`,
-    ),
+    request<{
+      entries: SkillMarketplaceEntry[];
+      sources: { skillsShEnabled: boolean };
+    }>(`/api/specs/marketplace?source=${source}`),
   /** skills.sh entry 의 SKILL.md 본문. Install 클릭 시점에 lazy fetch.
    *  builtin entry 도 같은 endpoint 로 — 서버가 source 분기. */
   getSkillMarketplaceContent: (id: string) =>

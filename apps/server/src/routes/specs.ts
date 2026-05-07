@@ -11,6 +11,7 @@ import { SKILLS as BUILTIN_SKILLS } from "../marketplace/skill-catalog.js";
 import {
   fetchSkillsShCatalog,
   fetchSkillsShDetail,
+  skillsShAvailable,
 } from "../services/skills-sh.js";
 
 const createSchema = z.object({
@@ -49,19 +50,20 @@ specsRoute.get("/", (c) => {
  */
 specsRoute.get("/marketplace", async (c) => {
   const source = c.req.query("source") ?? "all";
+  const sources = { skillsShEnabled: skillsShAvailable() };
   if (source === "builtin") {
-    return c.json({ entries: BUILTIN_SKILLS });
+    return c.json({ entries: BUILTIN_SKILLS, sources });
   }
   if (source === "skills.sh") {
     const remote = await fetchSkillsShCatalog();
-    return c.json({ entries: remote });
+    return c.json({ entries: remote, sources });
   }
   // all
   const remote = await fetchSkillsShCatalog();
   const merged = remote.length > 0
     ? [...BUILTIN_SKILLS, ...remote]
     : BUILTIN_SKILLS;
-  return c.json({ entries: merged });
+  return c.json({ entries: merged, sources });
 });
 
 /**

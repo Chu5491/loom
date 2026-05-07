@@ -264,6 +264,7 @@ const en: Dictionary = {
   "specs.marketplace.source.all": "All",
   "specs.marketplace.source.skillsSh": "skills.sh",
   "specs.marketplace.source.builtin": "Built-in",
+  "specs.marketplace.source.skillsShDisabled": "Set LOOM_SKILLS_SH_API_KEY to enable (request from skills-api@vercel.com)",
   "mcps.subtitle":
     "Configure once, pick from this list when you build an agent. Each entry is one MCP server config — name, transport, and runtime args.",
   "mcps.new": "New MCP server",
@@ -1013,6 +1014,7 @@ const ko: Dictionary = {
   "specs.marketplace.source.all": "전체",
   "specs.marketplace.source.skillsSh": "skills.sh",
   "specs.marketplace.source.builtin": "내장",
+  "specs.marketplace.source.skillsShDisabled": "LOOM_SKILLS_SH_API_KEY 환경변수가 필요해요 (skills-api@vercel.com 에 요청)",
   "mcps.subtitle":
     "한 번 등록해두면 어떤 프로젝트의 어떤 에이전트라도 이 목록에서 골라 쓸 수 있어요. 각 항목은 MCP 서버 한 개의 설정 — 이름·전송 방식·실행 인자.",
   "mcps.new": "MCP 서버 추가",

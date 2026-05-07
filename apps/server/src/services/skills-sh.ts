@@ -1,17 +1,17 @@
 // skills.sh API fetcher.
 //
 //   GET https://skills.sh/api/v1/skills?page=N&perPage=M
-//     - 인증 옵션: 없으면 60 req/min, LOOM_SKILLS_SH_API_KEY 있으면 600
-//     - 응답: { data: [{id, slug, name, source, installs, sourceType, installUrl, url}], pagination }
-//     - **list 에는 description / content 가 없음** — 그건 detail 호출 필요.
-//
 //   GET https://skills.sh/api/v1/skills/{source}/{skill}
-//     - SKILL.md 본문 + 모든 파일 내용 + content hash
-//     - install 누를 때만 lazy fetch (list 단계엔 metadata 만)
 //
-// 캐시:
-//   - 목록: 24h (8000+ 개라 자주 안 바뀌고, 사용자 만족도 > 신선도)
-//   - 본문: 1h (한 번 fetch 한 본문은 보통 install 직후라 더 안 봄)
+// **인증 필수**: skills.sh 의 공식 docs 는 "auth optional" 이라고 적혀 있지만
+// 실제 API 는 키 없이 호출하면 401 (`authentication_required`). 키는 vercel
+// 의 skills-api@vercel.com 에 메일 보내 수동 발급 — 자동 sign-up 없음.
+//
+// 그래서 smithery 와 같은 "옵트인" 패턴:
+//   - LOOM_SKILLS_SH_API_KEY 없으면: skillsShAvailable() = false, 빈 배열.
+//   - 있으면: 정상 fetch, 24h 캐시.
+//
+// list 응답에는 description / content 가 없음 — install 시 detail 호출.
 
 import type { MarketplaceSkill } from "../marketplace/skill-catalog.js";
 import { logger } from "../logger.js";
@@ -34,18 +34,22 @@ interface DetailCacheEntry {
 }
 const detailCache = new Map<string, DetailCacheEntry>();
 
-function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "User-Agent": "loom",
-  };
-  const key = process.env.LOOM_SKILLS_SH_API_KEY;
-  if (key) headers.Authorization = `Bearer ${key}`;
-  return headers;
+export function skillsShAvailable(): boolean {
+  return !!process.env.LOOM_SKILLS_SH_API_KEY;
 }
 
-/** 첫 페이지에서 metadata 만 가져옴. content 는 install 시 lazy. */
+function authHeaders(): Record<string, string> {
+  return {
+    Accept: "application/json",
+    "User-Agent": "loom",
+    Authorization: `Bearer ${process.env.LOOM_SKILLS_SH_API_KEY}`,
+  };
+}
+
+/** 첫 페이지에서 metadata 만 가져옴. content 는 install 시 lazy.
+ *  키 없으면 호출 자체를 스킵 — 401 폭격 방지. */
 export async function fetchSkillsShCatalog(): Promise<MarketplaceSkill[]> {
+  if (!skillsShAvailable()) return [];
   if (listCache && Date.now() - listCache.fetchedAt < LIST_CACHE_MS) {
     return listCache.entries;
   }
@@ -120,6 +124,7 @@ function parseListItem(raw: unknown): MarketplaceSkill | null {
 
 /** Install 시 SKILL.md 본문 가져오기. id 는 우리가 부여한 "skills.sh:<source>/<slug>" 포맷. */
 export async function fetchSkillsShDetail(id: string): Promise<string | null> {
+  if (!skillsShAvailable()) return null;
   // "skills.sh:" prefix 떼기.
   const stripped = id.startsWith("skills.sh:") ? id.slice("skills.sh:".length) : id;
   const cached = detailCache.get(stripped);
