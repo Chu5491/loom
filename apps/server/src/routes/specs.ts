@@ -7,6 +7,7 @@ import {
   listSpecs,
   updateSpec,
 } from "../db/specs.js";
+import { SKILLS } from "../marketplace/skill-catalog.js";
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -28,6 +29,12 @@ specsRoute.get("/", (c) => {
   const agentId = c.req.query("agentId") ?? undefined;
   return c.json({ specs: listSpecs({ agentId }) });
 });
+
+/**
+ * 큐레이팅된 skill 마켓플레이스 — loom 팀이 모은 starter skills + 사용자가
+ * 추가한 항목. 빌드 타임에 src/marketplace/skill-catalog.ts 에서 로드.
+ */
+specsRoute.get("/marketplace", (c) => c.json({ entries: SKILLS }));
 
 specsRoute.post("/", async (c) => {
   const body = await c.req.json().catch(() => null);

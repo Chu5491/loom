@@ -66,6 +66,16 @@ export interface GitCommitInfo {
   body: string;
   files: GitWorkingChange[];
 }
+export interface SkillMarketplaceEntry {
+  id: string;
+  name: string;
+  description: string;
+  source?: string;
+  publisher: "loom" | "Anthropic" | "Community";
+  tags: string[];
+  content: string;
+}
+
 export interface McpMarketplaceEntry {
   id: string;
   name: string;
@@ -652,6 +662,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  listSkillMarketplace: () =>
+    request<{ entries: SkillMarketplaceEntry[] }>("/api/specs/marketplace"),
   deleteSpec: (id: string) =>
     request<void>(`/api/specs/${id}`, { method: "DELETE" }),
 

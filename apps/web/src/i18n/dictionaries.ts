@@ -222,6 +222,12 @@ const en: Dictionary = {
 
   // specs
   "specs.title": "Skills",
+  "specs.marketplace.button": "Browse marketplace",
+  "specs.marketplace.title": "Skill marketplace",
+  "specs.marketplace.searchPlaceholder": "Search by name, tag, or description…",
+  "specs.marketplace.install": "Install",
+  "specs.marketplace.source": "Source",
+  "specs.marketplace.noMatch": "No matching skills.",
   "specs.subtitle": "Markdown docs you can attach to agents or single runs.",
   "specs.new": "New skill",
   "specs.empty": "No skills yet.",
@@ -962,6 +968,12 @@ const ko: Dictionary = {
   "projects.openedIn": "{editor}에서 열었습니다",
 
   "specs.title": "스킬",
+  "specs.marketplace.button": "마켓플레이스 둘러보기",
+  "specs.marketplace.title": "스킬 마켓플레이스",
+  "specs.marketplace.searchPlaceholder": "이름·태그·설명으로 검색…",
+  "specs.marketplace.install": "설치",
+  "specs.marketplace.source": "소스",
+  "specs.marketplace.noMatch": "일치하는 스킬이 없어요.",
   "specs.subtitle": "에이전트나 실행에 붙일 수 있는 마크다운 문서예요.",
   "specs.new": "스킬 추가",
   "specs.empty": "아직 스킬이 없습니다.",

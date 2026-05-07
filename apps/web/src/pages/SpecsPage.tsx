@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { marked } from "marked";
+import { Sparkles } from "lucide-react";
 import type { Spec } from "@loom/core";
 import { api, type CreateSpecBody, type UpdateSpecBody } from "../api/client.js";
 import { Badge, Button, Card, Field, Input, Textarea } from "../components/ui.js";
@@ -9,6 +15,7 @@ import { PageScroll } from "../components/PageScroll.js";
 import { PageHeader } from "../components/PageHeader.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
+import { SkillMarketplaceDialog } from "./specs/SkillMarketplaceDialog.js";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -26,6 +33,7 @@ export function SpecsPage() {
   const isNew = specId === "new";
   const selectedId = !specId || isNew ? null : specId;
   const baseUrl = "/skills";
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
 
   const list = useQuery({
     queryKey: ["specs"],
@@ -38,10 +46,24 @@ export function SpecsPage() {
         title={t("specs.title")}
         description={t("specs.subtitle")}
         action={
-          <Button onClick={() => navigate(`${baseUrl}/new`)}>
-            {t("specs.new")}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setMarketplaceOpen(true)}
+              className="gap-1.5"
+            >
+              <Sparkles className="size-3.5" />
+              {t("specs.marketplace.button")}
+            </Button>
+            <Button onClick={() => navigate(`${baseUrl}/new`)}>
+              {t("specs.new")}
+            </Button>
+          </div>
         }
+      />
+      <SkillMarketplaceDialog
+        open={marketplaceOpen}
+        onOpenChange={setMarketplaceOpen}
       />
 
       <div className="grid gap-4 md:grid-cols-[260px_1fr]">
@@ -53,7 +75,7 @@ export function SpecsPage() {
         />
         <div>
           {isNew ? (
-            <SpecEditor key="new" spec={null} baseUrl={baseUrl} />
+            <NewSpecEditor key="new" baseUrl={baseUrl} />
           ) : selectedId ? (
             <SpecEditorById key={selectedId} id={selectedId} baseUrl={baseUrl} />
           ) : (
@@ -65,6 +87,32 @@ export function SpecsPage() {
       </div>
     </PageScroll>
   );
+}
+
+/** /skills/new 진입 — ?from=<id> 가 있으면 marketplace 에서 prefill. */
+function NewSpecEditor({ baseUrl }: { baseUrl: string }) {
+  const [params] = useSearchParams();
+  const fromId = params.get("from");
+  const marketplace = useQuery({
+    queryKey: ["skill-marketplace"],
+    queryFn: api.listSkillMarketplace,
+    enabled: !!fromId,
+    staleTime: 60 * 60_000,
+  });
+
+  const prefill = useMemo<CreateSpecBody | null>(() => {
+    if (!fromId) return null;
+    const entry = marketplace.data?.entries.find((e) => e.id === fromId);
+    if (!entry) return null;
+    return {
+      name: entry.name,
+      content: entry.content,
+      tags: entry.tags,
+    };
+  }, [fromId, marketplace.data?.entries]);
+
+  if (fromId && marketplace.isLoading) return null;
+  return <SpecEditor spec={null} baseUrl={baseUrl} prefill={prefill} />;
 }
 
 function SpecList({
@@ -132,15 +180,29 @@ function SpecEditorById({ id, baseUrl }: { id: string; baseUrl: string }) {
   return <SpecEditor spec={q.data.spec} baseUrl={baseUrl} />;
 }
 
-function SpecEditor({ spec, baseUrl }: { spec: Spec | null; baseUrl: string }) {
+function SpecEditor({
+  spec,
+  baseUrl,
+  prefill,
+}: {
+  spec: Spec | null;
+  baseUrl: string;
+  /** 새 spec 만들 때 marketplace 같은 외부 소스에서 미리 채워줄 값. spec 이
+   *  null 일 때만 의미. */
+  prefill?: CreateSpecBody | null;
+}) {
   const { t } = useI18n();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const navigate = useNavigate();
 
-  const [name, setName] = useState(spec?.name ?? EMPTY_SPEC.name);
-  const [content, setContent] = useState(spec?.content ?? EMPTY_SPEC.content);
-  const [tagsInput, setTagsInput] = useState((spec?.tags ?? EMPTY_SPEC.tags).join(", "));
+  const seed = spec ?? prefill ?? null;
+
+  const [name, setName] = useState(seed?.name ?? EMPTY_SPEC.name);
+  const [content, setContent] = useState(seed?.content ?? EMPTY_SPEC.content);
+  const [tagsInput, setTagsInput] = useState(
+    (seed?.tags ?? EMPTY_SPEC.tags).join(", "),
+  );
   const [view, setView] = useState<"edit" | "preview" | "split">("split");
 
   useEffect(() => {
