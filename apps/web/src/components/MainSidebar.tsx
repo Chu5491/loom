@@ -12,6 +12,7 @@
 
 import { NavLink } from "react-router-dom";
 import {
+  BarChart3,
   FileText,
   Folder,
   Plug,
@@ -57,6 +58,12 @@ export function MainSidebar({
       to: "/mcps",
       icon: <Plug className="size-4" />,
       label: t("activity.mcps"),
+      end: false,
+    },
+    {
+      to: "/insights",
+      icon: <BarChart3 className="size-4" />,
+      label: t("activity.insights"),
       end: false,
     },
   ];

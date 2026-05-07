@@ -237,6 +237,30 @@ export interface ProjectInsights {
   files: InsightsFile[];
 }
 
+export interface InsightsProject {
+  projectId: string;
+  projectName: string;
+  runs: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  costUsd: number;
+  lastRunAt: string | null;
+}
+
+export interface InsightsWorkspaceAgent extends InsightsAgent {
+  projectId: string;
+  projectName: string;
+}
+
+export interface WorkspaceInsights {
+  windowDays: number;
+  summary: InsightsSummary & { activeProjects: number };
+  daily: InsightsDaily[];
+  projects: InsightsProject[];
+  agents: InsightsWorkspaceAgent[];
+}
+
 export const api = {
   health: () => request<{ status: string; name: string; version: string }>("/api/health"),
 
@@ -331,6 +355,8 @@ export const api = {
     request<ProjectInsights>(
       `/api/projects/${id}/insights?windowDays=${windowDays}`,
     ),
+  getWorkspaceInsights: (windowDays = 30) =>
+    request<WorkspaceInsights>(`/api/insights?windowDays=${windowDays}`),
   getProjectActiveTools: (id: string) =>
     request<{ tools: ActiveToolsForAgent[] }>(
       `/api/projects/${id}/active-tools`,

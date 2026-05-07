@@ -60,6 +60,34 @@ export interface ProjectInsights {
   files: InsightsFile[];
 }
 
+/** 워크스페이스 전체(=모든 프로젝트 합) 통계. files 섹션은 cross-project 라
+ *  noisy 해서 빼고, 대신 프로젝트별 집계를 얹음. */
+export interface WorkspaceInsights {
+  windowDays: number;
+  summary: InsightsSummary & { activeProjects: number };
+  daily: InsightsDaily[];
+  projects: InsightsProject[];
+  agents: InsightsWorkspaceAgent[];
+}
+
+export interface InsightsProject {
+  projectId: string;
+  projectName: string;
+  runs: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  costUsd: number;
+  /** 윈도우 안의 마지막 run 시각. 한 번도 없으면 null. */
+  lastRunAt: string | null;
+}
+
+/** 프로젝트 정보까지 같이 — 같은 이름 agent 가 여러 프로젝트에 있으면 분리되게. */
+export interface InsightsWorkspaceAgent extends InsightsAgent {
+  projectId: string;
+  projectName: string;
+}
+
 /** sliding window 의 ISO datetime cutoff. SQLite `datetime('now', '-N days')`
  *  와 동일 의미지만 JS 에서 계산해서 한 query 에 박는 게 plan 안정. */
 function cutoffIso(days: number): string {
@@ -238,6 +266,188 @@ export function getProjectInsights(
   }));
 
   return { windowDays, summary, daily, agents, files };
+}
+
+export function getWorkspaceInsights(windowDays: number): WorkspaceInsights {
+  const db = getDb();
+  const cutoff = cutoffIso(windowDays);
+
+  // 1) Summary — 모든 프로젝트 합. project JOIN 도 안 필요.
+  const summaryRow = db
+    .prepare<
+      [string],
+      {
+        total_runs: number;
+        total_cost: number | null;
+        finished: number;
+        succeeded: number;
+        active_agents: number;
+        active_projects: number;
+      }
+    >(
+      `SELECT
+         COUNT(*) AS total_runs,
+         SUM(r.cost_usd) AS total_cost,
+         SUM(CASE WHEN r.status IN ('succeeded','failed','cancelled') THEN 1 ELSE 0 END) AS finished,
+         SUM(CASE WHEN r.status = 'succeeded' THEN 1 ELSE 0 END) AS succeeded,
+         COUNT(DISTINCT r.agent_id) AS active_agents,
+         COUNT(DISTINCT a.project_id) AS active_projects
+       FROM runs r
+       JOIN agents a ON r.agent_id = a.id
+       WHERE r.created_at >= ?`,
+    )
+    .get(cutoff);
+
+  const activeRunsRow = db
+    .prepare<[], { n: number }>(
+      `SELECT COUNT(*) AS n FROM runs WHERE status IN ('queued', 'running')`,
+    )
+    .get();
+
+  const finished = summaryRow?.finished ?? 0;
+  const succeeded = summaryRow?.succeeded ?? 0;
+  const summary = {
+    totalRuns: summaryRow?.total_runs ?? 0,
+    totalCostUsd: summaryRow?.total_cost ?? 0,
+    successRate: finished > 0 ? succeeded / finished : 0,
+    activeRuns: activeRunsRow?.n ?? 0,
+    activeAgents: summaryRow?.active_agents ?? 0,
+    activeProjects: summaryRow?.active_projects ?? 0,
+  };
+
+  // 2) Daily — 워크스페이스 전체 합산.
+  const dailyRows = db
+    .prepare<
+      [string],
+      {
+        day: string;
+        runs: number;
+        succeeded: number;
+        failed: number;
+        cancelled: number;
+        cost: number | null;
+      }
+    >(
+      `SELECT
+         date(r.created_at) AS day,
+         COUNT(*) AS runs,
+         SUM(CASE WHEN r.status = 'succeeded' THEN 1 ELSE 0 END) AS succeeded,
+         SUM(CASE WHEN r.status = 'failed'    THEN 1 ELSE 0 END) AS failed,
+         SUM(CASE WHEN r.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+         SUM(r.cost_usd) AS cost
+       FROM runs r
+       WHERE r.created_at >= ?
+       GROUP BY day
+       ORDER BY day ASC`,
+    )
+    .all(cutoff);
+
+  const daily = fillDailyGaps(dailyRows, windowDays);
+
+  // 3) Per-project breakdown.
+  const projectRows = db
+    .prepare<
+      [string],
+      {
+        project_id: string;
+        project_name: string;
+        runs: number;
+        succeeded: number;
+        failed: number;
+        cancelled: number;
+        cost: number | null;
+        last_run_at: string | null;
+      }
+    >(
+      `SELECT
+         p.id AS project_id,
+         p.name AS project_name,
+         COUNT(r.id) AS runs,
+         SUM(CASE WHEN r.status = 'succeeded' THEN 1 ELSE 0 END) AS succeeded,
+         SUM(CASE WHEN r.status = 'failed'    THEN 1 ELSE 0 END) AS failed,
+         SUM(CASE WHEN r.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+         SUM(r.cost_usd) AS cost,
+         MAX(r.created_at) AS last_run_at
+       FROM projects p
+       LEFT JOIN agents a ON a.project_id = p.id
+       LEFT JOIN runs r   ON r.agent_id = a.id AND r.created_at >= ?
+       GROUP BY p.id
+       HAVING runs > 0
+       ORDER BY runs DESC, cost DESC`,
+    )
+    .all(cutoff);
+
+  const projects: InsightsProject[] = projectRows.map((r) => ({
+    projectId: r.project_id,
+    projectName: r.project_name,
+    runs: r.runs,
+    succeeded: r.succeeded,
+    failed: r.failed,
+    cancelled: r.cancelled,
+    costUsd: r.cost ?? 0,
+    lastRunAt: r.last_run_at,
+  }));
+
+  // 4) Top agents (cross-project) — 같은 이름 agent 가 여러 프로젝트에 있을 수
+  // 있으니 project 정보까지 붙임.
+  const agentRows = db
+    .prepare<
+      [string],
+      {
+        agent_id: string;
+        agent_name: string;
+        adapter_kind: string;
+        project_id: string;
+        project_name: string;
+        runs: number;
+        succeeded: number;
+        failed: number;
+        cancelled: number;
+        cost: number | null;
+        avg_duration_secs: number | null;
+      }
+    >(
+      `SELECT
+         a.id AS agent_id,
+         a.name AS agent_name,
+         a.adapter_kind,
+         p.id  AS project_id,
+         p.name AS project_name,
+         COUNT(r.id) AS runs,
+         SUM(CASE WHEN r.status = 'succeeded' THEN 1 ELSE 0 END) AS succeeded,
+         SUM(CASE WHEN r.status = 'failed'    THEN 1 ELSE 0 END) AS failed,
+         SUM(CASE WHEN r.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+         SUM(r.cost_usd) AS cost,
+         AVG(
+           CASE WHEN r.started_at IS NOT NULL AND r.ended_at IS NOT NULL
+                THEN (julianday(r.ended_at) - julianday(r.started_at)) * 86400
+                ELSE NULL END
+         ) AS avg_duration_secs
+       FROM agents a
+       JOIN projects p ON a.project_id = p.id
+       LEFT JOIN runs r ON r.agent_id = a.id AND r.created_at >= ?
+       GROUP BY a.id
+       HAVING runs > 0
+       ORDER BY runs DESC, cost DESC
+       LIMIT 20`,
+    )
+    .all(cutoff);
+
+  const agents: InsightsWorkspaceAgent[] = agentRows.map((r) => ({
+    agentId: r.agent_id,
+    agentName: r.agent_name,
+    adapterKind: r.adapter_kind,
+    projectId: r.project_id,
+    projectName: r.project_name,
+    runs: r.runs,
+    succeeded: r.succeeded,
+    failed: r.failed,
+    cancelled: r.cancelled,
+    costUsd: r.cost ?? 0,
+    avgDurationSecs: r.avg_duration_secs,
+  }));
+
+  return { windowDays, summary, daily, projects, agents };
 }
 
 /** SQL group-by 는 빈 날짜를 빼는데 차트는 연속이 보기 좋음 — 0 으로 메움. */

@@ -45,6 +45,11 @@ const GitPage = lazy(() =>
 const InsightsPage = lazy(() =>
   import("./pages/InsightsPage.js").then((m) => ({ default: m.InsightsPage })),
 );
+const WorkspaceInsightsPage = lazy(() =>
+  import("./pages/WorkspaceInsightsPage.js").then((m) => ({
+    default: m.WorkspaceInsightsPage,
+  })),
+);
 
 function PageLoader() {
   const { t } = useI18n();
@@ -106,6 +111,14 @@ export function App() {
           element={
             <Suspense fallback={<PageLoader />}>
               <McpsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/insights"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <WorkspaceInsightsPage />
             </Suspense>
           }
         />
