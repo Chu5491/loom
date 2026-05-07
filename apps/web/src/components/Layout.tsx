@@ -39,7 +39,6 @@ export function Layout() {
       raw === "agents" ||
       raw === "skills" ||
       raw === "mcps" ||
-      raw === "review" ||
       raw === "history" ||
       raw === "insights" ||
       raw === "git" ||

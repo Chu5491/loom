@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu.js";
 import { PageScroll } from "../components/PageScroll.js";
+import { RunChangesBrowser } from "../components/RunChangesBrowser.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
 import { useI18n } from "../context/I18nContext.js";
 
@@ -334,6 +335,9 @@ export function RunDetailPage() {
           </div>
         ) : null}
       </Card>
+
+      {/* 변경 파일 리뷰 — 종료된 run 만. 0개면 컴포넌트가 자체적으로 숨김. */}
+      <RunChangesBrowser runId={r.id} enabled={!isActive} />
 
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium">{t("runDetail.section.logs")}</h2>

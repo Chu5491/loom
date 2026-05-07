@@ -4,7 +4,6 @@ import {
   Activity,
   BarChart3,
   ChevronDown,
-  ClipboardCheck,
   Files as FilesIcon,
   GitBranch,
   Home,
@@ -34,7 +33,6 @@ export type ActivityKind =
   | "skills"
   | "mcps"
   | "agents"
-  | "review"
   | "history"
   | "insights"
   | "git"
@@ -135,8 +133,6 @@ export function ActivityBar({
         return `/projects/${projectId}`;
       case "agents":
         return `/projects/${projectId}/agents`;
-      case "review":
-        return `/projects/${projectId}/review`;
       case "history":
         return `/projects/${projectId}/runs`;
       case "insights":
@@ -177,11 +173,6 @@ export function ActivityBar({
       kind: "git",
       icon: <GitBranch className="size-5" />,
       label: t("activity.git"),
-    },
-    {
-      kind: "review",
-      icon: <ClipboardCheck className="size-5" />,
-      label: t("activity.review"),
     },
     {
       kind: "history",

@@ -7,7 +7,6 @@ import { FilesTab } from "./activity/FilesTab.js";
 import { AgentsTab } from "./activity/AgentsTab.js";
 import { SkillsTab } from "./activity/SkillsTab.js";
 import { McpsTab } from "./activity/McpsTab.js";
-import { ReviewTab } from "./activity/ReviewTab.js";
 import { HistoryTab } from "./activity/HistoryTab.js";
 import { GitTab } from "./activity/GitTab.js";
 import { SettingsTab } from "./activity/SettingsTab.js";
@@ -49,8 +48,6 @@ function ActivityContent({ activity }: { activity: ActivityKind }) {
       return <SkillsTab />;
     case "mcps":
       return <McpsTab />;
-    case "review":
-      return <ReviewTab />;
     case "history":
       return <HistoryTab />;
     case "git":

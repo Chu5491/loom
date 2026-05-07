@@ -1,7 +1,7 @@
 // 프로젝트 스코프 라우팅. 홈은 워크스페이스 대시보드, 그 외는 /projects/:id 하위.
 //
 // 모든 페이지를 React.lazy로 lazy 로드 — 첫 페인트는 가벼운 라우트만 평가하고
-// 큰 차트/그래프 페이지(ReviewPage, RunDetailPage)는 사용자가 들어갈 때 fetch.
+// 큰 차트/그래프 페이지(RunDetailPage, GitPage 등)는 사용자가 들어갈 때 fetch.
 // HomePage는 진입 페이지 비중이 커서 같이 lazy — vite가 main 청크에서 빼냄.
 
 import { Suspense, lazy } from "react";
@@ -40,9 +40,6 @@ const RunComparePage = lazy(() =>
   import("./pages/RunComparePage.js").then((m) => ({
     default: m.RunComparePage,
   })),
-);
-const ReviewPage = lazy(() =>
-  import("./pages/ReviewPage.js").then((m) => ({ default: m.ReviewPage })),
 );
 const GitPage = lazy(() =>
   import("./pages/GitPage.js").then((m) => ({ default: m.GitPage })),
@@ -167,14 +164,6 @@ export function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <RunDetailPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="review"
-            element={
-              <Suspense fallback={<PageLoader />}>
-                <ReviewPage />
               </Suspense>
             }
           />
