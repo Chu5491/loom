@@ -41,6 +41,7 @@ export function Layout() {
       raw === "mcps" ||
       raw === "review" ||
       raw === "history" ||
+      raw === "insights" ||
       raw === "git" ||
       raw === "settings"
     ) {
@@ -128,10 +129,13 @@ export function Layout() {
   }, [chatFullModal]);
 
   // lobby 에선 settings 만 패널을 띄움 — 다른 항목은 풀 페이지가 책임.
-  // workshop 에선 모든 active activity 가 패널을 띄움.
-  const showActivityPanel = !chatFullModal && activity !== null && (
-    inProject || activity === "settings"
-  );
+  // workshop 에선 대부분 패널을 띄우지만 insights 는 풀 페이지 self-contained 이라
+  // 사이드 panel 이 비어 보이는 걸 피하려 제외.
+  const showActivityPanel =
+    !chatFullModal &&
+    activity !== null &&
+    activity !== "insights" &&
+    (inProject || activity === "settings");
 
   return (
     <TooltipProvider delayDuration={300}>

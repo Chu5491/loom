@@ -42,6 +42,9 @@ const ReviewPage = lazy(() =>
 const GitPage = lazy(() =>
   import("./pages/GitPage.js").then((m) => ({ default: m.GitPage })),
 );
+const InsightsPage = lazy(() =>
+  import("./pages/InsightsPage.js").then((m) => ({ default: m.InsightsPage })),
+);
 
 function PageLoader() {
   const { t } = useI18n();
@@ -154,6 +157,14 @@ export function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <GitPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="insights"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <InsightsPage />
               </Suspense>
             }
           />

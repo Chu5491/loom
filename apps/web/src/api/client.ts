@@ -196,6 +196,47 @@ export interface LoomSettings {
   updatedAt: string;
 }
 
+export interface InsightsSummary {
+  totalRuns: number;
+  totalCostUsd: number;
+  successRate: number;
+  activeRuns: number;
+  activeAgents: number;
+}
+export interface InsightsDaily {
+  day: string;
+  runs: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  costUsd: number;
+}
+export interface InsightsAgent {
+  agentId: string;
+  agentName: string;
+  adapterKind: string;
+  runs: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  costUsd: number;
+  avgDurationSecs: number | null;
+}
+export interface InsightsFile {
+  path: string;
+  touches: number;
+  additions: number;
+  deletions: number;
+  lastTouchedAt: string;
+}
+export interface ProjectInsights {
+  windowDays: number;
+  summary: InsightsSummary;
+  daily: InsightsDaily[];
+  agents: InsightsAgent[];
+  files: InsightsFile[];
+}
+
 export const api = {
   health: () => request<{ status: string; name: string; version: string }>("/api/health"),
 
@@ -286,6 +327,10 @@ export const api = {
     request<{ touches: ActiveTouch[] }>(`/api/projects/${id}/active-touches`),
   getProjectActiveRuns: (id: string) =>
     request<{ runs: Run[] }>(`/api/projects/${id}/active-runs`),
+  getProjectInsights: (id: string, windowDays = 30) =>
+    request<ProjectInsights>(
+      `/api/projects/${id}/insights?windowDays=${windowDays}`,
+    ),
   getProjectActiveTools: (id: string) =>
     request<{ tools: ActiveToolsForAgent[] }>(
       `/api/projects/${id}/active-tools`,

@@ -2,6 +2,7 @@ import { NavLink, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  BarChart3,
   ChevronDown,
   ClipboardCheck,
   Files as FilesIcon,
@@ -35,6 +36,7 @@ export type ActivityKind =
   | "agents"
   | "review"
   | "history"
+  | "insights"
   | "git"
   | "settings"
   | null;
@@ -137,6 +139,8 @@ export function ActivityBar({
         return `/projects/${projectId}/review`;
       case "history":
         return `/projects/${projectId}/runs`;
+      case "insights":
+        return `/projects/${projectId}/insights`;
       case "git":
         return `/projects/${projectId}/git`;
       default:
@@ -183,6 +187,11 @@ export function ActivityBar({
       kind: "history",
       icon: <Activity className="size-5" />,
       label: t("activity.history"),
+    },
+    {
+      kind: "insights",
+      icon: <BarChart3 className="size-5" />,
+      label: t("activity.insights"),
     },
   ];
 

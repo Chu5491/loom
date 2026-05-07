@@ -13,6 +13,7 @@ import {
 } from "../db/project-env.js";
 import { listFileHistoryHydrated, listTouchedPaths } from "../db/run-changes.js";
 import { listActiveRunsByProject } from "../db/runs.js";
+import { getProjectInsights } from "../db/insights.js";
 import { listForProject as listActiveTouches } from "../services/active-touches.js";
 import { listToolsForProject } from "../services/active-tools.js";
 import { listAllFiles, listTree, readProjectFile } from "../services/project-fs.js";
@@ -163,6 +164,22 @@ projectsRoute.get("/:id/active-runs", (c) => {
   const project = getProject(id);
   if (!project) return c.json({ error: "not_found" }, 404);
   return c.json({ runs: listActiveRunsByProject(id) });
+});
+
+/**
+ * 프로젝트 단위 통계 — 비용, 성공률, agent 별 시간, 파일 활동. 단일 응답이라
+ * 대시보드 페이지가 한 번 호출로 모든 섹션을 그림.
+ *
+ *   ?windowDays=7|30|90  (default 30, clamp 1-365)
+ */
+projectsRoute.get("/:id/insights", (c) => {
+  const id = c.req.param("id");
+  const project = getProject(id);
+  if (!project) return c.json({ error: "not_found" }, 404);
+  const raw = Number(c.req.query("windowDays") ?? "30");
+  const windowDays =
+    Number.isFinite(raw) && raw > 0 ? Math.min(365, Math.max(1, Math.floor(raw))) : 30;
+  return c.json(getProjectInsights(id, windowDays));
 });
 
 /**
