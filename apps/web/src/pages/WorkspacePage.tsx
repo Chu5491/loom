@@ -468,7 +468,15 @@ export function WorkspacePage() {
           )}
         >
           <section className="flex-1 min-w-0 min-h-0 flex flex-col">
-            {view === "office" ? (
+            {/* Office는 view 전환에도 unmount 안 함 — 캐릭터 wander 위치 / linger
+                타이머가 OfficeFloor 내부 state라서 mount 깨면 모두 리셋됨.
+                에디터 갔다 와도 사무실이 그 자리에서 계속 돌아가게 CSS로만 숨김. */}
+            <div
+              className={cn(
+                "flex-1 min-h-0 flex flex-col",
+                view !== "office" && "hidden",
+              )}
+            >
               <Office
                 agents={agentList}
                 workingIds={workingIds}
@@ -478,22 +486,25 @@ export function WorkspacePage() {
                 activeThread={activeThread}
                 onPickAgent={(id) => setAgentIds([id])}
               />
-            ) : showEditor ? (
-              <FileTab
-                projectId={p.id}
-                path={activeFile}
-                presences={editorPresences}
-                agents={agentList}
-                onJumpToRun={handleJumpToRun}
-                adapterByKind={adapterByKind}
-              />
-            ) : (
-              <EditorEmpty
-                onOpenPalette={() => setPaletteOpen(true)}
-                onSwitchToOffice={() => setView("office")}
-                hint={t("workspace.empty.hint")}
-              />
-            )}
+            </div>
+            {view === "editor" ? (
+              showEditor ? (
+                <FileTab
+                  projectId={p.id}
+                  path={activeFile}
+                  presences={editorPresences}
+                  agents={agentList}
+                  onJumpToRun={handleJumpToRun}
+                  adapterByKind={adapterByKind}
+                />
+              ) : (
+                <EditorEmpty
+                  onOpenPalette={() => setPaletteOpen(true)}
+                  onSwitchToOffice={() => setView("office")}
+                  hint={t("workspace.empty.hint")}
+                />
+              )
+            ) : null}
           </section>
 
           {!chatFullModal ? (
