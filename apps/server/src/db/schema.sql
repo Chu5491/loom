@@ -83,9 +83,11 @@ INSERT OR IGNORE INTO gemini_sync (id, enabled) VALUES (1, 1);
 -- Workspace-wide single-row settings. Adds global_rule for now; future settings
 -- (default model, default autonomy) just add columns here. CHECK (id=1) singleton.
 CREATE TABLE IF NOT EXISTS loom_settings (
-  id           INTEGER PRIMARY KEY CHECK (id = 1),
-  global_rule  TEXT NOT NULL DEFAULT '',
-  updated_at   TEXT NOT NULL
+  id                INTEGER PRIMARY KEY CHECK (id = 1),
+  global_rule       TEXT NOT NULL DEFAULT '',
+  smithery_api_key  TEXT,
+  skills_sh_api_key TEXT,
+  updated_at        TEXT NOT NULL
 );
 INSERT OR IGNORE INTO loom_settings (id, global_rule, updated_at)
   VALUES (1, '', datetime('now'));

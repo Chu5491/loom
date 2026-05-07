@@ -15,6 +15,7 @@
 
 import type { MarketplaceSkill } from "../marketplace/skill-catalog.js";
 import { logger } from "../logger.js";
+import { getSkillsShApiKey } from "../db/settings.js";
 
 const SKILLS_SH_BASE_URL =
   process.env.LOOM_SKILLS_SH_BASE_URL ?? "https://skills.sh";
@@ -35,14 +36,14 @@ interface DetailCacheEntry {
 const detailCache = new Map<string, DetailCacheEntry>();
 
 export function skillsShAvailable(): boolean {
-  return !!process.env.LOOM_SKILLS_SH_API_KEY;
+  return !!getSkillsShApiKey();
 }
 
 function authHeaders(): Record<string, string> {
   return {
     Accept: "application/json",
     "User-Agent": "loom",
-    Authorization: `Bearer ${process.env.LOOM_SKILLS_SH_API_KEY}`,
+    Authorization: `Bearer ${getSkillsShApiKey() ?? ""}`,
   };
 }
 

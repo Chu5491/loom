@@ -254,6 +254,15 @@ export interface LoomSettings {
   updatedAt: string;
 }
 
+export interface ApiKeyStatus {
+  configured: boolean;
+  source: "db" | "env" | "none";
+}
+export interface ApiKeyStatuses {
+  smithery: ApiKeyStatus;
+  skillsSh: ApiKeyStatus;
+}
+
 export interface InsightsSummary {
   totalRuns: number;
   totalCostUsd: number;
@@ -329,6 +338,18 @@ export const api = {
     request<{ settings: LoomSettings }>("/api/settings/global-rule", {
       method: "PUT",
       body: JSON.stringify({ content }),
+    }),
+
+  /** API 키 상태 (configured + source). 실제 값은 절대 안 보냄. */
+  getApiKeys: () => request<ApiKeyStatuses>("/api/settings/api-keys"),
+  /** 키 저장. null = clear, undefined = no-op, string = new value. */
+  putApiKeys: (body: {
+    smithery?: string | null;
+    skillsSh?: string | null;
+  }) =>
+    request<ApiKeyStatuses>("/api/settings/api-keys", {
+      method: "PUT",
+      body: JSON.stringify(body),
     }),
 
 

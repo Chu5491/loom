@@ -16,6 +16,7 @@
 
 import type { MarketplaceMcp } from "../marketplace/mcp-catalog.js";
 import { logger } from "../logger.js";
+import { getSmitheryApiKey } from "../db/settings.js";
 
 const SMITHERY_BASE_URL =
   process.env.LOOM_SMITHERY_BASE_URL ?? "https://registry.smithery.ai";
@@ -29,7 +30,7 @@ interface CacheEntry {
 let cache: CacheEntry | null = null;
 
 export function smitheryAvailable(): boolean {
-  return !!process.env.LOOM_SMITHERY_API_KEY;
+  return !!getSmitheryApiKey();
 }
 
 export async function fetchSmitheryCatalog(): Promise<MarketplaceMcp[]> {
@@ -53,7 +54,7 @@ export async function fetchSmitheryCatalog(): Promise<MarketplaceMcp[]> {
 }
 
 async function fetchPage(page: number): Promise<MarketplaceMcp[]> {
-  const apiKey = process.env.LOOM_SMITHERY_API_KEY!;
+  const apiKey = getSmitheryApiKey()!;
   const url = `${SMITHERY_BASE_URL}/servers?page=${page}&pageSize=${PAGE_SIZE}`;
   const res = await fetch(url, {
     headers: {

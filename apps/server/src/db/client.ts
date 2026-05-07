@@ -288,6 +288,18 @@ function applyMigrations(db: DB): void {
       db.exec(`ALTER TABLE projects ADD COLUMN clone_url TEXT`);
     }
   });
+
+  migration(db, 18, "loom_settings external API keys", () => {
+    // 마켓플레이스 외부 source 의 API 키를 DB 에 — env 변수 대신 UI 에서 관리.
+    // 둘 다 NULL 이면 env (LOOM_SMITHERY_API_KEY / LOOM_SKILLS_SH_API_KEY) 로
+    // fallback. 환경변수도 안 두면 그 source 비활성.
+    if (!columnExists(db, "loom_settings", "smithery_api_key")) {
+      db.exec(`ALTER TABLE loom_settings ADD COLUMN smithery_api_key TEXT`);
+    }
+    if (!columnExists(db, "loom_settings", "skills_sh_api_key")) {
+      db.exec(`ALTER TABLE loom_settings ADD COLUMN skills_sh_api_key TEXT`);
+    }
+  });
 }
 
 interface OrphanRunRow {
