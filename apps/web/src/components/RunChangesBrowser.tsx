@@ -54,7 +54,7 @@ export function RunChangesBrowser({
   );
 
   return (
-    <section className="rounded-lg border border-border bg-card overflow-hidden">
+    <section className="rounded-md border border-border bg-card overflow-hidden">
       <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60 bg-muted/20">
         <h2 className="text-sm font-semibold flex items-center gap-2">
           {t("changes.title")}

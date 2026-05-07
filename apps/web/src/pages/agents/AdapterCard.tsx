@@ -24,7 +24,7 @@ export function AdapterCard({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "group relative text-left rounded-lg border p-3 transition-colors",
+        "group relative text-left rounded-md border p-3 transition-colors",
         selected
           ? "border-foreground/50 bg-card"
           : "border-border bg-muted/40 hover:border-foreground/30 hover:bg-muted/60",

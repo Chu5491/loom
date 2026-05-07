@@ -120,7 +120,7 @@ export function RunComparePage() {
         <RunSummaryCard run={bRun} agent={bAgent} side="b" />
       </div>
 
-      <section className="rounded-lg border border-border bg-card overflow-hidden">
+      <section className="rounded-md border border-border bg-card overflow-hidden">
         <h2 className="text-sm font-semibold px-3 pt-2.5 pb-2 flex items-center gap-2">
           <GitCompare className="size-3.5 text-muted-foreground" />
           {t("compare.changedFiles")}
@@ -185,7 +185,7 @@ function RunSummaryCard({
 }) {
   const { t } = useI18n();
   if (!run) {
-    return <Skeleton className="h-32 rounded-lg" />;
+    return <Skeleton className="h-32 rounded-md" />;
   }
   const cls = agent ? classesFor(agentColorOf(agent)) : null;
   const dur =
@@ -198,7 +198,7 @@ function RunSummaryCard({
       : null;
   const elapsed = dur ?? elapsedSecs(run);
   return (
-    <div className="rounded-lg border border-border bg-card p-3">
+    <div className="rounded-md border border-border bg-card p-3">
       <div className="flex items-center gap-2">
         <span
           className={cn(
@@ -369,7 +369,7 @@ function RunFileDiffCard({
     retry: false,
   });
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden flex flex-col">
+    <div className="rounded-md border border-border bg-card overflow-hidden flex flex-col">
       <div className="flex items-center gap-2 px-3 h-8 border-b border-border/50 bg-muted/30">
         <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
           {label}

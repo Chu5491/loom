@@ -160,7 +160,7 @@ function StatCard({
       whileHover={{ y: -2 }}
       transition={{ duration: 0.12 }}
       className={cn(
-        "relative rounded-lg border bg-card px-4 py-3 overflow-hidden",
+        "relative rounded-md border bg-card px-4 py-3 overflow-hidden",
         accent &&
           "ring-1 ring-sky-300/60 dark:ring-sky-700/60 shadow-[0_0_24px_-12px_rgb(14_165_233/0.6)]",
       )}
@@ -219,11 +219,11 @@ function RecentActivity({
         </Button>
       </SectionHeader>
       {runs.length === 0 ? (
-        <div className="rounded-lg border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-md border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
           {t("home.recent.empty")}
         </div>
       ) : (
-        <ul className="rounded-lg border bg-card divide-y">
+        <ul className="rounded-md border bg-card divide-y">
           {runs.map((r) => {
             const agent = agents.find((a) => a.id === r.agentId);
             const project = agent
@@ -292,7 +292,7 @@ function ProjectsGrid({
     return (
       <section>
         <SectionHeader title={t("home.projects.title")} />
-        <div className="rounded-lg border border-dashed bg-card/50 px-6 py-10 text-center">
+        <div className="rounded-md border border-dashed bg-card/50 px-6 py-10 text-center">
           <LoomLogo className="size-16 mx-auto opacity-60 dark:invert" />
           <p className="mt-3 text-sm font-medium">
             {t("home.projects.empty.title")}
@@ -324,7 +324,7 @@ function ProjectsGrid({
             <Link
               key={p.id}
               to={`/projects/${p.id}`}
-              className="group rounded-lg border bg-card hover:border-foreground/40 transition-colors p-4"
+              className="group rounded-md border bg-card hover:border-foreground/40 transition-colors p-4"
             >
               <div className="flex items-start gap-3">
                 <span className="flex size-9 items-center justify-center rounded-md bg-foreground text-background text-sm font-bold shrink-0">
@@ -346,7 +346,7 @@ function ProjectsGrid({
         })}
         <Link
           to="/projects"
-          className="rounded-lg border border-dashed bg-card/30 hover:bg-card hover:border-foreground/40 transition-colors p-4 flex flex-col items-center justify-center text-center min-h-[110px]"
+          className="rounded-md border border-dashed bg-card/30 hover:bg-card hover:border-foreground/40 transition-colors p-4 flex flex-col items-center justify-center text-center min-h-[110px]"
         >
           <Plus className="size-5 text-muted-foreground" />
           <span className="mt-1.5 text-xs font-medium text-muted-foreground">

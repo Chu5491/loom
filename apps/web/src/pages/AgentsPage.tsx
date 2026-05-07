@@ -160,7 +160,7 @@ export function AgentsPage() {
           {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
-              className="rounded-lg border border-border bg-card p-3 flex items-start gap-3"
+              className="rounded-md border border-border bg-card p-3 flex items-start gap-3"
             >
               <Skeleton className="size-10 rounded-full shrink-0" />
               <div className="flex-1 space-y-2">
@@ -224,7 +224,7 @@ function AgentRow({
       ? (a.adapterConfig.model as string)
       : undefined;
   return (
-    <div className="group rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors">
+    <div className="group rounded-md border border-border bg-card hover:bg-muted/40 transition-colors">
       <div className="flex items-start gap-3 p-3">
         <AgentAvatar agent={a} manifest={manifest} size="lg" />
         <div className="min-w-0 flex-1">

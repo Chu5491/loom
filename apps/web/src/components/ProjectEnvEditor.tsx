@@ -84,11 +84,11 @@ export function ProjectEnvEditor({ projectId }: { projectId: string }) {
   const count = Object.keys(q.data?.env ?? {}).length;
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className="rounded-md border border-border bg-card">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors rounded-lg"
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors rounded-md"
       >
         {open ? (
           <ChevronDown className="size-4 text-muted-foreground" />

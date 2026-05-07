@@ -97,7 +97,7 @@ function ProjectSection({ projects }: { projects: InsightsProject[] }) {
   const { t } = useI18n();
   if (projects.length === 0) {
     return (
-      <section className="rounded-lg border border-border bg-card p-3">
+      <section className="rounded-md border border-border bg-card p-3">
         <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
           <Folder className="size-3.5 text-muted-foreground" />
           {t("insights.byProject")}
@@ -109,7 +109,7 @@ function ProjectSection({ projects }: { projects: InsightsProject[] }) {
     );
   }
   return (
-    <section className="rounded-lg border border-border bg-card overflow-hidden">
+    <section className="rounded-md border border-border bg-card overflow-hidden">
       <h2 className="text-sm font-semibold p-3 pb-2 flex items-center gap-2">
         <Folder className="size-3.5 text-muted-foreground" />
         {t("insights.byProject")}
@@ -202,7 +202,7 @@ function AgentSection({ agents }: { agents: InsightsWorkspaceAgent[] }) {
   const { t } = useI18n();
   if (agents.length === 0) {
     return (
-      <section className="rounded-lg border border-border bg-card p-3">
+      <section className="rounded-md border border-border bg-card p-3">
         <h2 className="text-sm font-semibold mb-2">
           {t("insights.byAgent")}
         </h2>
@@ -213,7 +213,7 @@ function AgentSection({ agents }: { agents: InsightsWorkspaceAgent[] }) {
     );
   }
   return (
-    <section className="rounded-lg border border-border bg-card overflow-hidden">
+    <section className="rounded-md border border-border bg-card overflow-hidden">
       <h2 className="text-sm font-semibold p-3 pb-2">
         {t("insights.workspace.topAgents")}
       </h2>

@@ -63,7 +63,7 @@ export function ProjectsPage() {
           {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
-              className="rounded-lg border border-border bg-card p-4 space-y-2"
+              className="rounded-md border border-border bg-card p-4 space-y-2"
             >
               <Skeleton className="h-5 w-44" />
               <Skeleton className="h-3 w-64 max-w-full" />

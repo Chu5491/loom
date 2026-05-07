@@ -52,7 +52,7 @@ export function Stat({
   accent?: "good" | "warn" | "bad" | "active";
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-3">
+    <div className="rounded-md border border-border bg-card p-3">
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-wider">
         {icon}
         <span>{label}</span>
@@ -87,7 +87,7 @@ export function StatGridSkeleton({ count = 4 }: { count?: number }) {
   return (
     <StatGrid>
       {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i} className="h-20 rounded-lg" />
+        <Skeleton key={i} className="h-20 rounded-md" />
       ))}
     </StatGrid>
   );
@@ -107,7 +107,7 @@ export function DailyChart({ daily }: { daily: InsightsDaily[] }) {
   const maxCost = Math.max(0, ...daily.map((d) => d.costUsd));
 
   return (
-    <section className="rounded-lg border border-border bg-card p-3">
+    <section className="rounded-md border border-border bg-card p-3">
       <h2 className="text-sm font-semibold mb-3">{t("insights.daily")}</h2>
       <div className="overflow-x-auto subtle-scrollbar">
         <div

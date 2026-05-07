@@ -102,7 +102,7 @@ function AgentSection({ agents }: { agents: InsightsAgent[] }) {
   const { t } = useI18n();
   if (agents.length === 0) {
     return (
-      <section className="rounded-lg border border-border bg-card p-3">
+      <section className="rounded-md border border-border bg-card p-3">
         <h2 className="text-sm font-semibold mb-2">{t("insights.byAgent")}</h2>
         <p className="text-xs text-muted-foreground/70 italic">
           {t("insights.noAgentRuns")}
@@ -111,7 +111,7 @@ function AgentSection({ agents }: { agents: InsightsAgent[] }) {
     );
   }
   return (
-    <section className="rounded-lg border border-border bg-card overflow-hidden">
+    <section className="rounded-md border border-border bg-card overflow-hidden">
       <h2 className="text-sm font-semibold p-3 pb-2">
         {t("insights.byAgent")}
       </h2>
@@ -196,7 +196,7 @@ function FileSection({ files }: { files: InsightsFile[] }) {
   const { t } = useI18n();
   if (files.length === 0) {
     return (
-      <section className="rounded-lg border border-border bg-card p-3">
+      <section className="rounded-md border border-border bg-card p-3">
         <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
           <FilesIcon className="size-3.5 text-muted-foreground" />
           {t("insights.fileActivity")}
@@ -209,7 +209,7 @@ function FileSection({ files }: { files: InsightsFile[] }) {
   }
   const maxTouches = Math.max(1, ...files.map((f) => f.touches));
   return (
-    <section className="rounded-lg border border-border bg-card overflow-hidden">
+    <section className="rounded-md border border-border bg-card overflow-hidden">
       <h2 className="text-sm font-semibold p-3 pb-2 flex items-center gap-2">
         <FilesIcon className="size-3.5 text-muted-foreground" />
         {t("insights.fileActivity")}
