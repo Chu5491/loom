@@ -662,14 +662,24 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  listSkillMarketplace: () =>
-    request<{ entries: SkillMarketplaceEntry[] }>("/api/specs/marketplace"),
+  listSkillMarketplace: (source: "all" | "builtin" | "skills.sh" = "all") =>
+    request<{ entries: SkillMarketplaceEntry[] }>(
+      `/api/specs/marketplace?source=${source}`,
+    ),
+  /** skills.sh entry 의 SKILL.md 본문. Install 클릭 시점에 lazy fetch.
+   *  builtin entry 도 같은 endpoint 로 — 서버가 source 분기. */
+  getSkillMarketplaceContent: (id: string) =>
+    request<{ content: string }>(
+      `/api/specs/marketplace/content?id=${encodeURIComponent(id)}`,
+    ),
   deleteSpec: (id: string) =>
     request<void>(`/api/specs/${id}`, { method: "DELETE" }),
 
   listMcpServers: () =>
     request<{ servers: McpServer[] }>("/api/mcp-servers"),
-  listMcpMarketplace: (source: "all" | "official" | "smithery" = "all") =>
+  listMcpMarketplace: (
+    source: "all" | "official" | "smithery" | "builtin" = "all",
+  ) =>
     request<{
       entries: McpMarketplaceEntry[];
       sources: { smitheryEnabled: boolean };

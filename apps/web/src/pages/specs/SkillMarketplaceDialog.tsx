@@ -23,10 +23,11 @@ export function SkillMarketplaceDialog({
   const { t } = useI18n();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [source, setSource] = useState<"all" | "skills.sh" | "builtin">("all");
 
   const list = useQuery({
-    queryKey: ["skill-marketplace"],
-    queryFn: api.listSkillMarketplace,
+    queryKey: ["skill-marketplace", source],
+    queryFn: () => api.listSkillMarketplace(source),
     enabled: open,
     staleTime: 60 * 60_000,
   });
@@ -87,7 +88,7 @@ export function SkillMarketplaceDialog({
               </button>
             </header>
 
-            <div className="px-4 py-2.5 border-b border-border/60 shrink-0">
+            <div className="px-4 py-2.5 border-b border-border/60 shrink-0 space-y-2">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60 pointer-events-none" />
                 <Input
@@ -98,6 +99,7 @@ export function SkillMarketplaceDialog({
                   className="pl-7 h-8 text-sm"
                 />
               </div>
+              <SkillSourceTabs value={source} onChange={setSource} />
             </div>
 
             <div className="flex-1 overflow-y-auto subtle-scrollbar p-3 space-y-2">
@@ -123,6 +125,43 @@ export function SkillMarketplaceDialog({
         </>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+function SkillSourceTabs({
+  value,
+  onChange,
+}: {
+  value: "all" | "skills.sh" | "builtin";
+  onChange: (next: "all" | "skills.sh" | "builtin") => void;
+}) {
+  const { t } = useI18n();
+  const tabs: Array<{
+    key: "all" | "skills.sh" | "builtin";
+    label: string;
+  }> = [
+    { key: "all", label: t("specs.marketplace.source.all") },
+    { key: "skills.sh", label: t("specs.marketplace.source.skillsSh") },
+    { key: "builtin", label: t("specs.marketplace.source.builtin") },
+  ];
+  return (
+    <div className="flex items-center gap-0.5 text-[11px] mono uppercase tracking-wider">
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          onClick={() => onChange(tab.key)}
+          className={cn(
+            "px-2 h-5 rounded transition-colors",
+            value === tab.key
+              ? "bg-foreground/[0.08] text-foreground"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

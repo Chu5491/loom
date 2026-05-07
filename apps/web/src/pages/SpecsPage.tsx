@@ -89,15 +89,27 @@ export function SpecsPage() {
   );
 }
 
-/** /skills/new 진입 — ?from=<id> 가 있으면 marketplace 에서 prefill. */
+/** /skills/new 진입 — ?from=<id> 가 있으면 marketplace 에서 prefill.
+ *  list metadata 와 detail 본문이 분리돼 있어 두 query 가 필요:
+ *    1) list: name/tags 같은 metadata
+ *    2) content: SKILL.md 본문 (skills.sh 면 lazy fetch, builtin 이면 즉시) */
 function NewSpecEditor({ baseUrl }: { baseUrl: string }) {
   const [params] = useSearchParams();
   const fromId = params.get("from");
+
   const marketplace = useQuery({
-    queryKey: ["skill-marketplace"],
-    queryFn: api.listSkillMarketplace,
+    queryKey: ["skill-marketplace", "all"] as const,
+    queryFn: () => api.listSkillMarketplace("all"),
     enabled: !!fromId,
     staleTime: 60 * 60_000,
+  });
+
+  const detail = useQuery({
+    queryKey: ["skill-marketplace-content", fromId] as const,
+    queryFn: () => api.getSkillMarketplaceContent(fromId!),
+    enabled: !!fromId,
+    staleTime: 60 * 60_000,
+    retry: false,
   });
 
   const prefill = useMemo<CreateSpecBody | null>(() => {
@@ -106,12 +118,13 @@ function NewSpecEditor({ baseUrl }: { baseUrl: string }) {
     if (!entry) return null;
     return {
       name: entry.name,
-      content: entry.content,
+      content: detail.data?.content ?? entry.content ?? "",
       tags: entry.tags,
     };
-  }, [fromId, marketplace.data?.entries]);
+  }, [fromId, marketplace.data?.entries, detail.data?.content]);
 
-  if (fromId && marketplace.isLoading) return null;
+  // 둘 다 끝나야 prefill 안정 — 깜빡임 방지.
+  if (fromId && (marketplace.isLoading || detail.isLoading)) return null;
   return <SpecEditor spec={null} baseUrl={baseUrl} prefill={prefill} />;
 }
 

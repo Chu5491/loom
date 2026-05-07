@@ -24,13 +24,15 @@ export function MarketplaceDialog({
   const { t } = useI18n();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const [source, setSource] = useState<"all" | "official" | "smithery">("all");
+  const [source, setSource] = useState<
+    "all" | "official" | "smithery" | "builtin"
+  >("all");
 
   const list = useQuery({
     queryKey: ["mcp-marketplace", source],
     queryFn: () => api.listMcpMarketplace(source),
     enabled: open,
-    staleTime: 60 * 60_000, // 정적 카탈로그 — 한 시간 안 바뀜.
+    staleTime: 60 * 60_000,
   });
 
   const entries = useMemo(() => {
@@ -140,13 +142,13 @@ function SourceTabs({
   onChange,
   smitheryEnabled,
 }: {
-  value: "all" | "official" | "smithery";
-  onChange: (next: "all" | "official" | "smithery") => void;
+  value: "all" | "official" | "smithery" | "builtin";
+  onChange: (next: "all" | "official" | "smithery" | "builtin") => void;
   smitheryEnabled: boolean;
 }) {
   const { t } = useI18n();
   const tabs: Array<{
-    key: "all" | "official" | "smithery";
+    key: "all" | "official" | "smithery" | "builtin";
     label: string;
     disabled?: boolean;
     hint?: string;
@@ -161,6 +163,7 @@ function SourceTabs({
         ? undefined
         : t("mcps.marketplace.source.smitheryDisabled"),
     },
+    { key: "builtin", label: t("mcps.marketplace.source.builtin") },
   ];
   return (
     <div className="flex items-center gap-0.5 text-[11px] mono uppercase tracking-wider">

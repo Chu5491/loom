@@ -9,7 +9,8 @@ import {
 } from "../db/mcp-servers.js";
 import { runGeminiSync } from "../services/gemini-sync.js";
 import { logger } from "../logger.js";
-import { MARKETPLACE } from "../marketplace/mcp-catalog.js";
+import { MARKETPLACE as BUILTIN_MARKETPLACE } from "../marketplace/mcp-catalog.js";
+import { fetchOfficialMcpRegistry } from "../services/mcp-registry.js";
 import {
   fetchSmitheryCatalog,
   smitheryAvailable,
@@ -75,28 +76,45 @@ export const mcpServersRoute = new Hono();
 mcpServersRoute.get("/", (c) => c.json({ servers: listMcpServers() }));
 
 /**
- * MCP 마켓플레이스. 두 소스를 섞어 보여줌:
- *   - "official": src/marketplace/mcp-catalog.ts (build-time, 항상 가용)
- *   - "smithery": registry.smithery.ai (LOOM_SMITHERY_API_KEY 있을 때만)
+ * MCP 마켓플레이스. 세 가지 source 를 섞거나 골라서:
  *
- * `?source=` 가 없으면 둘 다. `?source=official|smithery` 로 한쪽만.
+ *   - "official": registry.modelcontextprotocol.io (런타임 fetch, 24h 캐시).
+ *                 official MCP Registry 가 source of truth — 수천 개 server.
+ *   - "smithery": registry.smithery.ai (LOOM_SMITHERY_API_KEY 있을 때만)
+ *   - "builtin":  src/marketplace/mcp-catalog.ts (오프라인용 fallback,
+ *                 official 이 unreachable 일 때 빈 카탈로그 대신 보여줌)
+ *
+ * `?source=` 가 없으면 official + smithery (builtin 은 명시적으로만).
  */
 mcpServersRoute.get("/marketplace", async (c) => {
   const source = c.req.query("source") ?? "all";
   const sources = {
     smitheryEnabled: smitheryAvailable(),
   };
+  if (source === "builtin") {
+    return c.json({ entries: BUILTIN_MARKETPLACE, sources });
+  }
   if (source === "official") {
-    return c.json({ entries: MARKETPLACE, sources });
+    const official = await fetchOfficialMcpRegistry();
+    // registry 가 비어있으면 (offline 등) builtin 으로 fallback — 빈 화면 회피.
+    return c.json({
+      entries: official.length > 0 ? official : BUILTIN_MARKETPLACE,
+      sources,
+    });
   }
   if (source === "smithery") {
     const smithery = await fetchSmitheryCatalog();
     return c.json({ entries: smithery, sources });
   }
-  // all — official + smithery 합쳐서.
-  const smithery = await fetchSmitheryCatalog();
+  // all — official + smithery 합쳐서. official 비어있으면 builtin fallback.
+  const [official, smithery] = await Promise.all([
+    fetchOfficialMcpRegistry(),
+    fetchSmitheryCatalog(),
+  ]);
+  const officialOrFallback =
+    official.length > 0 ? official : BUILTIN_MARKETPLACE;
   return c.json({
-    entries: [...MARKETPLACE, ...smithery],
+    entries: [...officialOrFallback, ...smithery],
     sources,
   });
 });
