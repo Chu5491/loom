@@ -1,7 +1,14 @@
 // 사이드 활동 패널 라우터. 선택된 activity에 따라 ./activity/*Tab 컴포넌트로 분기.
 // 각 패널 본체는 components/activity/ 디렉토리에 분리됨.
+//
+// 반응형:
+//   - 넓은 뷰포트 (≥ lg = 1024px) → 일반 column. flex flow 안에서 자리 잡음.
+//   - 좁은 뷰포트 (< lg) → ActivityBar 옆에 floating overlay (drawer 풍).
+//     본문은 안 밀리고 panel 만 위에 떠서 좁은 화면 공간 효율 ↑. 백드롭 클릭
+//     으로 닫음.
 
 import type { ActivityKind } from "./ActivityBar.js";
+import { cn } from "../lib/utils.js";
 import { ProjectsTab } from "./activity/ProjectsTab.js";
 import { FilesTab } from "./activity/FilesTab.js";
 import { AgentsTab } from "./activity/AgentsTab.js";
@@ -18,21 +25,44 @@ export function ActivityPanel({
   activity,
   width,
   onResize,
+  onDismiss,
+  /** ActivityBar (48px) 옆이면 "rail", MainSidebar (200px) 옆이면 "lobby". */
+  mode,
 }: {
   activity: ActivityKind;
   width: number;
   onResize: (next: number) => void;
+  /** 좁은 뷰포트에서 backdrop 클릭으로 panel 닫기. */
+  onDismiss: () => void;
+  mode: "rail" | "lobby";
 }) {
   if (activity === null) return null;
 
   return (
-    <aside
-      className="hidden md:flex shrink-0 flex-col border-r border-border bg-card relative"
-      style={{ width }}
-    >
-      <ActivityContent activity={activity} />
-      <PanelResizer width={width} onChange={onResize} />
-    </aside>
+    <>
+      {/* 좁은 뷰포트 backdrop — md 이상 lg 미만에서만. md 미만은 panel 자체가
+          숨겨지고, lg 이상은 flex flow 라 backdrop 불필요. */}
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Close panel"
+        className="hidden md:block lg:hidden fixed inset-0 z-20 bg-foreground/30 backdrop-blur-[1px]"
+      />
+      <aside
+        className={cn(
+          "hidden md:flex shrink-0 flex-col border-r border-border bg-card",
+          // wide: flex flow 안의 column. narrow: 좌측 sidebar 옆에 floating.
+          "relative max-lg:fixed max-lg:inset-y-0 max-lg:z-30 max-lg:shadow-2xl",
+          mode === "rail"
+            ? "max-lg:left-12" // 48px
+            : "max-lg:left-[200px]", // MAIN_SIDEBAR_WIDTH
+        )}
+        style={{ width }}
+      >
+        <ActivityContent activity={activity} />
+        <PanelResizer width={width} onChange={onResize} />
+      </aside>
+    </>
   );
 }
 
