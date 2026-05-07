@@ -66,6 +66,32 @@ export interface GitCommitInfo {
   body: string;
   files: GitWorkingChange[];
 }
+export interface McpMarketplaceEntry {
+  id: string;
+  name: string;
+  description: string;
+  source: string;
+  publisher: "Anthropic" | "Community";
+  tags: string[];
+  template:
+    | {
+        kind: "stdio";
+        command: string;
+        args: string[];
+        env: Record<string, string>;
+      }
+    | {
+        kind: "http" | "sse";
+        url: string;
+        headers: Record<string, string>;
+      };
+  placeholders?: Array<{
+    where: string;
+    label: string;
+    hint?: string;
+  }>;
+}
+
 export interface GitStashEntry {
   index: number;
   message: string;
@@ -631,6 +657,10 @@ export const api = {
 
   listMcpServers: () =>
     request<{ servers: McpServer[] }>("/api/mcp-servers"),
+  listMcpMarketplace: () =>
+    request<{ entries: McpMarketplaceEntry[] }>(
+      "/api/mcp-servers/marketplace",
+    ),
   getMcpServer: (id: string) =>
     request<{ server: McpServer }>(`/api/mcp-servers/${id}`),
   createMcpServer: (body: CreateMcpServerBody) =>

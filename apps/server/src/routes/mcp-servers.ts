@@ -9,6 +9,7 @@ import {
 } from "../db/mcp-servers.js";
 import { runGeminiSync } from "../services/gemini-sync.js";
 import { logger } from "../logger.js";
+import { MARKETPLACE } from "../marketplace/mcp-catalog.js";
 
 /** mcp 카탈로그 변경 후 — gemini settings.json 자동 머지. enabled=false면 no-op.
  *  실패해도 CRUD는 성공 응답을 그대로 보냄(sync 실패가 카탈로그 변경을 막으면 안 됨). */
@@ -68,6 +69,15 @@ const updateSchema = z.object({
 export const mcpServersRoute = new Hono();
 
 mcpServersRoute.get("/", (c) => c.json({ servers: listMcpServers() }));
+
+/**
+ * 큐레이팅된 MCP 마켓플레이스 카탈로그. 빌드 타임에 src/data/mcp-marketplace.ts
+ * 에 박아둔 공식 reference servers 를 그대로 반환. 런타임 fetch 안 함 — 오프라인
+ * 동작 + 동일 결과 보장. 새 서버를 더하려면 그 파일을 수정해 리빌드.
+ */
+mcpServersRoute.get("/marketplace", (c) =>
+  c.json({ entries: MARKETPLACE }),
+);
 
 mcpServersRoute.post("/", async (c) => {
   const body = await c.req.json().catch(() => null);

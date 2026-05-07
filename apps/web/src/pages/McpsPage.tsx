@@ -4,8 +4,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { Plug, Trash2 } from "lucide-react";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
+import { Plug, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { McpServer, McpServerKind } from "@loom/core";
 import {
@@ -27,6 +32,7 @@ import { useI18n } from "../context/I18nContext.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
 import { cn } from "../lib/utils.js";
 import { GeminiSyncCard } from "./mcps/GeminiSyncCard.js";
+import { MarketplaceDialog } from "./mcps/MarketplaceDialog.js";
 
 const BASE_URL = "/mcps";
 
@@ -47,6 +53,7 @@ export function McpsPage() {
   const navigate = useNavigate();
   const isNew = mcpId === "new";
   const selectedId = !mcpId || isNew ? null : mcpId;
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
 
   const list = useQuery({
     queryKey: ["mcp-servers"],
@@ -59,10 +66,24 @@ export function McpsPage() {
         title={t("mcps.title")}
         description={t("mcps.subtitle")}
         action={
-          <Button onClick={() => navigate(`${BASE_URL}/new`)}>
-            {t("mcps.new")}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setMarketplaceOpen(true)}
+              className="gap-1.5"
+            >
+              <Sparkles className="size-3.5" />
+              {t("mcps.marketplace.button")}
+            </Button>
+            <Button onClick={() => navigate(`${BASE_URL}/new`)}>
+              {t("mcps.new")}
+            </Button>
+          </div>
         }
+      />
+      <MarketplaceDialog
+        open={marketplaceOpen}
+        onOpenChange={setMarketplaceOpen}
       />
       {/* gemini는 런타임 --mcp-config을 안 받으므로, 카탈로그가 변경될 때마다
           ~/.gemini/settings.json을 안전 머지해서 반영. 사용자는 UI만 보면 됨. */}
@@ -75,7 +96,7 @@ export function McpsPage() {
         />
         <div>
           {isNew ? (
-            <ServerEditor key="new" server={null} />
+            <NewServerEditor key="new" />
           ) : selectedId ? (
             <ServerEditorById key={selectedId} id={selectedId} />
           ) : (
@@ -153,25 +174,82 @@ function ServerEditorById({ id }: { id: string }) {
   return <ServerEditor server={q.data.server} />;
 }
 
-function ServerEditor({ server }: { server: McpServer | null }) {
+/** /mcps/new 진입 시 ServerEditor 의 prefill 결정. ?from=<id> 가 있으면
+ *  marketplace 카탈로그에서 매칭 항목을 받아 form 초기값으로 박음. */
+function NewServerEditor() {
+  const [params] = useSearchParams();
+  const fromId = params.get("from");
+  const marketplace = useQuery({
+    queryKey: ["mcp-marketplace"],
+    queryFn: api.listMcpMarketplace,
+    enabled: !!fromId,
+    staleTime: 60 * 60_000,
+  });
+
+  const prefill = useMemo<CreateMcpServerBody | null>(() => {
+    if (!fromId) return null;
+    const entry = marketplace.data?.entries.find((e) => e.id === fromId);
+    if (!entry) return null;
+    if (entry.template.kind === "stdio") {
+      return {
+        name: entry.name,
+        description: entry.description,
+        kind: "stdio",
+        command: entry.template.command,
+        args: entry.template.args,
+        env: entry.template.env,
+        url: "",
+        headers: {},
+      };
+    }
+    return {
+      name: entry.name,
+      description: entry.description,
+      kind: entry.template.kind,
+      command: "",
+      args: [],
+      env: {},
+      url: entry.template.url,
+      headers: entry.template.headers,
+    };
+  }, [fromId, marketplace.data?.entries]);
+
+  // marketplace 가 아직 로드 중이고 prefill 이 필요하면 잠깐 대기 — 빈 폼으로
+  // 렌더했다가 prefill 로 덮어쓰는 깜빡임 방지.
+  if (fromId && marketplace.isLoading) return null;
+  return <ServerEditor server={null} prefill={prefill} />;
+}
+
+function ServerEditor({
+  server,
+  prefill,
+}: {
+  server: McpServer | null;
+  /** 새 서버를 만들 때 marketplace 같은 외부 소스에서 미리 채워줄 값. server
+   *  가 null 일 때만 의미 있음. */
+  prefill?: CreateMcpServerBody | null;
+}) {
   const { t } = useI18n();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const confirm = useConfirm();
 
-  const [name, setName] = useState(server?.name ?? EMPTY.name);
+  // server (편집) > prefill (마켓플레이스) > EMPTY (그냥 새로) 순으로 fallback.
+  const seed = server ?? prefill ?? null;
+
+  const [name, setName] = useState(seed?.name ?? EMPTY.name);
   const [description, setDescription] = useState(
-    server?.description ?? EMPTY.description ?? "",
+    seed?.description ?? EMPTY.description ?? "",
   );
-  const [kind, setKind] = useState<McpServerKind>(server?.kind ?? "stdio");
-  const [command, setCommand] = useState(server?.command ?? EMPTY.command ?? "");
-  const [argsText, setArgsText] = useState((server?.args ?? []).join("\n"));
+  const [kind, setKind] = useState<McpServerKind>(seed?.kind ?? "stdio");
+  const [command, setCommand] = useState(seed?.command ?? EMPTY.command ?? "");
+  const [argsText, setArgsText] = useState((seed?.args ?? []).join("\n"));
   const [envText, setEnvText] = useState(
-    formatKeyValueText(server?.env ?? {}),
+    formatKeyValueText(seed?.env ?? {}),
   );
-  const [url, setUrl] = useState(server?.url ?? EMPTY.url ?? "");
+  const [url, setUrl] = useState(seed?.url ?? EMPTY.url ?? "");
   const [headersText, setHeadersText] = useState(
-    formatKeyValueText(server?.headers ?? {}),
+    formatKeyValueText(seed?.headers ?? {}),
   );
 
   // 외부에서 spec이 바뀌면(다른 행 클릭) 폼 재초기화. spec.id를 키로.

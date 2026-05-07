@@ -243,6 +243,13 @@ const en: Dictionary = {
 
   // mcps — system-level MCP server catalog
   "mcps.title": "MCP servers",
+  "mcps.marketplace.button": "Browse marketplace",
+  "mcps.marketplace.title": "MCP marketplace",
+  "mcps.marketplace.searchPlaceholder": "Search by name, tag, or description…",
+  "mcps.marketplace.install": "Install",
+  "mcps.marketplace.source": "Source",
+  "mcps.marketplace.noMatch": "No matching servers.",
+  "mcps.marketplace.needsInput": "Needs: {{fields}}",
   "mcps.subtitle":
     "Configure once, pick from this list when you build an agent. Each entry is one MCP server config — name, transport, and runtime args.",
   "mcps.new": "New MCP server",
@@ -971,6 +978,13 @@ const ko: Dictionary = {
   "specs.button.saveChanges": "변경 저장",
 
   "mcps.title": "MCP 서버",
+  "mcps.marketplace.button": "마켓플레이스 둘러보기",
+  "mcps.marketplace.title": "MCP 마켓플레이스",
+  "mcps.marketplace.searchPlaceholder": "이름·태그·설명으로 검색…",
+  "mcps.marketplace.install": "설치",
+  "mcps.marketplace.source": "소스",
+  "mcps.marketplace.noMatch": "일치하는 서버가 없어요.",
+  "mcps.marketplace.needsInput": "필요: {{fields}}",
   "mcps.subtitle":
     "한 번 등록해두면 어떤 프로젝트의 어떤 에이전트라도 이 목록에서 골라 쓸 수 있어요. 각 항목은 MCP 서버 한 개의 설정 — 이름·전송 방식·실행 인자.",
   "mcps.new": "MCP 서버 추가",
