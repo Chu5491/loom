@@ -185,10 +185,12 @@ function Tab({
   return (
     <div
       className={cn(
-        "group flex items-center gap-1.5 px-3 py-1.5 text-sm border-b-2 -mb-px cursor-pointer transition-colors min-w-0 flex-1 max-w-[14rem]",
+        "group flex items-center gap-1.5 px-3 py-1.5 text-sm border-b-2 -mb-px cursor-pointer transition-colors min-w-0",
+        // 활성 탭은 폭이 살아있어야 파일명 보임 → flex-shrink-0 + max-w-[18rem].
+        // 비활성 탭은 같이 압축돼서 글자 truncate 되어도 OK → flex-1 + max-w-[14rem].
         active
-          ? "border-foreground bg-background text-foreground font-medium"
-          : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40",
+          ? "shrink-0 max-w-[18rem] border-foreground bg-background text-foreground font-medium"
+          : "flex-1 max-w-[14rem] border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40",
       )}
       onClick={onActivate}
       title={

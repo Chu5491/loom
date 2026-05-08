@@ -12,6 +12,7 @@ import type {
   ActiveTouch,
   AdapterManifest,
   Agent,
+  Delegation,
   Thread,
 } from "@loom/core";
 import { AdapterIcon } from "../../components/AdapterIcon.js";
@@ -65,6 +66,8 @@ interface Props {
   touchingIds: Set<string>;
   activeTouches: ActiveTouch[];
   activeTools: ActiveToolsForAgent[];
+  /** 진행 중 run 들의 sub-agent 위임 시도 — 활동 스트림에 행으로 등장. */
+  delegations: Delegation[];
   threadList: Thread[];
   workingThreadIds: Set<string>;
   activeThreadId: string | null;
@@ -84,6 +87,7 @@ export function LiveView({
   touchingIds,
   activeTouches,
   activeTools,
+  delegations,
   threadList,
   workingThreadIds,
   activeThreadId,
@@ -126,14 +130,26 @@ export function LiveView({
     });
   }, [agents, workingIds, touchingIds]);
 
-  // 통합 스트림 — 모든 에이전트의 tool.recent 를 ts desc 로 병합.
-  type StreamItem = {
-    key: string;
-    ts: string;
-    agent: Agent;
-    name: string;
-    target: string | null;
-  };
+  // 통합 스트림 — 모든 에이전트의 tool.recent + 위임 시도 를 ts desc 로 병합.
+  // 위임 행은 도구 행과 시각적으로 구분 (⤳ delegated → @sub-agent).
+  type StreamItem =
+    | {
+        kind: "tool";
+        key: string;
+        ts: string;
+        agent: Agent;
+        name: string;
+        target: string | null;
+      }
+    | {
+        kind: "delegation";
+        key: string;
+        ts: string;
+        agent: Agent;
+        targetAgentName: string | null;
+        taskDescription: string;
+        status: Delegation["status"];
+      };
   const stream = useMemo<StreamItem[]>(() => {
     const items: StreamItem[] = [];
     for (const tool of activeTools) {
@@ -141,6 +157,7 @@ export function LiveView({
       if (!a) continue;
       tool.recent.forEach((r, i) => {
         items.push({
+          kind: "tool",
           key: `${a.id}-${tool.runId}-${i}-${r.ts}`,
           ts: r.ts,
           agent: a,
@@ -149,9 +166,28 @@ export function LiveView({
         });
       });
     }
+    // 위임 시도 — parent run 의 agent 를 찾아 행 추가. agent 못 찾으면 skip.
+    const runAgent = new Map<string, Agent>();
+    for (const tool of activeTools) {
+      const a = agents.find((x) => x.id === tool.agentId);
+      if (a) runAgent.set(tool.runId, a);
+    }
+    for (const d of delegations) {
+      const a = runAgent.get(d.parentRunId);
+      if (!a) continue;
+      items.push({
+        kind: "delegation",
+        key: `del-${d.id}`,
+        ts: d.initiatedAt,
+        agent: a,
+        targetAgentName: d.targetAgentName,
+        taskDescription: d.taskDescription,
+        status: d.status,
+      });
+    }
     items.sort((a, b) => (b.ts > a.ts ? 1 : b.ts < a.ts ? -1 : 0));
     return items.slice(0, 60);
-  }, [activeTools, agents]);
+  }, [activeTools, agents, delegations]);
 
   const totalWorking = workingIds.size;
 
@@ -547,18 +583,31 @@ function AgentCard({
 // 통합 스트림 — 모든 에이전트의 활동 시간순 병합.
 // ──────────────────────────────────────────────────────────────────────────
 
+type StreamItem =
+  | {
+      kind: "tool";
+      key: string;
+      ts: string;
+      agent: Agent;
+      name: string;
+      target: string | null;
+    }
+  | {
+      kind: "delegation";
+      key: string;
+      ts: string;
+      agent: Agent;
+      targetAgentName: string | null;
+      taskDescription: string;
+      status: Delegation["status"];
+    };
+
 function Stream({
   stream,
   onPickFile,
   onPickAgent,
 }: {
-  stream: Array<{
-    key: string;
-    ts: string;
-    agent: Agent;
-    name: string;
-    target: string | null;
-  }>;
+  stream: StreamItem[];
   onPickFile: (path: string) => void;
   onPickAgent: (id: string) => void;
 }) {
@@ -582,20 +631,116 @@ function Stream({
         </span>
       </div>
       <ul ref={ref} className="space-y-px">
-        {stream.map((item, idx) => (
-          <StreamRow
-            key={item.key}
-            ts={item.ts}
-            agent={item.agent}
-            name={item.name}
-            target={item.target}
-            recent={idx < 3}
-            onPickFile={onPickFile}
-            onPickAgent={onPickAgent}
-          />
-        ))}
+        {stream.map((item, idx) =>
+          item.kind === "tool" ? (
+            <StreamRow
+              key={item.key}
+              ts={item.ts}
+              agent={item.agent}
+              name={item.name}
+              target={item.target}
+              recent={idx < 3}
+              onPickFile={onPickFile}
+              onPickAgent={onPickAgent}
+            />
+          ) : (
+            <DelegationRow
+              key={item.key}
+              ts={item.ts}
+              agent={item.agent}
+              targetAgentName={item.targetAgentName}
+              taskDescription={item.taskDescription}
+              status={item.status}
+              recent={idx < 3}
+              onPickAgent={onPickAgent}
+            />
+          ),
+        )}
       </ul>
     </section>
+  );
+}
+
+function DelegationRow({
+  ts,
+  agent,
+  targetAgentName,
+  taskDescription,
+  status,
+  recent,
+  onPickAgent,
+}: {
+  ts: string;
+  agent: Agent;
+  targetAgentName: string | null;
+  taskDescription: string;
+  status: Delegation["status"];
+  recent: boolean;
+  onPickAgent: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const cls = classesFor(agentColorOf(agent));
+  const statusLabel =
+    status === "pending"
+      ? t("live.delegation.pending")
+      : status === "running"
+        ? t("live.delegation.running")
+        : status === "succeeded"
+          ? t("live.delegation.succeeded")
+          : t("live.delegation.failed");
+  const statusColor =
+    status === "succeeded"
+      ? "text-emerald-700 dark:text-emerald-400"
+      : status === "failed"
+        ? "text-rose-700 dark:text-rose-400"
+        : "text-amber-700 dark:text-amber-400";
+  return (
+    <li className="group flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-foreground/[0.03] transition-colors">
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 rounded-full shrink-0",
+          recent ? "bg-violet-500" : "bg-violet-500/40",
+          recent && "animate-pulse",
+        )}
+      />
+      <span className="text-[10px] mono text-muted-foreground/60 w-12 shrink-0 tabular-nums">
+        {formatTimeAgo(ts, t)}
+      </span>
+      <button
+        type="button"
+        onClick={() => onPickAgent(agent.id)}
+        className={cn(
+          "text-[11px] font-medium hover:underline shrink-0",
+          cls.text,
+        )}
+      >
+        @{agent.name}
+      </button>
+      <span className="text-xs mono text-foreground/80 shrink-0 inline-flex items-center gap-1">
+        <span aria-hidden>⤳</span>
+        <span>{t("live.delegation.delegated")}</span>
+      </span>
+      {targetAgentName ? (
+        <span className="text-[11px] font-medium text-foreground/85 shrink-0">
+          @{targetAgentName}
+        </span>
+      ) : null}
+      <span
+        className="text-[11px] mono text-muted-foreground truncate min-w-0"
+        title={taskDescription}
+      >
+        "{taskDescription}"
+      </span>
+      <span
+        className={cn(
+          "ml-auto text-[10px] mono shrink-0",
+          statusColor,
+        )}
+      >
+        {statusLabel}
+      </span>
+    </li>
   );
 }
 

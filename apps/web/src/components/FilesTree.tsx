@@ -35,6 +35,7 @@ export function FilesTree({
   touched,
   activeByAgent,
   lineByPath,
+  changesByPath,
   agents,
   onPick,
   defaultOpenDepth = 0,
@@ -48,6 +49,8 @@ export function FilesTree({
   activeByAgent?: Map<string, string>;
   /** path → 현재 편집 중인 라인 번호. 행 끝에 ":42" 표시. */
   lineByPath?: Map<string, number>;
+  /** path → 누적 +/- 라인. 행 끝에 ` +12 -3 ` 표시. */
+  changesByPath?: Map<string, { additions: number; deletions: number }>;
   agents?: Agent[];
   onPick: (path: string) => void;
   /** Auto-expand directories up to this depth. 0 = current behavior
@@ -68,6 +71,7 @@ export function FilesTree({
       touched={touched}
       activeByAgent={activeByAgent}
       lineByPath={lineByPath}
+      changesByPath={changesByPath}
       agents={agents}
       onPick={onPick}
       defaultOpenDepth={defaultOpenDepth}
@@ -100,6 +104,7 @@ function TreeNode({
   touched,
   activeByAgent,
   lineByPath,
+  changesByPath,
   agents,
   onPick,
   defaultOpenDepth,
@@ -113,6 +118,7 @@ function TreeNode({
   touched?: Map<string, string>;
   activeByAgent?: Map<string, string>;
   lineByPath?: Map<string, number>;
+  changesByPath?: Map<string, { additions: number; deletions: number }>;
   agents?: Agent[];
   onPick: (path: string) => void;
   defaultOpenDepth: number;
@@ -163,6 +169,7 @@ function TreeNode({
           touched={touched}
           activeByAgent={activeByAgent}
           lineByPath={lineByPath}
+          changesByPath={changesByPath}
           agents={agents}
           onPick={onPick}
           defaultOpenDepth={defaultOpenDepth}
@@ -181,6 +188,7 @@ function TreeChildren({
   touched,
   activeByAgent,
   lineByPath,
+  changesByPath,
   agents,
   onPick,
   defaultOpenDepth,
@@ -193,6 +201,7 @@ function TreeChildren({
   touched?: Map<string, string>;
   activeByAgent?: Map<string, string>;
   lineByPath?: Map<string, number>;
+  changesByPath?: Map<string, { additions: number; deletions: number }>;
   agents?: Agent[];
   onPick: (path: string) => void;
   defaultOpenDepth: number;
@@ -250,6 +259,7 @@ function TreeChildren({
               touched={touched}
               activeByAgent={activeByAgent}
               lineByPath={lineByPath}
+              changesByPath={changesByPath}
               agents={agents}
               onPick={onPick}
               defaultOpenDepth={defaultOpenDepth}
@@ -265,6 +275,7 @@ function TreeChildren({
               touchedByAgentId={touched?.get(e.path)}
               isActive={activeByAgent?.has(e.path) ?? false}
               line={lineByPath?.get(e.path)}
+              changes={changesByPath?.get(e.path)}
               agents={agents}
               onPick={onPick}
             />
@@ -282,6 +293,7 @@ function FileLeaf({
   touchedByAgentId,
   isActive,
   line,
+  changes,
   agents,
   onPick,
 }: {
@@ -291,6 +303,7 @@ function FileLeaf({
   touchedByAgentId?: string;
   isActive?: boolean;
   line?: number;
+  changes?: { additions: number; deletions: number };
   agents?: Agent[];
   onPick: (path: string) => void;
 }) {
@@ -328,7 +341,22 @@ function FileLeaf({
         )}
       />
       <span className="truncate flex-1 min-w-0">{entry.name}</span>
-      {/* 활성 편집 시: 작은 ✎ + 라인 + 에이전트 색 dot. 누적 편집은 작은 dot 만. */}
+      {/* 활성 편집 시: 작은 ✎ + 라인 + 에이전트 색 dot. 누적 편집은 작은 dot 만.
+          누적 변경 라인 (`+12 -3`) 가 있으면 dot 옆에 표시. */}
+      {changes && (changes.additions > 0 || changes.deletions > 0) ? (
+        <span className="shrink-0 mr-1 inline-flex items-center gap-0.5 text-[9.5px] mono tabular-nums">
+          {changes.additions > 0 ? (
+            <span className="text-emerald-700 dark:text-emerald-400">
+              +{changes.additions}
+            </span>
+          ) : null}
+          {changes.deletions > 0 ? (
+            <span className="text-rose-700 dark:text-rose-400">
+              -{changes.deletions}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
       {isActive && cls ? (
         <span className="flex items-center gap-1 shrink-0 mr-1">
           <Pen

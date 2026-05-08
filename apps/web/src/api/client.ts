@@ -4,6 +4,7 @@ import type {
   AdapterManifest,
   AdapterProbeResult,
   Agent,
+  Delegation,
   FileContent,
   FileHistoryEntry,
   McpServer,
@@ -439,6 +440,10 @@ export const api = {
   getProjectActiveTools: (id: string) =>
     request<{ tools: ActiveToolsForAgent[] }>(
       `/api/projects/${id}/active-tools`,
+    ),
+  getProjectActiveDelegations: (id: string) =>
+    request<{ delegations: Delegation[] }>(
+      `/api/projects/${id}/active-delegations`,
     ),
   getProjectEnv: (id: string) =>
     request<{ env: Record<string, string> }>(`/api/projects/${id}/env`),

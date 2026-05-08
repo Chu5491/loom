@@ -49,6 +49,7 @@ export function FileTab({
   agents,
   onJumpToRun,
   adapterByKind,
+  compact = false,
 }: {
   projectId: string;
   path: string;
@@ -61,6 +62,8 @@ export function FileTab({
    *  in the history rail. Passed in (not fetched) since the parent
    *  already has the list. */
   adapterByKind: Record<string, AdapterManifest>;
+  /** 우측 dock 등 좁은 폭일 때 minimap 등 부가 UI 끔. */
+  compact?: boolean;
 }) {
   // Reset to "current" whenever the active file changes — staying on a
   // diff view across path changes would be confusing.
@@ -91,6 +94,7 @@ export function FileTab({
         path={path}
         view={view}
         wrap={wrap}
+        compact={compact}
         presences={presences}
         onToggleWrap={() => setWrap((v) => !v)}
         onResetView={() => setView({ kind: "current" })}
@@ -140,6 +144,7 @@ function ContentPane({
   path,
   view,
   wrap,
+  compact,
   presences,
   onToggleWrap,
   onResetView,
@@ -152,6 +157,7 @@ function ContentPane({
   path: string;
   view: { kind: "current" } | { kind: "diff"; runId: string };
   wrap: boolean;
+  compact: boolean;
   presences?: AgentPresence[];
   onToggleWrap: () => void;
   onResetView: () => void;
@@ -188,6 +194,7 @@ function ContentPane({
             projectId={projectId}
             path={path}
             wrap={wrap}
+            compact={compact}
             presences={presences}
           />
         ) : (
@@ -239,31 +246,24 @@ function PaneHeader({
           </Badge>
         ) : null}
       </div>
-      <div className="flex items-center gap-1 shrink-0">
+      {/* 헤더 액션 — 공간 절약 위해 icon-only. hover 시 title 로 라벨 노출.
+          diff 복귀 버튼만 텍스트 유지 (드물고 명시적이라). */}
+      <div className="flex items-center gap-0.5 shrink-0">
         <OpenInEditorButton projectId={projectId} path={path} />
         <button
           type="button"
           onClick={onToggleWrap}
-          title={
-            wrap
-              ? t("files.viewer.wrapOff")
-              : t("files.viewer.wrapOn")
-          }
-          aria-label={
-            wrap
-              ? t("files.viewer.wrapOff")
-              : t("files.viewer.wrapOn")
-          }
+          title={wrap ? t("files.viewer.wrapOff") : t("files.viewer.wrapOn")}
+          aria-label={wrap ? t("files.viewer.wrapOff") : t("files.viewer.wrapOn")}
           aria-pressed={wrap}
           className={cn(
-            "inline-flex items-center gap-1 px-2 h-6 rounded text-[11px] transition-colors",
+            "inline-flex size-6 items-center justify-center rounded transition-colors",
             wrap
               ? "bg-foreground/5 text-foreground"
               : "text-muted-foreground hover:text-foreground hover:bg-muted",
           )}
         >
-          <WrapText className="size-3" />
-          <span>{t("files.viewer.wrap")}</span>
+          <WrapText className="size-3.5" />
         </button>
         {view.kind === "diff" ? (
           <button
@@ -292,12 +292,14 @@ function PaneHeader({
 function CurrentContent({
   projectId,
   path,
+  compact,
   wrap,
   presences,
 }: {
   projectId: string;
   path: string;
   wrap: boolean;
+  compact: boolean;
   presences?: AgentPresence[];
 }) {
   const { t } = useI18n();
@@ -340,6 +342,7 @@ function CurrentContent({
         path={path}
         wrap={wrap}
         presences={presences}
+        compact={compact}
       />
     </div>
   );
@@ -473,19 +476,22 @@ function FileHistoryPopover({
         <button
           type="button"
           className={cn(
-            "inline-flex items-center gap-1 px-2 h-6 rounded text-[11px] transition-colors",
+            "relative inline-flex size-6 items-center justify-center rounded transition-colors",
             entries.length > 0
               ? "text-foreground hover:bg-muted"
               : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
-          title={t("files.history.title")}
+          title={
+            entries.length > 0
+              ? `${t("files.history.title")} · ${entries.length}`
+              : t("files.history.title")
+          }
           aria-label={t("files.history.title")}
         >
-          <History className="size-3" />
-          <span>{t("files.history.title")}</span>
+          <History className="size-3.5" />
           {entries.length > 0 ? (
-            <span className="text-[10px] text-muted-foreground/70 mono ml-0.5">
-              {entries.length}
+            <span className="absolute -top-0.5 -right-0.5 inline-flex min-w-[14px] h-[14px] items-center justify-center rounded-full bg-foreground text-background text-[9px] font-semibold mono px-1">
+              {entries.length > 9 ? "9+" : entries.length}
             </span>
           ) : null}
         </button>
@@ -659,10 +665,9 @@ function OpenInEditorButton({
       disabled={open.isPending}
       title={t("files.viewer.openIn", { editor: editorName })}
       aria-label={t("files.viewer.openIn", { editor: editorName })}
-      className="inline-flex items-center gap-1 px-2 h-6 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+      className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
     >
-      <ExternalLink className="size-3" />
-      <span>{t("files.viewer.openInEditor")}</span>
+      <ExternalLink className="size-3.5" />
     </button>
   );
 }

@@ -73,25 +73,35 @@ export interface TouchedPath {
   lastTouchedAt: string;
   /** Agent that did the most recent touch — UI uses this to color-code. */
   lastAgentId: string;
+  /** 누적 추가/삭제 라인 — 파일 트리에 ` +12 -3 ` 표시용. 모든 run 합산. */
+  totalAdditions: number;
+  totalDeletions: number;
 }
 
 /**
  * Every file path touched by any run in this project, with the most
- * recent agent + time. Used by the file tree to mark "this file has
- * been modified by an agent" with a dot decoration. One row per path.
+ * recent agent + time + 누적 변경 라인. Used by the file tree to mark
+ * "this file has been modified by an agent" with a dot + line counts.
  */
 export function listTouchedPaths(projectPath: string): TouchedPath[] {
-  // SQLite trick: `MAX(created_at)` paired with a non-aggregate column
-  // returns the row that the max came from (since SQLite 3.7.11). That
-  // gives us the agent-id of the most-recent toucher in one query.
+  // 두 단계로 분리: (1) per-path 누적 +/- 합산, (2) 가장 최근 toucher 찾기.
+  // SQLite 의 MAX + non-aggregate column 트릭 (3.7.11+) 으로 한 쿼리에 다.
   const rows = getDb()
     .prepare<
       [string],
-      { path: string; last_touched_at: string; last_agent_id: string }
+      {
+        path: string;
+        last_touched_at: string;
+        last_agent_id: string;
+        total_additions: number;
+        total_deletions: number;
+      }
     >(
       `SELECT rc.path,
-              MAX(r.created_at) as last_touched_at,
-              r.agent_id        as last_agent_id
+              MAX(r.created_at)        as last_touched_at,
+              r.agent_id               as last_agent_id,
+              COALESCE(SUM(rc.additions), 0) as total_additions,
+              COALESCE(SUM(rc.deletions), 0) as total_deletions
        FROM run_changes rc
        JOIN runs r ON r.id = rc.run_id
        WHERE r.cwd = ?
@@ -102,6 +112,8 @@ export function listTouchedPaths(projectPath: string): TouchedPath[] {
     path: row.path,
     lastTouchedAt: row.last_touched_at,
     lastAgentId: row.last_agent_id,
+    totalAdditions: row.total_additions,
+    totalDeletions: row.total_deletions,
   }));
 }
 

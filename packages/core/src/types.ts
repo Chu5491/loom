@@ -221,6 +221,9 @@ export interface TouchedPath {
   path: string;
   lastTouchedAt: string;
   lastAgentId: string;
+  /** 모든 run 누적 +/- 라인. 파일 트리에 ` +12 -3 ` 표시용. */
+  totalAdditions: number;
+  totalDeletions: number;
 }
 
 /**
@@ -258,6 +261,24 @@ export interface ActiveToolsForAgent {
   recent: ActiveTool[];
   /** mcp__<server>__... 패턴에서 뽑은 server 이름들. 사무실 책상에 "회의 중인 서버" chip. */
   mcpServers: string[];
+}
+
+/**
+ * 멀티 에이전트 위임 (한 에이전트의 run 안에서 Task tool 등으로 다른
+ * 에이전트를 호출한 시도). UI 의 활동 스트림 / 라이브 카드가 위임 chain
+ * 시각화에 사용.
+ */
+export interface Delegation {
+  id: number;
+  parentRunId: string;
+  childRunId: string | null;
+  targetAgentId: string | null;
+  targetAgentName: string | null;
+  taskDescription: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  resultSummary: string | null;
+  initiatedAt: string;
+  completedAt: string | null;
 }
 
 /**

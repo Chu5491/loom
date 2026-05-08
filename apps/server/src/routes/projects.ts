@@ -21,6 +21,7 @@ import {
 } from "../db/project-env.js";
 import { listFileHistoryHydrated, listTouchedPaths } from "../db/run-changes.js";
 import { listActiveRunsByProject } from "../db/runs.js";
+import { listDelegationsForRuns } from "../db/delegations.js";
 import { getProjectInsights } from "../db/insights.js";
 import { listForProject as listActiveTouches } from "../services/active-touches.js";
 import { listToolsForProject } from "../services/active-tools.js";
@@ -264,6 +265,26 @@ projectsRoute.get("/:id/active-tools", (c) => {
   const project = getProject(id);
   if (!project) return c.json({ error: "not_found" }, 404);
   return c.json({ tools: listToolsForProject(id) });
+});
+
+/**
+ * 진행 중 run 들의 위임 (sub-agent Task 호출) 시도/결과 모음.
+ * 라이브 뷰의 활동 스트림이 위임 표시를 위해 사용.
+ *
+ * Phase 1 에선 빈 응답이 정상 — 어댑터가 Task 이벤트를 아직 안 기록.
+ * Phase 2 에서 어댑터별 Task tool 추출이 들어오면 자연스럽게 채워짐.
+ */
+projectsRoute.get("/:id/active-delegations", (c) => {
+  const id = c.req.param("id");
+  const project = getProject(id);
+  if (!project) return c.json({ error: "not_found" }, 404);
+  const runs = listActiveRunsByProject(id);
+  const byParent = listDelegationsForRuns(runs.map((r) => r.id));
+  const flat = [];
+  for (const [, list] of byParent) {
+    for (const d of list) flat.push(d);
+  }
+  return c.json({ delegations: flat });
 });
 
 /**

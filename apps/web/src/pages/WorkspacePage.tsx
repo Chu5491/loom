@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useOutletContext, useParams } from "react-router-dom";
+import { Activity, MessageSquare, Search } from "lucide-react";
 import { toast } from "sonner";
 import type { AdapterManifest } from "@loom/core";
 import type { LayoutOutletContext } from "../components/Layout.js";
@@ -93,6 +94,14 @@ export function WorkspacePage() {
     queryFn: () => api.getProjectActiveTools(projectId!),
     enabled: !!projectId,
     refetchInterval: 1500,
+  });
+  // 멀티에이전트 위임 — Phase 1 에선 빈 응답이 정상 (어댑터 추출 미구현).
+  // 응답이 들어오기 시작하면 라이브 스트림이 자동으로 위임 행 표시.
+  const activeDelegationsQuery = useQuery({
+    queryKey: ["projectActiveDelegations", projectId],
+    queryFn: () => api.getProjectActiveDelegations(projectId!),
+    enabled: !!projectId,
+    refetchInterval: 2000,
   });
   const activeByPath = useMemo(() => {
     const m = new Map<string, string>();
@@ -519,6 +528,7 @@ export function WorkspacePage() {
                   touchingIds={touchingIds}
                   activeTouches={activeTouchesQuery.data?.touches ?? []}
                   activeTools={activeToolsQuery.data?.tools ?? []}
+                  delegations={activeDelegationsQuery.data?.delegations ?? []}
                   threadList={threadList}
                   workingThreadIds={workingThreadIds}
                   activeThreadId={activeThreadId}
@@ -548,6 +558,7 @@ export function WorkspacePage() {
                     agents={agentList}
                     onJumpToRun={handleJumpToRun}
                     adapterByKind={adapterByKind}
+                    compact={dockPlacement === "right"}
                   />
                 ) : (
                   <EditorEmpty
@@ -650,23 +661,69 @@ function EditorEmpty({
 }) {
   const { t } = useI18n();
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
-      <p className="text-sm text-muted-foreground/70 max-w-md">{hint}</p>
-      <div className="flex items-center gap-2 mono text-[11px] text-muted-foreground/60">
-        <button
-          type="button"
-          onClick={onOpenPalette}
-          className="px-2 h-7 rounded border border-border hover:bg-muted hover:border-foreground/30 transition-colors"
-        >
-          ⌘P · {t("workspace.empty.openFile")}
-        </button>
-        <button
-          type="button"
-          onClick={onSwitchToOffice}
-          className="px-2 h-7 rounded border border-border hover:bg-muted hover:border-foreground/30 transition-colors"
-        >
-          ⚡ {t("workspace.empty.openLive")}
-        </button>
+    <div className="flex-1 flex flex-col items-center justify-center px-6">
+      <div className="max-w-xl w-full">
+        <p className="text-sm text-muted-foreground/70 text-center mb-5">
+          {hint}
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={onOpenPalette}
+            className="group flex items-start gap-3 p-3.5 rounded-xl bg-card/50 ring-1 ring-foreground/5 hover:ring-foreground/15 hover:bg-card/80 transition-all text-left"
+          >
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] group-hover:bg-foreground/10 transition-colors">
+              <Search className="size-4 text-foreground/80" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px] font-semibold mb-0.5">
+                {t("workspace.emptyCard.search.title")}
+              </span>
+              <span className="block text-[11px] text-muted-foreground/80">
+                {t("workspace.emptyCard.search.desc")}
+              </span>
+              <span className="mt-1.5 inline-block text-[10px] mono text-muted-foreground/60">
+                ⌘P
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onSwitchToOffice}
+            className="group flex items-start gap-3 p-3.5 rounded-xl bg-card/50 ring-1 ring-foreground/5 hover:ring-foreground/15 hover:bg-card/80 transition-all text-left"
+          >
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] group-hover:bg-foreground/10 transition-colors">
+              <Activity className="size-4 text-foreground/80" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px] font-semibold mb-0.5">
+                {t("workspace.emptyCard.live.title")}
+              </span>
+              <span className="block text-[11px] text-muted-foreground/80">
+                {t("workspace.emptyCard.live.desc")}
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent("loom:openChatDock"))
+            }
+            className="group flex items-start gap-3 p-3.5 rounded-xl bg-card/50 ring-1 ring-foreground/5 hover:ring-foreground/15 hover:bg-card/80 transition-all text-left sm:col-span-2"
+          >
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] group-hover:bg-foreground/10 transition-colors">
+              <MessageSquare className="size-4 text-foreground/80" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px] font-semibold mb-0.5">
+                {t("workspace.emptyCard.chat.title")}
+              </span>
+              <span className="block text-[11px] text-muted-foreground/80">
+                {t("workspace.emptyCard.chat.desc")}
+              </span>
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );

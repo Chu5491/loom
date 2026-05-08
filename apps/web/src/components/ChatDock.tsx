@@ -20,16 +20,18 @@ import {
 } from "react";
 import {
   ChevronDown,
-  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   MessageSquare,
   Minimize2,
   Maximize2,
+  MoreHorizontal,
   PanelBottom,
   PanelLeftOpen,
   PanelRight,
   X,
 } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
@@ -292,12 +294,10 @@ export function ChatDock({
           onClick={() => setOpen(true)}
           aria-label={t("chat.dock.expand")}
           title={t("chat.dock.expand")}
-          className="w-full flex flex-col items-center gap-2 py-2 border-b border-border/70 bg-muted/30 shrink-0 hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-          style={{ minHeight: HEADER_H * 2 }}
+          className="w-full flex items-center justify-center py-3 border-b border-border/70 bg-muted/30 shrink-0 hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+          style={{ minHeight: HEADER_H }}
         >
           <MessageSquare className="size-3.5" />
-          {/* 우측 dock 은 좌로 확장 → 좌측 화살표가 직관적. */}
-          <ChevronLeft className="size-3.5" />
         </button>
       ) : (
       <header
@@ -339,48 +339,55 @@ export function ChatDock({
               <PanelLeftOpen className="size-3.5" />
             </button>
           ) : null}
+          {/* 부차 액션(placement 토글, 최대화)은 kebab 메뉴로 — 헤더 아이콘 수 ↓.
+              주 액션(접기, 닫기)만 노출. */}
           {open && showResizeAndPlacement ? (
-            <>
-              {/* placement 토글 — 현재 위치의 *반대*쪽 아이콘. 클릭 시 그쪽으로 이동. */}
-              <button
-                type="button"
-                onClick={togglePlacement}
-                title={
-                  isBottom
-                    ? t("chat.dock.dockRight")
-                    : t("chat.dock.dockBottom")
-                }
-                aria-label={
-                  isBottom
-                    ? t("chat.dock.dockRight")
-                    : t("chat.dock.dockBottom")
-                }
-                className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                {isBottom ? (
-                  <PanelRight className="size-3.5" />
-                ) : (
-                  <PanelBottom className="size-3.5" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setMaximized((v) => !v)}
-                title={
-                  maximized ? t("chat.dock.restore") : t("chat.dock.maximize")
-                }
-                aria-label={
-                  maximized ? t("chat.dock.restore") : t("chat.dock.maximize")
-                }
-                className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                {maximized ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )}
-              </button>
-            </>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  title={t("chat.dock.more")}
+                  aria-label={t("chat.dock.more")}
+                  className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="end"
+                  sideOffset={4}
+                  className="z-50 min-w-[160px] rounded-md border border-border bg-popover p-1 shadow-md"
+                >
+                  <DropdownMenu.Item
+                    onSelect={togglePlacement}
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded cursor-pointer outline-none data-[highlighted]:bg-muted"
+                  >
+                    {isBottom ? (
+                      <PanelRight className="size-3.5" />
+                    ) : (
+                      <PanelBottom className="size-3.5" />
+                    )}
+                    {isBottom
+                      ? t("chat.dock.dockRight")
+                      : t("chat.dock.dockBottom")}
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => setMaximized((v) => !v)}
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded cursor-pointer outline-none data-[highlighted]:bg-muted"
+                  >
+                    {maximized ? (
+                      <Minimize2 className="size-3.5" />
+                    ) : (
+                      <Maximize2 className="size-3.5" />
+                    )}
+                    {maximized
+                      ? t("chat.dock.restore")
+                      : t("chat.dock.maximize")}
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           ) : null}
           <button
             type="button"
@@ -389,8 +396,13 @@ export function ChatDock({
             aria-label={open ? t("chat.dock.collapse") : t("chat.dock.expand")}
             className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
+            {/* 접기 화살표는 dock 위치에 따라 — bottom 은 ↓, right 는 →. */}
             {open ? (
-              <ChevronDown className="size-3.5" />
+              isBottom ? (
+                <ChevronDown className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )
             ) : (
               <ChevronUp className="size-3.5" />
             )}

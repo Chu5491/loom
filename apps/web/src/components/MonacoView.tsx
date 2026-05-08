@@ -41,11 +41,14 @@ export function MonacoView({
   path,
   wrap,
   presences,
+  compact = false,
 }: {
   text: string;
   path: string;
   wrap: boolean;
   presences?: AgentPresence[];
+  /** 좁은 폭(우측 dock 등)에서 minimap 등 부가 UI 끔. */
+  compact?: boolean;
 }) {
   const { effective } = useTheme();
   const editorRef = useRef<StandaloneEditor | null>(null);
@@ -151,7 +154,7 @@ export function MonacoView({
         // 폰트 다운로드 전 잠깐의 FOUT를 안전하게 처리.
         fontFamily:
           '"CommitMonoChu", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace',
-        minimap: { enabled: true, renderCharacters: false },
+        minimap: { enabled: !compact, renderCharacters: false },
         scrollBeyondLastLine: false,
         renderLineHighlight: "none",
         smoothScrolling: true,

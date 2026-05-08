@@ -300,6 +300,36 @@ function applyMigrations(db: DB): void {
       db.exec(`ALTER TABLE loom_settings ADD COLUMN skills_sh_api_key TEXT`);
     }
   });
+
+  migration(db, 19, "delegations table for multi-agent sub-agent tracking", () => {
+    // Sub-agent 위임 추적용 테이블. claude code 의 Task tool 등을 통해
+    // 한 에이전트가 다른 에이전트에게 일을 시킬 때, 그 *시도* 와 *결과* 를
+    // 부모 run 의 도구 호출 스트림에서 따로 떼어 추적.
+    //
+    // run.parent_run_id (이미 존재) 는 thread 내 *연속된* run 핸드오프 용.
+    // 이건 *내부 위임* — 한 run 안에서 도구로 다른 에이전트를 호출한 케이스.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS delegations (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_run_id     TEXT NOT NULL,
+        child_run_id      TEXT,
+        target_agent_id   TEXT,
+        target_agent_name TEXT,
+        task_description  TEXT NOT NULL,
+        status            TEXT NOT NULL DEFAULT 'pending',
+        result_summary    TEXT,
+        initiated_at      TEXT NOT NULL,
+        completed_at      TEXT,
+        FOREIGN KEY (parent_run_id) REFERENCES runs(id) ON DELETE CASCADE
+      );
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_delegations_parent_run ON delegations(parent_run_id)`,
+    );
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_delegations_child_run ON delegations(child_run_id)`,
+    );
+  });
 }
 
 interface OrphanRunRow {
