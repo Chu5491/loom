@@ -523,6 +523,7 @@ export function WorkspacePage() {
                   workingThreadIds={workingThreadIds}
                   activeThreadId={activeThreadId}
                   threadByAgent={threadByAgent}
+                  adapterByKind={adapterByKind}
                   onPickFile={openFile}
                   onPickAgent={(id) => setAgentIds([id])}
                   onPickThread={(id) => setActiveThreadId(id)}

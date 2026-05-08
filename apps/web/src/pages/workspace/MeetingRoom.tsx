@@ -22,11 +22,12 @@ import {
 import type {
   ActiveToolsForAgent,
   ActiveTouch,
+  AdapterManifest,
   Agent,
   Thread,
 } from "@loom/core";
+import { AdapterIcon } from "../../components/AdapterIcon.js";
 import { agentColorOf, classesFor } from "../../components/agentColor.js";
-import { AgentAvatar, type AvatarState } from "../../components/AgentAvatar.js";
 import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { basename } from "../../lib/path.js";
@@ -60,16 +61,6 @@ function seatPos(index: number, total: number): { x: number; y: number } {
 // Tool 이름 → 아이콘 (간단 매핑)
 // ──────────────────────────────────────────────────────────────────────────
 
-function avatarState(
-  badge: "edit" | "thinking" | "idle",
-  working: boolean,
-): AvatarState {
-  if (badge === "edit") return "editing";
-  if (badge === "thinking") return "working";
-  if (working) return "thinking";
-  return "idle";
-}
-
 function toolIcon(name: string): string {
   if (name.startsWith("mcp__")) return "🔌";
   const n = name.toLowerCase();
@@ -99,6 +90,8 @@ interface Props {
   activeThreadId: string | null;
   /** 에이전트 → 현재 진행 중 run 의 thread id. tether 페어링용. */
   threadByAgent: Map<string, string>;
+  /** Agent.adapterKind → 브랜드 아이콘 manifest. 회의실 자리의 아바타로 쓰임. */
+  adapterByKind: Record<string, AdapterManifest>;
   onPickFile: (path: string) => void;
   onPickAgent: (id: string) => void;
   onPickThread: (id: string) => void;
@@ -117,6 +110,7 @@ export function MeetingRoom({
   workingThreadIds,
   activeThreadId,
   threadByAgent,
+  adapterByKind,
   onPickFile,
   onPickAgent,
   onPickThread,
@@ -237,6 +231,7 @@ export function MeetingRoom({
               <AgentSeat
                 key={agent.id}
                 agent={agent}
+                manifest={adapterByKind[agent.adapterKind]}
                 x={seat.x}
                 y={seat.y}
                 working={workingIds.has(agent.id)}
@@ -478,6 +473,7 @@ interface ToolBurstItem {
 
 function AgentSeat({
   agent,
+  manifest,
   x,
   y,
   working,
@@ -489,6 +485,7 @@ function AgentSeat({
   onPickFile,
 }: {
   agent: Agent;
+  manifest: AdapterManifest | undefined;
   x: number;
   y: number;
   working: boolean;
@@ -618,11 +615,29 @@ function AgentSeat({
               : undefined
           }
         >
-          <AgentAvatar
-            agent={agent}
-            size={64}
-            state={avatarState(stateBadge, working)}
-          />
+          {/* 어댑터 브랜드 아이콘 (Claude / Gemini / Codex / OpenCode) — 에이전트의
+              "신원". 같은 어댑터 여러 명이면 ring 색(에이전트 색)으로 구분. */}
+          <span
+            className={cn(
+              "relative inline-flex size-16 items-center justify-center rounded-2xl border-2 bg-card shadow-sm",
+              cls.border,
+              cls.bgSoft,
+            )}
+          >
+            {manifest ? (
+              <AdapterIcon manifest={manifest} size={44} />
+            ) : (
+              <span className={cn("text-sm font-semibold", cls.text)}>
+                {agent.name.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            {/* 어댑터명을 작은 footer 같은 형태로 — 어떤 모델인지 한눈에. */}
+            {manifest ? (
+              <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1 rounded bg-card border border-border text-[8.5px] mono text-muted-foreground/80 shadow-sm whitespace-nowrap">
+                {manifest.displayName}
+              </span>
+            ) : null}
+          </span>
           {touching ? (
             <span
               aria-hidden
