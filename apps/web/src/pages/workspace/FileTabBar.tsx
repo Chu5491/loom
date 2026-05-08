@@ -2,7 +2,7 @@
 // 채팅은 floating overlay로 분리됐으므로 가짜 Chat 탭은 제거됨.
 // 활성 에이전트 라이브 배지 + 라인 번호 + 닫기. auto-animate로 추가/삭제 모핑.
 
-import { Building2, Code2, FileText, X } from "lucide-react";
+import { Building2, Code2, FileText, PanelRightClose, X } from "lucide-react";
 import type { Agent } from "@loom/core";
 import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 import { useI18n } from "../../context/I18nContext.js";
@@ -22,6 +22,7 @@ export function FileTabBar({
   onCloseAll,
   onSelectOffice,
   onSelectEditor,
+  onCollapseCanvas,
 }: {
   /** "office"이면 Office 가짜 탭이 활성 — 어떤 파일 탭도 active 안 됨. */
   view: "office" | "editor";
@@ -37,6 +38,8 @@ export function FileTabBar({
   onSelectOffice: () => void;
   /** Editor 모드로 복귀 — 마지막 활성 파일이 있으면 그걸 보여줌. 없으면 EditorEmpty. */
   onSelectEditor: () => void;
+  /** 캔버스 통째로 접기 — 시니어가 채팅 메인으로 쓸 때. 미정의면 버튼 숨김. */
+  onCollapseCanvas?: () => void;
 }) {
   const { t } = useI18n();
   const stripRef = useAutoAnimate<HTMLDivElement>({
@@ -107,6 +110,18 @@ export function FileTabBar({
           <X className="size-3 shrink-0" />
           <span>{t("workspace.tabs.closeAll")}</span>
           <span className="text-muted-foreground/60 mono ml-1">⌘\</span>
+        </button>
+      ) : null}
+      {onCollapseCanvas ? (
+        <button
+          type="button"
+          onClick={onCollapseCanvas}
+          title={t("workspace.canvas.hide")}
+          aria-label={t("workspace.canvas.hide")}
+          className="inline-flex items-center gap-1 px-2 self-center h-6 mx-1 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors whitespace-nowrap shrink-0 border-l border-border/60 pl-2.5"
+        >
+          <PanelRightClose className="size-3.5 shrink-0" />
+          <span className="hidden md:inline">{t("workspace.canvas.hide")}</span>
         </button>
       ) : null}
     </div>

@@ -32,6 +32,7 @@ import { ThreadList } from "./workspace/ThreadList.js";
 import { readPersistedTabs } from "./workspace/persistence.js";
 
 const VIEW_KEY = "loom:workspace:view";
+const CANVAS_COLLAPSED_KEY = "loom:workspace:canvasCollapsed";
 type WorkspaceView = "office" | "editor";
 
 export function WorkspacePage() {
@@ -185,6 +186,24 @@ export function WorkspacePage() {
       // quota — 무시
     }
   }, [view]);
+
+  // 캔버스(사무실 + 에디터)를 통째로 접어서 채팅을 메인으로 쓰는 모드. 사무실
+  // 비주얼이 매력적이지만 시니어 사용자에겐 채팅이 본체 — 자기 외부 에디터 쓰는
+  // 사람한테 캔버스는 화면 낭비라 사용자 선택을 영속.
+  const [canvasCollapsed, setCanvasCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(CANVAS_COLLAPSED_KEY) === "1";
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CANVAS_COLLAPSED_KEY,
+        canvasCollapsed ? "1" : "0",
+      );
+    } catch {
+      // ignore
+    }
+  }, [canvasCollapsed]);
 
   // 프로젝트 간 네비게이션 시 unmount 없이 재읽기.
   useEffect(() => {
@@ -403,8 +422,9 @@ export function WorkspacePage() {
     view === "editor" &&
     activeFile !== null &&
     openFiles.includes(activeFile);
-  // 파일 탭바는 항상 표시 (Office 가짜 탭이 항상 있어서) — chat full-modal일 때만 숨김.
-  const showFileTabs = !chatFullModal;
+  // 파일 탭바는 항상 표시 (Office 가짜 탭이 항상 있어서) — chat full-modal 또는
+  // 캔버스 collapsed 일 때만 숨김. 캔버스가 안 보이면 탭 strip도 의미 없음.
+  const showFileTabs = !chatFullModal && !canvasCollapsed;
 
   const newIsolatedThread = async () => {
     try {
@@ -448,6 +468,7 @@ export function WorkspacePage() {
             onCloseAll={closeAllFiles}
             onSelectOffice={() => setView("office")}
             onSelectEditor={() => setView("editor")}
+            onCollapseCanvas={() => setCanvasCollapsed(true)}
           />
         ) : null}
 
@@ -467,45 +488,50 @@ export function WorkspacePage() {
             dockPlacement === "bottom" ? "flex-col" : "flex-row",
           )}
         >
-          <section className="flex-1 min-w-0 min-h-0 flex flex-col">
-            {/* Office는 view 전환에도 unmount 안 함 — 캐릭터 wander 위치 / linger
-                타이머가 OfficeFloor 내부 state라서 mount 깨면 모두 리셋됨.
-                에디터 갔다 와도 사무실이 그 자리에서 계속 돌아가게 CSS로만 숨김. */}
-            <div
-              className={cn(
-                "flex-1 min-h-0 flex flex-col",
-                view !== "office" && "hidden",
-              )}
-            >
-              <Office
-                agents={agentList}
-                workingIds={workingIds}
-                touchingIds={touchingIds}
-                activeTouches={activeTouchesQuery.data?.touches ?? []}
-                activeTools={activeToolsQuery.data?.tools ?? []}
-                activeThread={activeThread}
-                onPickAgent={(id) => setAgentIds([id])}
-              />
-            </div>
-            {view === "editor" ? (
-              showEditor ? (
-                <FileTab
-                  projectId={p.id}
-                  path={activeFile}
-                  presences={editorPresences}
+          {/* canvasCollapsed 시 캔버스 섹션 자체를 mount 해제 — 사무실 타이머는
+              잠깐 멈췄다가 펼치면 재가동. 채팅 풀 모드 진입 시 ChatDock 이 100%
+              차지하도록 의도. */}
+          {!canvasCollapsed ? (
+            <section className="flex-1 min-w-0 min-h-0 flex flex-col">
+              {/* Office는 view 전환에도 unmount 안 함 — 캐릭터 wander 위치 / linger
+                  타이머가 OfficeFloor 내부 state라서 mount 깨면 모두 리셋됨.
+                  에디터 갔다 와도 사무실이 그 자리에서 계속 돌아가게 CSS로만 숨김. */}
+              <div
+                className={cn(
+                  "flex-1 min-h-0 flex flex-col",
+                  view !== "office" && "hidden",
+                )}
+              >
+                <Office
                   agents={agentList}
-                  onJumpToRun={handleJumpToRun}
-                  adapterByKind={adapterByKind}
+                  workingIds={workingIds}
+                  touchingIds={touchingIds}
+                  activeTouches={activeTouchesQuery.data?.touches ?? []}
+                  activeTools={activeToolsQuery.data?.tools ?? []}
+                  activeThread={activeThread}
+                  onPickAgent={(id) => setAgentIds([id])}
                 />
-              ) : (
-                <EditorEmpty
-                  onOpenPalette={() => setPaletteOpen(true)}
-                  onSwitchToOffice={() => setView("office")}
-                  hint={t("workspace.empty.hint")}
-                />
-              )
-            ) : null}
-          </section>
+              </div>
+              {view === "editor" ? (
+                showEditor ? (
+                  <FileTab
+                    projectId={p.id}
+                    path={activeFile}
+                    presences={editorPresences}
+                    agents={agentList}
+                    onJumpToRun={handleJumpToRun}
+                    adapterByKind={adapterByKind}
+                  />
+                ) : (
+                  <EditorEmpty
+                    onOpenPalette={() => setPaletteOpen(true)}
+                    onSwitchToOffice={() => setView("office")}
+                    hint={t("workspace.empty.hint")}
+                  />
+                )
+              ) : null}
+            </section>
+          ) : null}
 
           {!chatFullModal ? (
             <ChatDock
@@ -516,6 +542,10 @@ export function WorkspacePage() {
               }
               placement={dockPlacement}
               onPlacementChange={setDockPlacement}
+              fullSize={canvasCollapsed}
+              onShowCanvas={
+                canvasCollapsed ? () => setCanvasCollapsed(false) : undefined
+              }
             >
               {/* dock 본문 = [좌측 ThreadList | 우측 ThreadBar + ChatPanel].
                   VSCode 터미널의 세션 사이드바와 동일한 컨셉. */}

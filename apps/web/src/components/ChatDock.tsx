@@ -25,6 +25,7 @@ import {
   Minimize2,
   Maximize2,
   PanelBottom,
+  PanelLeftOpen,
   PanelRight,
   X,
 } from "lucide-react";
@@ -78,6 +79,8 @@ export function ChatDock({
   headerExtra,
   placement,
   onPlacementChange,
+  fullSize = false,
+  onShowCanvas,
   children,
 }: {
   title?: string;
@@ -85,6 +88,10 @@ export function ChatDock({
   /** 외부에서 controlled — WorkspacePage가 layout을 바꿔야 해서 같이 알아야 함. */
   placement: DockPlacement;
   onPlacementChange: (next: DockPlacement) => void;
+  /** 캔버스가 접혔을 때 dock이 메인 영역 전체를 차지. height/width 무시. */
+  fullSize?: boolean;
+  /** fullSize 모드에서 캔버스를 다시 펼치는 헤더 버튼 — 미정의면 안 보임. */
+  onShowCanvas?: () => void;
   children: ReactNode;
 }) {
   const { t } = useI18n();
@@ -214,8 +221,10 @@ export function ChatDock({
   );
 
   // dock의 실제 크기 — placement 별로 다른 축에 적용.
-  const sizeStyle: React.CSSProperties =
-    placement === "bottom"
+  // fullSize 모드(캔버스 collapsed) 일 땐 부모 flex 가 100% 채우게 — 사이즈 헬퍼 우회.
+  const sizeStyle: React.CSSProperties = fullSize
+    ? { flex: 1, minWidth: 0, minHeight: 0 }
+    : placement === "bottom"
       ? {
           height: !open
             ? HEADER_H
@@ -232,6 +241,8 @@ export function ChatDock({
         };
 
   const isBottom = placement === "bottom";
+  // fullSize 면 리사이즈 핸들 / placement 토글 / maximize 의미 없음 — 다 숨김.
+  const showResizeAndPlacement = !fullSize;
 
   return (
     <aside
@@ -242,8 +253,8 @@ export function ChatDock({
       )}
       style={sizeStyle}
     >
-      {/* 드래그 핸들 — placement 별로 위치/축이 다름. */}
-      {open && !maximized ? (
+      {/* 드래그 핸들 — placement 별로 위치/축이 다름. fullSize 모드엔 리사이즈 의미 없음. */}
+      {open && !maximized && showResizeAndPlacement ? (
         isBottom ? (
           <div
             role="separator"
@@ -300,7 +311,18 @@ export function ChatDock({
           </div>
         ) : null}
         <div className="ml-auto flex items-center gap-0.5 shrink-0">
-          {open ? (
+          {open && onShowCanvas ? (
+            <button
+              type="button"
+              onClick={onShowCanvas}
+              title={t("workspace.canvas.show")}
+              aria-label={t("workspace.canvas.show")}
+              className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <PanelLeftOpen className="size-3.5" />
+            </button>
+          ) : null}
+          {open && showResizeAndPlacement ? (
             <>
               {/* placement 토글 — 현재 위치의 *반대*쪽 아이콘. 클릭 시 그쪽으로 이동. */}
               <button
