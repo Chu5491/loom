@@ -28,10 +28,8 @@ import { Button } from "../components/ui/button.js";
 import { CommitGraph } from "../components/git/CommitGraph.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
-import { BranchTree } from "./git/BranchTree.js";
 import { WorkingTreePanel } from "./git/WorkingTreePanel.js";
 import { CommitDetailPanel } from "./git/CommitDetailPanel.js";
-import { StashPanel } from "./git/StashPanel.js";
 import { CreatePrDialog } from "./git/CreatePrDialog.js";
 
 export function GitPage() {
@@ -61,65 +59,42 @@ export function GitPage() {
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-background">
       <Toolbar projectId={projectId} />
-      <div className="flex-1 min-h-0 flex">
-        {/* 좌측 220px — 상단에 BranchTree, 하단에 Stash. */}
-        <aside className="w-[220px] shrink-0 border-r border-border bg-card flex flex-col">
-          <BranchTree projectId={projectId} />
-          <StashPanelMount projectId={projectId} />
-        </aside>
-        <div className="flex-1 min-w-0 flex flex-col">
-          {/* 상단 — 커밋 그래프. 절반 높이. */}
-          <div className="flex-1 min-h-0 border-b border-border flex flex-col">
-            <SectionHeader label={t("git.section.history")} />
-            <GraphArea
-              entries={log.data?.entries ?? []}
-              isLoading={log.isLoading}
-              error={log.error as Error | null}
-              selectedSha={selectedSha}
-              onSelect={(sha) =>
-                setSelectedSha((curr) => (curr === sha ? null : sha))
-              }
-            />
-          </div>
-          {/* 하단 — 선택 커밋 디테일 또는 워킹 트리 staging. */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            <SectionHeader
-              label={
-                selectedSha
-                  ? t("git.section.commitChanges")
-                  : t("git.section.workingTree")
-              }
-            />
-            {/* 같은 커밋을 다시 클릭하면 deselect — 그래프의 토글 동작이
-                explicit "back" 버튼을 redundant 하게 만듬. */}
-            {selectedSha ? (
-              <CommitDetailPanel projectId={projectId} sha={selectedSha} />
-            ) : (
-              <WorkingTreePanel projectId={projectId} />
-            )}
-          </div>
+      {/* 단일 사이드바 룰 — BranchTree + Stash 는 ActivityPanel 의 GitTab 으로
+          이전. GitPage 메인 = 그래프 + 선택 디테일/워킹트리. 풀 width 사용. */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {/* 상단 — 커밋 그래프. 절반 높이. */}
+        <div className="flex-1 min-h-0 border-b border-border flex flex-col">
+          <SectionHeader label={t("git.section.history")} />
+          <GraphArea
+            entries={log.data?.entries ?? []}
+            isLoading={log.isLoading}
+            error={log.error as Error | null}
+            selectedSha={selectedSha}
+            onSelect={(sha) =>
+              setSelectedSha((curr) => (curr === sha ? null : sha))
+            }
+          />
+        </div>
+        {/* 하단 — 선택 커밋 디테일 또는 워킹 트리 staging. */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          <SectionHeader
+            label={
+              selectedSha
+                ? t("git.section.commitChanges")
+                : t("git.section.workingTree")
+            }
+          />
+          {/* 같은 커밋을 다시 클릭하면 deselect — 그래프의 토글 동작이
+              explicit "back" 버튼을 redundant 하게 만듬. */}
+          {selectedSha ? (
+            <CommitDetailPanel projectId={projectId} sha={selectedSha} />
+          ) : (
+            <WorkingTreePanel projectId={projectId} />
+          )}
         </div>
       </div>
     </div>
   );
-}
-
-/** StashPanel 은 "현재 변경 있음?" 게이트가 필요. gitStatus 쿼리는 Toolbar 가
- *  이미 들고 있어 dedup 되므로 추가 호출 비용 없음. */
-function StashPanelMount({ projectId }: { projectId: string }) {
-  const status = useQuery({
-    queryKey: ["gitStatus", projectId],
-    queryFn: () => api.getGitStatus(projectId),
-    refetchInterval: 5_000,
-    retry: false,
-  });
-  const s = status.data?.status;
-  const hasChanges =
-    !!s &&
-    (s.staged.length > 0 ||
-      s.unstaged.length > 0 ||
-      s.untracked.length > 0);
-  return <StashPanel projectId={projectId} hasChanges={hasChanges} />;
 }
 
 function SectionHeader({ label }: { label: string }) {
