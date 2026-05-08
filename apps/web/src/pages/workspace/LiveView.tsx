@@ -4,9 +4,9 @@
 // 모든 에이전트를 *동시에* 보고 (상단 가로 카드들), 그 아래에 *통합 활동 스트림*.
 // loom 의 본질 = 여러 에이전트가 같이 일하는 거니까 화면 전체가 그걸 보여줘야.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Loader2, Pencil, Plus, RefreshCw } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import type {
   ActiveToolsForAgent,
   ActiveTouch,
@@ -21,6 +21,8 @@ import { basename } from "../../lib/path.js";
 import { formatTimeAgo } from "../../lib/timeAgo.js";
 import { useAutoAnimate } from "../../lib/useAutoAnimate.js";
 import { cn } from "../../lib/utils.js";
+import { AgentFormDialog } from "./AgentFormDialog.js";
+import type { FormMode } from "../agents/types.js";
 
 // ──────────────────────────────────────────────────────────────────────────
 // 헬퍼
@@ -94,6 +96,7 @@ export function LiveView({
   refreshing,
 }: Props) {
   const { id: projectId } = useParams<{ id: string }>();
+  const [formState, setFormState] = useState<FormMode | null>(null);
 
   const fileByAgent = useMemo(() => {
     const m = new Map<string, string>();
@@ -164,7 +167,8 @@ export function LiveView({
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-5 py-5">
-          {/* 상단 — 가로 에이전트 카드들. 모두 동시 가시 + 끝에 "+ 추가" 타일. */}
+          {/* 상단 — 가로 에이전트 카드들. 모두 동시 가시 + 끝에 "+ 추가" 타일.
+              edit / add 는 모두 모달로 — 라이브 화면을 안 떠남. */}
           <AgentRow
             agents={sortedAgents}
             workingIds={workingIds}
@@ -176,16 +180,27 @@ export function LiveView({
             activeThreadId={activeThreadId}
             threads={threadList}
             workingThreadIds={workingThreadIds}
-            projectId={projectId}
+            canManage={!!projectId}
             onPickAgent={onPickAgent}
             onPickFile={onPickFile}
             onPickThread={onPickThread}
+            onEditAgent={(a) => setFormState({ mode: "edit", agent: a })}
+            onAddAgent={() => setFormState({ mode: "create" })}
           />
 
           {/* 통합 활동 스트림. */}
           <Stream stream={stream} onPickFile={onPickFile} onPickAgent={onPickAgent} />
         </div>
       </div>
+
+      <AgentFormDialog
+        open={!!formState}
+        state={formState}
+        projectId={projectId}
+        onOpenChange={(o) => {
+          if (!o) setFormState(null);
+        }}
+      />
     </div>
   );
 }
@@ -256,10 +271,12 @@ function AgentRow({
   activeThreadId,
   threads,
   workingThreadIds,
-  projectId,
+  canManage,
   onPickAgent,
   onPickFile,
   onPickThread,
+  onEditAgent,
+  onAddAgent,
 }: {
   agents: Agent[];
   workingIds: Set<string>;
@@ -271,10 +288,12 @@ function AgentRow({
   activeThreadId: string | null;
   threads: Thread[];
   workingThreadIds: Set<string>;
-  projectId: string | undefined;
+  canManage: boolean;
   onPickAgent: (id: string) => void;
   onPickFile: (path: string) => void;
   onPickThread: (id: string) => void;
+  onEditAgent: (agent: Agent) => void;
+  onAddAgent: () => void;
 }) {
   return (
     <div
@@ -301,30 +320,30 @@ function AgentRow({
             !!threadByAgent.get(a.id) &&
             workingThreadIds.has(threadByAgent.get(a.id)!)
           }
-          editHref={
-            projectId ? `/projects/${projectId}/agents?edit=${a.id}` : null
-          }
+          canEdit={canManage}
           onPickAgent={() => onPickAgent(a.id)}
           onPickFile={onPickFile}
           onPickThread={onPickThread}
+          onEdit={() => onEditAgent(a)}
         />
       ))}
-      {projectId ? <AddAgentTile projectId={projectId} /> : null}
+      {canManage ? <AddAgentTile onClick={onAddAgent} /> : null}
     </div>
   );
 }
 
-function AddAgentTile({ projectId }: { projectId: string }) {
+function AddAgentTile({ onClick }: { onClick: () => void }) {
   const { t } = useI18n();
   return (
-    <Link
-      to={`/projects/${projectId}/agents`}
+    <button
+      type="button"
+      onClick={onClick}
       className="group flex items-center justify-center gap-1.5 rounded-md border border-border/60 bg-card/40 hover:bg-muted/40 hover:border-foreground/30 transition-colors text-muted-foreground hover:text-foreground"
       title={t("live.addAgent.title")}
     >
       <Plus className="size-3.5" />
       <span className="text-[11.5px] font-medium">{t("live.addAgent")}</span>
-    </Link>
+    </button>
   );
 }
 
@@ -338,10 +357,11 @@ function AgentCard({
   thread,
   inActiveThread,
   threadWorking,
-  editHref,
+  canEdit,
   onPickAgent,
   onPickFile,
   onPickThread,
+  onEdit,
 }: {
   agent: Agent;
   manifest: AdapterManifest | undefined;
@@ -352,11 +372,12 @@ function AgentCard({
   thread: Thread | null;
   inActiveThread: boolean;
   threadWorking: boolean;
-  /** 편집 페이지 링크. null 이면 hover 시 편집 아이콘 안 보임. */
-  editHref: string | null;
+  /** false 면 hover 시 편집 아이콘 숨김. */
+  canEdit: boolean;
   onPickAgent: () => void;
   onPickFile: (path: string) => void;
   onPickThread: (id: string) => void;
+  onEdit: () => void;
 }) {
   const { t } = useI18n();
   const cls = classesFor(agentColorOf(agent));
@@ -374,17 +395,20 @@ function AgentCard({
             : "border-border",
       )}
     >
-      {/* hover 시 우상단 편집 아이콘 — team 관리 진입점. */}
-      {editHref ? (
-        <Link
-          to={editHref}
-          onClick={(e) => e.stopPropagation()}
+      {/* hover 시 우상단 편집 아이콘 — 모달로 띄움 (페이지 이동 X). */}
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
           title={t("live.editAgent")}
           aria-label={t("live.editAgent")}
           className="absolute top-1.5 right-1.5 inline-flex size-6 items-center justify-center rounded text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted/60 transition-all"
         >
           <Pencil className="size-3" />
-        </Link>
+        </button>
       ) : null}
 
       {/* 헤더: 로고 + 이름 + 상태 dot. */}
