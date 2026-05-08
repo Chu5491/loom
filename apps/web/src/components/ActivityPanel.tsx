@@ -11,7 +11,6 @@ import type { ActivityKind } from "./ActivityBar.js";
 import { cn } from "../lib/utils.js";
 import { ProjectsTab } from "./activity/ProjectsTab.js";
 import { FilesTab } from "./activity/FilesTab.js";
-import { AgentsTab } from "./activity/AgentsTab.js";
 import { SkillsTab } from "./activity/SkillsTab.js";
 import { McpsTab } from "./activity/McpsTab.js";
 import { HistoryTab } from "./activity/HistoryTab.js";
@@ -72,8 +71,6 @@ function ActivityContent({ activity }: { activity: ActivityKind }) {
       return <ProjectsTab />;
     case "files":
       return <FilesTab />;
-    case "agents":
-      return <AgentsTab />;
     case "skills":
       return <SkillsTab />;
     case "mcps":

@@ -195,7 +195,6 @@ export function LiveView({
 // ──────────────────────────────────────────────────────────────────────────
 
 function Header({
-  projectName,
   totalWorking,
   totalAgents,
   onRefresh,
@@ -208,22 +207,23 @@ function Header({
   refreshing?: boolean;
 }) {
   const { t } = useI18n();
+  // 프로젝트명/라이브 라벨은 위쪽 TeamRibbon + FileTabBar 가 이미 표시. 여기는
+  // 카운트만 — 중복 제거하니 시각 노이즈 ↓.
   return (
-    <header className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/20">
-      <span className="text-sm font-semibold truncate" title={projectName}>
-        {projectName}
-        <span className="text-muted-foreground/70 font-normal ml-2">
-          · {t("live.label")}
-        </span>
-      </span>
+    <header className="shrink-0 flex items-center gap-3 px-4 py-1.5 border-b border-border/60">
       <span className="text-[11px] text-muted-foreground mono">
         {totalWorking > 0 ? (
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            {totalWorking} working · {totalAgents} agents
+            {totalWorking} {t("live.workingShort")} ·{" "}
+            <span className="text-muted-foreground/60">
+              {totalAgents} {t("live.agentsShort")}
+            </span>
           </span>
         ) : (
-          <span>{totalAgents} agents · idle</span>
+          <span className="text-muted-foreground/60">
+            {totalAgents} {t("live.agentsShort")} · {t("live.state.idle")}
+          </span>
         )}
       </span>
       {onRefresh ? (
@@ -232,9 +232,9 @@ function Header({
           onClick={onRefresh}
           title={t("map.refresh")}
           aria-label={t("map.refresh")}
-          className="ml-auto inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          className="ml-auto inline-flex size-6 items-center justify-center rounded text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors shrink-0"
         >
-          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+          <RefreshCw className={cn("size-3", refreshing && "animate-spin")} />
         </button>
       ) : null}
     </header>
@@ -319,16 +319,11 @@ function AddAgentTile({ projectId }: { projectId: string }) {
   return (
     <Link
       to={`/projects/${projectId}/agents`}
-      className="group flex flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border/70 bg-card/30 hover:bg-muted/40 hover:border-foreground/40 transition-colors min-h-[120px] text-muted-foreground hover:text-foreground"
+      className="group flex items-center justify-center gap-1.5 rounded-md border border-border/60 bg-card/40 hover:bg-muted/40 hover:border-foreground/30 transition-colors text-muted-foreground hover:text-foreground"
       title={t("live.addAgent.title")}
     >
-      <span className="inline-flex size-9 items-center justify-center rounded-md border border-dashed border-current/40">
-        <Plus className="size-4" />
-      </span>
+      <Plus className="size-3.5" />
       <span className="text-[11.5px] font-medium">{t("live.addAgent")}</span>
-      <span className="text-[10px] text-muted-foreground/70">
-        {t("live.addAgent.hint")}
-      </span>
     </Link>
   );
 }
@@ -548,6 +543,9 @@ function Stream({
     easing: "ease-out",
   });
 
+  // 빈 스트림이면 라벨까지 안 보임 — 시각 노이즈 ↓. 활동이 들어오면 자연스럽게 등장.
+  if (stream.length === 0) return null;
+
   return (
     <section>
       <div className="flex items-center gap-2 mb-2 px-1">
@@ -555,29 +553,23 @@ function Stream({
           {t("live.stream")}
         </h3>
         <span className="text-[10px] text-muted-foreground/60">
-          {stream.length > 0 ? `· ${stream.length} actions` : ""}
+          · {stream.length}
         </span>
       </div>
-      {stream.length === 0 ? (
-        <div className="text-sm text-muted-foreground/60 italic px-1 py-3">
-          {t("live.stream.empty")}
-        </div>
-      ) : (
-        <ul ref={ref} className="space-y-px">
-          {stream.map((item, idx) => (
-            <StreamRow
-              key={item.key}
-              ts={item.ts}
-              agent={item.agent}
-              name={item.name}
-              target={item.target}
-              recent={idx < 3}
-              onPickFile={onPickFile}
-              onPickAgent={onPickAgent}
-            />
-          ))}
-        </ul>
-      )}
+      <ul ref={ref} className="space-y-px">
+        {stream.map((item, idx) => (
+          <StreamRow
+            key={item.key}
+            ts={item.ts}
+            agent={item.agent}
+            name={item.name}
+            target={item.target}
+            recent={idx < 3}
+            onPickFile={onPickFile}
+            onPickAgent={onPickAgent}
+          />
+        ))}
+      </ul>
     </section>
   );
 }

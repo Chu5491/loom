@@ -7,7 +7,6 @@ import {
   Files as FilesIcon,
   GitBranch,
   Home,
-  Users,
 } from "lucide-react";
 import { LoomLogo } from "./LoomLogo.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.js";
@@ -160,11 +159,6 @@ export function ActivityBar({
       kind: "files",
       icon: <FilesIcon className="size-5" />,
       label: t("activity.files"),
-    },
-    {
-      kind: "agents",
-      icon: <Users className="size-5" />,
-      label: t("activity.agents"),
     },
   ];
 
