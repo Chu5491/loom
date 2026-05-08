@@ -57,10 +57,14 @@ function FilesSection({ projectId }: { projectId: string }) {
   );
   // 활성 편집이 과거 터치를 덮어씀 — 지금 편집 중인 사람이 도트 주인.
   const activeByPath = new Map<string, string>();
+  const lineByPath = new Map<string, number>();
   for (const tch of activeTouches.data?.touches ?? []) {
     for (const p of tch.paths) {
       activeByPath.set(p, tch.agentId);
       touchedByAgent.set(p, tch.agentId);
+    }
+    for (const loc of tch.locations) {
+      lineByPath.set(loc.path, loc.line);
     }
   }
 
@@ -71,6 +75,7 @@ function FilesSection({ projectId }: { projectId: string }) {
         selectedPath={null}
         touched={touchedByAgent}
         activeByAgent={activeByPath}
+        lineByPath={lineByPath}
         agents={agents.data?.agents ?? []}
         onPick={(path) => emit("openFile", { path })}
       />

@@ -6,11 +6,11 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  Pen,
 } from "lucide-react";
 import type { Agent, TreeEntry } from "@loom/core";
 import { api } from "../api/client.js";
 import { agentColorOf, classesFor } from "./agentColor.js";
-import { AgentInitialBadge } from "./AgentInitialBadge.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
@@ -34,6 +34,7 @@ export function FilesTree({
   selectedPath,
   touched,
   activeByAgent,
+  lineByPath,
   agents,
   onPick,
   defaultOpenDepth = 0,
@@ -45,6 +46,8 @@ export function FilesTree({
   /** Subset of `touched` whose entries are being edited *right now*.
    *  Files in this map get a pulsing dot instead of a static one. */
   activeByAgent?: Map<string, string>;
+  /** path → 현재 편집 중인 라인 번호. 행 끝에 ":42" 표시. */
+  lineByPath?: Map<string, number>;
   agents?: Agent[];
   onPick: (path: string) => void;
   /** Auto-expand directories up to this depth. 0 = current behavior
@@ -64,6 +67,7 @@ export function FilesTree({
       selectedPath={selectedPath}
       touched={touched}
       activeByAgent={activeByAgent}
+      lineByPath={lineByPath}
       agents={agents}
       onPick={onPick}
       defaultOpenDepth={defaultOpenDepth}
@@ -95,6 +99,7 @@ function TreeNode({
   selectedPath,
   touched,
   activeByAgent,
+  lineByPath,
   agents,
   onPick,
   defaultOpenDepth,
@@ -107,6 +112,7 @@ function TreeNode({
   selectedPath: string | null;
   touched?: Map<string, string>;
   activeByAgent?: Map<string, string>;
+  lineByPath?: Map<string, number>;
   agents?: Agent[];
   onPick: (path: string) => void;
   defaultOpenDepth: number;
@@ -156,6 +162,7 @@ function TreeNode({
           selectedPath={selectedPath}
           touched={touched}
           activeByAgent={activeByAgent}
+          lineByPath={lineByPath}
           agents={agents}
           onPick={onPick}
           defaultOpenDepth={defaultOpenDepth}
@@ -173,6 +180,7 @@ function TreeChildren({
   selectedPath,
   touched,
   activeByAgent,
+  lineByPath,
   agents,
   onPick,
   defaultOpenDepth,
@@ -184,6 +192,7 @@ function TreeChildren({
   selectedPath: string | null;
   touched?: Map<string, string>;
   activeByAgent?: Map<string, string>;
+  lineByPath?: Map<string, number>;
   agents?: Agent[];
   onPick: (path: string) => void;
   defaultOpenDepth: number;
@@ -240,6 +249,7 @@ function TreeChildren({
               selectedPath={selectedPath}
               touched={touched}
               activeByAgent={activeByAgent}
+              lineByPath={lineByPath}
               agents={agents}
               onPick={onPick}
               defaultOpenDepth={defaultOpenDepth}
@@ -254,6 +264,7 @@ function TreeChildren({
               selectedPath={selectedPath}
               touchedByAgentId={touched?.get(e.path)}
               isActive={activeByAgent?.has(e.path) ?? false}
+              line={lineByPath?.get(e.path)}
               agents={agents}
               onPick={onPick}
             />
@@ -270,6 +281,7 @@ function FileLeaf({
   selectedPath,
   touchedByAgentId,
   isActive,
+  line,
   agents,
   onPick,
 }: {
@@ -278,6 +290,7 @@ function FileLeaf({
   selectedPath: string | null;
   touchedByAgentId?: string;
   isActive?: boolean;
+  line?: number;
   agents?: Agent[];
   onPick: (path: string) => void;
 }) {
@@ -286,11 +299,7 @@ function FileLeaf({
   const lastAgent = touchedByAgentId
     ? agents?.find((a) => a.id === touchedByAgentId)
     : undefined;
-  const dotClass = lastAgent
-    ? classesFor(agentColorOf(lastAgent)).dot
-    : touchedByAgentId
-      ? "bg-foreground/40"
-      : null;
+  const cls = lastAgent ? classesFor(agentColorOf(lastAgent)) : null;
   return (
     <button
       type="button"
@@ -298,13 +307,17 @@ function FileLeaf({
       title={
         lastAgent
           ? isActive
-            ? `${entry.name} · @${lastAgent.name} ${t("editing.tooltipSuffix")}`
+            ? `${entry.name}${line ? `:${line}` : ""} · @${lastAgent.name} ${t("editing.tooltipSuffix")}`
             : `${entry.name} · @${lastAgent.name}`
           : entry.name
       }
       className={cn(
         "flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left text-sm transition-colors",
-        isSelected ? "bg-foreground/10 font-medium" : "hover:bg-muted/40",
+        isSelected
+          ? "bg-foreground/10 font-medium"
+          : isActive
+            ? "bg-emerald-500/[0.06] hover:bg-emerald-500/10"
+            : "hover:bg-muted/40",
       )}
       style={{ paddingLeft: `${depth * 12 + 23}px` }}
     >
@@ -315,16 +328,32 @@ function FileLeaf({
         )}
       />
       <span className="truncate flex-1 min-w-0">{entry.name}</span>
-      {/* Agent indicator. Active edits get the prominent initials badge
-       *  (with pulse) so the user can see "AD is in main.py *now*"
-       *  without expanding folders or opening files. Past edits keep
-       *  the small color dot — quieter, just the trail. */}
-      {lastAgent && isActive ? (
-        <AgentInitialBadge agent={lastAgent} live size="xs" className="mr-1" />
-      ) : dotClass ? (
+      {/* 활성 편집 시: 작은 ✎ + 라인 + 에이전트 색 dot. 누적 편집은 작은 dot 만. */}
+      {isActive && cls ? (
+        <span className="flex items-center gap-1 shrink-0 mr-1">
+          <Pen
+            className={cn("size-2.5", cls.text, "animate-pulse")}
+            aria-hidden
+          />
+          {line ? (
+            <span className="text-[9.5px] mono text-muted-foreground tabular-nums">
+              :{line}
+            </span>
+          ) : null}
+          <span
+            aria-hidden
+            className={cn("size-1.5 rounded-full", cls.dot)}
+          />
+        </span>
+      ) : cls ? (
         <span
           aria-hidden
-          className={cn("size-1.5 rounded-full shrink-0 mr-1", dotClass)}
+          className={cn("size-1.5 rounded-full shrink-0 mr-1", cls.dot)}
+        />
+      ) : touchedByAgentId ? (
+        <span
+          aria-hidden
+          className="size-1.5 rounded-full shrink-0 mr-1 bg-foreground/40"
         />
       ) : null}
     </button>

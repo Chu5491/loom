@@ -338,7 +338,7 @@ function AddAgentTile({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center justify-center gap-1.5 rounded-md border border-border/60 bg-card/40 hover:bg-muted/40 hover:border-foreground/30 transition-colors text-muted-foreground hover:text-foreground"
+      className="group flex items-center justify-center gap-1.5 rounded-xl bg-card/30 ring-1 ring-foreground/5 hover:ring-foreground/15 hover:bg-card/70 transition-all text-muted-foreground hover:text-foreground"
       title={t("live.addAgent.title")}
     >
       <Plus className="size-3.5" />
@@ -387,12 +387,12 @@ function AgentCard({
   return (
     <div
       className={cn(
-        "group relative rounded-md border bg-card p-3 transition-colors",
+        "group relative rounded-xl p-3.5 transition-all",
         working
-          ? "border-emerald-500/40 bg-emerald-500/[0.025]"
+          ? "bg-emerald-500/[0.04] ring-1 ring-emerald-500/30 shadow-sm"
           : inActiveThread
-            ? "border-foreground/30"
-            : "border-border",
+            ? "bg-card/70 ring-1 ring-foreground/15 shadow-sm"
+            : "bg-card/50 ring-1 ring-foreground/5 hover:ring-foreground/15 hover:bg-card/80",
       )}
     >
       {/* hover 시 우상단 편집 아이콘 — 모달로 띄움 (페이지 이동 X). */}
@@ -418,23 +418,24 @@ function AgentCard({
           onClick={onPickAgent}
           title={`${t("room.talk")} @${agent.name}`}
           className={cn(
-            "relative inline-flex size-9 items-center justify-center rounded-md border bg-card shrink-0 hover:shadow-sm transition-shadow",
-            cls.border,
+            "relative inline-flex size-10 items-center justify-center rounded-xl bg-background/80 shrink-0 ring-1 transition-all hover:scale-105",
+            cls.ring,
+            working ? "ring-2 ring-offset-2 ring-offset-card" : "ring-foreground/10",
           )}
         >
           {manifest ? (
-            <AdapterIcon manifest={manifest} size={26} />
+            <AdapterIcon manifest={manifest} size={28} />
           ) : (
-            <span className={cn("text-xs font-semibold", cls.text)}>
-              {agent.name.slice(0, 1).toUpperCase()}
-            </span>
+            <span className={cn("text-sm font-semibold", cls.text)}>·</span>
           )}
           {/* 우하단 상태 dot */}
           <span
             aria-hidden
             className={cn(
-              "absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-card",
-              working ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/30",
+              "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-card",
+              working
+                ? "bg-emerald-500 animate-pulse"
+                : "bg-muted-foreground/30",
             )}
           />
         </button>
@@ -626,17 +627,17 @@ function StreamRow({
     : `${toolIcon(name)} ${name}`;
 
   return (
-    <li className="group flex items-baseline gap-2 px-2 py-1 rounded hover:bg-muted/40 transition-colors">
-      {/* dot — 최근이면 emerald pulse, 아니면 gray. */}
+    <li className="group flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-foreground/[0.03] transition-colors">
+      {/* timeline 좌측 dot */}
       <span
         aria-hidden
         className={cn(
-          "size-1.5 rounded-full shrink-0 self-center",
+          "size-1.5 rounded-full shrink-0",
           recent ? "bg-emerald-500" : "bg-muted-foreground/30",
           recent && "animate-pulse",
         )}
       />
-      <span className="text-[10px] mono text-muted-foreground/70 w-12 shrink-0 tabular-nums">
+      <span className="text-[10px] mono text-muted-foreground/60 w-12 shrink-0 tabular-nums">
         {formatTimeAgo(ts, t)}
       </span>
       <button
@@ -649,7 +650,7 @@ function StreamRow({
       >
         @{agent.name}
       </button>
-      <span className="text-xs mono text-foreground/85 shrink-0">
+      <span className="text-xs mono text-foreground/80 shrink-0">
         {display}
       </span>
       {target ? (
@@ -657,14 +658,14 @@ function StreamRow({
           <button
             type="button"
             onClick={() => onPickFile(target)}
-            className="text-[11px] mono text-muted-foreground hover:text-foreground hover:underline truncate min-w-0"
+            className="text-[11px] mono text-muted-foreground/80 hover:text-foreground hover:underline truncate min-w-0"
             title={target}
           >
             {basename(target)}
           </button>
         ) : (
           <span
-            className="text-[11px] mono text-muted-foreground truncate min-w-0"
+            className="text-[11px] mono text-muted-foreground/70 truncate min-w-0"
             title={target}
           >
             {target}

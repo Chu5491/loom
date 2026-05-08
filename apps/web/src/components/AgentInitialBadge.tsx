@@ -1,5 +1,5 @@
 import type { Agent } from "@loom/core";
-import { agentColorOf, initialFor } from "./agentColor.js";
+import { agentColorOf } from "./agentColor.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
@@ -20,13 +20,10 @@ const SOLID_BG: Record<string, string> = {
 };
 
 /**
- * Compact filled square showing an agent's first character. Used where
- * an avatar would be too big — file tabs, tree rows, "editing now"
- * banners. Reads at-a-glance like the badges in the reference design:
- * a tiny [AD] chip pinned next to the filename.
+ * 작은 컬러 dot — 에이전트 색만으로 누구인지 식별. 예전엔 첫 글자(initial)
+ * 박았었지만 시각적으로 노이지하고 글자 가독성도 약해 dot 만 남김.
  *
- * `live=true` adds a soft outer pulse so the eye catches the *currently*
- * editing file even in a long tree.
+ * `live=true` 면 펄스 ring 으로 "지금 만지고 있음" 강조.
  */
 export function AgentInitialBadge({
   agent,
@@ -43,20 +40,20 @@ export function AgentInitialBadge({
   const color = agentColorOf(agent);
   const dim =
     size === "xs"
-      ? "size-3.5 text-[8px]"
+      ? "size-2"
       : size === "md"
-        ? "size-5 text-[10px]"
+        ? "size-3"
         : size === "lg"
-          ? "size-9 text-[14px] rounded-md"
+          ? "size-3.5"
           : size === "xl"
-            ? "size-12 text-[18px] rounded-lg"
-            : "size-4 text-[9px]";
+            ? "size-4"
+            : "size-2.5";
   const bg = SOLID_BG[color] ?? "bg-foreground/60";
 
   return (
     <span
       className={cn(
-        "relative inline-flex items-center justify-center rounded shrink-0",
+        "relative inline-flex items-center justify-center rounded-full shrink-0",
         className,
       )}
       title={`@${agent.name}${live ? ` · ${t("editing.tooltipSuffix")}` : ""}`}
@@ -65,21 +62,19 @@ export function AgentInitialBadge({
         <span
           aria-hidden
           className={cn(
-            "absolute inset-0 rounded animate-ping opacity-40",
+            "absolute inset-0 rounded-full animate-ping opacity-50",
             bg,
           )}
         />
       ) : null}
       <span
         className={cn(
-          "relative inline-flex items-center justify-center rounded font-bold text-white tracking-tight",
+          "relative inline-block rounded-full",
           dim,
           bg,
           live && "ring-2 ring-background",
         )}
-      >
-        {initialFor(agent.name)}
-      </span>
+      />
     </span>
   );
 }
