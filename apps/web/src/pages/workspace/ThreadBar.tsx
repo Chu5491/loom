@@ -7,10 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import NumberFlow from "@number-flow/react";
 import { Drawer } from "vaul";
 import {
-  Expand,
   GitBranch,
   MessagesSquare,
-  Minimize2,
   Network,
   Paperclip,
   RefreshCw,
@@ -37,8 +35,6 @@ export function ThreadBar({
   participants,
   workingIds,
   touchingIds,
-  fullModal,
-  onToggleFullModal,
   onOpenContext,
 }: {
   activeThread: Thread | null;
@@ -50,8 +46,6 @@ export function ThreadBar({
   workingIds: Set<string>;
   /** 실제로 파일을 만지고 있는 에이전트들. live dot 표시용. */
   touchingIds: Set<string>;
-  fullModal?: boolean;
-  onToggleFullModal?: () => void;
   onOpenContext: () => void;
 }) {
   const { t } = useI18n();
@@ -229,29 +223,6 @@ export function ThreadBar({
         </button>
       ) : null}
 
-      {onToggleFullModal ? (
-        <button
-          type="button"
-          onClick={onToggleFullModal}
-          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-          title={
-            fullModal
-              ? t("workspace.chat.exitFullModal")
-              : t("workspace.chat.enterFullModal")
-          }
-          aria-label={
-            fullModal
-              ? t("workspace.chat.exitFullModal")
-              : t("workspace.chat.enterFullModal")
-          }
-        >
-          {fullModal ? (
-            <Minimize2 className="size-3.5" />
-          ) : (
-            <Expand className="size-3.5" />
-          )}
-        </button>
-      ) : null}
     </div>
   );
 }

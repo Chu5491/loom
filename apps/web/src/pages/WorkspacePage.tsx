@@ -39,8 +39,8 @@ type WorkspaceView = "office" | "editor";
 export function WorkspacePage() {
   const { t } = useI18n();
   const { id: projectId } = useParams<{ id: string }>();
-  const { chatFullModal, setChatFullModal } =
-    useOutletContext<LayoutOutletContext>();
+  // LayoutOutletContext 는 현재 빈 객체 — 포커스 모드는 워크스페이스 내부에서만 관리.
+  useOutletContext<LayoutOutletContext>();
 
   // ── Data
   const project = useQuery({
@@ -340,7 +340,12 @@ export function WorkspacePage() {
     readDockPlacement(),
   );
 
-  // ⌘P → 파일 팔레트, ⌘\ → 모든 파일 닫기. 입력 중에는 무시.
+  // 단축키:
+  //   ⌘P     → 파일 팔레트
+  //   ⌘\     → 모든 파일 닫기
+  //   ⌘⇧L    → 채팅 집중 토글 (canvas 접기/펼치기) — 단일 모드. 옛 chatFullModal 폐기.
+  //   ESC    → 채팅 집중 해제
+  // 입력 중에는 무시.
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
     const inEditable = (e: KeyboardEvent) => {
@@ -353,6 +358,24 @@ export function WorkspacePage() {
       );
     };
     const onKey = (e: KeyboardEvent) => {
+      // ⌘⇧L — 채팅 집중 토글.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "l"
+      ) {
+        if (inEditable(e)) return;
+        e.preventDefault();
+        setCanvasCollapsed((v) => !v);
+        return;
+      }
+      // ESC — 채팅 집중 모드면 해제.
+      if (e.key === "Escape" && canvasCollapsed) {
+        if (inEditable(e)) return;
+        e.preventDefault();
+        setCanvasCollapsed(false);
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
       if (inEditable(e)) return;
       const k = e.key.toLowerCase();
@@ -366,7 +389,7 @@ export function WorkspacePage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [closeAllFiles]);
+  }, [closeAllFiles, canvasCollapsed]);
 
   // 이 thread에 발화한 적 있는 모든 에이전트 — 단톡방 참여자 헤더용.
   // 모든 useMemo는 early return 전에 위치해야 React 훅 순서가 안정적.
@@ -442,9 +465,8 @@ export function WorkspacePage() {
     view === "editor" &&
     activeFile !== null &&
     openFiles.includes(activeFile);
-  // 파일 탭바는 항상 표시 (Office 가짜 탭이 항상 있어서) — chat full-modal 또는
-  // 캔버스 collapsed 일 때만 숨김. 캔버스가 안 보이면 탭 strip도 의미 없음.
-  const showFileTabs = !chatFullModal && !canvasCollapsed;
+  // 캔버스가 collapsed 면 탭 strip 도 숨김 — 둘 다 같은 칸 차지.
+  const showFileTabs = !canvasCollapsed;
 
   const newIsolatedThread = async () => {
     try {
@@ -462,15 +484,13 @@ export function WorkspacePage() {
   return (
     <>
       <div className="flex h-full min-w-0 flex-col">
-        {chatFullModal ? null : (
-          <TeamRibbon
-            project={p}
-            agents={agentList}
-            workingIds={workingIds}
-            touchingIds={touchingIds}
-            activeThread={activeThread}
-          />
-        )}
+        <TeamRibbon
+          project={p}
+          agents={agentList}
+          workingIds={workingIds}
+          touchingIds={touchingIds}
+          activeThread={activeThread}
+        />
 
         {showFileTabs ? (
           <FileTabBar
@@ -571,20 +591,19 @@ export function WorkspacePage() {
             </section>
           ) : null}
 
-          {!chatFullModal ? (
-            <ChatDock
-              title={
-                p
-                  ? `# ${p.name}`
-                  : (activeThread?.name ?? t("chat.overlay.title"))
-              }
-              placement={dockPlacement}
-              onPlacementChange={setDockPlacement}
-              fullSize={canvasCollapsed}
-              onShowCanvas={
-                canvasCollapsed ? () => setCanvasCollapsed(false) : undefined
-              }
-            >
+          <ChatDock
+            title={
+              p
+                ? `# ${p.name}`
+                : (activeThread?.name ?? t("chat.overlay.title"))
+            }
+            placement={dockPlacement}
+            onPlacementChange={setDockPlacement}
+            fullSize={canvasCollapsed}
+            onShowCanvas={
+              canvasCollapsed ? () => setCanvasCollapsed(false) : undefined
+            }
+          >
               {/* dock 본문 = [좌측 ThreadList | 우측 ThreadBar + ChatPanel].
                   VSCode 터미널의 세션 사이드바와 동일한 컨셉. */}
               <div className="flex flex-1 min-h-0 min-w-0">
@@ -605,8 +624,6 @@ export function WorkspacePage() {
                     participants={participantsForThread}
                     workingIds={workingIds}
                     touchingIds={touchingIds}
-                    fullModal={chatFullModal}
-                    onToggleFullModal={() => setChatFullModal(!chatFullModal)}
                     onOpenContext={() => setContextOpen(true)}
                   />
                   <ChatPanel
@@ -629,8 +646,7 @@ export function WorkspacePage() {
                   />
                 </div>
               </div>
-            </ChatDock>
-          ) : null}
+          </ChatDock>
         </div>
       </div>
 

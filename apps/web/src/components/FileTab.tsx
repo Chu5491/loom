@@ -10,6 +10,7 @@ import {
   GitCommit,
   History,
   RotateCcw,
+  SplitSquareHorizontal,
   WrapText,
 } from "lucide-react";
 import type { AdapterManifest, Agent, FileHistoryEntry } from "@loom/core";
@@ -246,8 +247,7 @@ function PaneHeader({
           </Badge>
         ) : null}
       </div>
-      {/* 헤더 액션 — 공간 절약 위해 icon-only. hover 시 title 로 라벨 노출.
-          diff 복귀 버튼만 텍스트 유지 (드물고 명시적이라). */}
+      {/* 헤더 액션 — 공간 절약 위해 icon-only. hover 시 title 로 라벨 노출. */}
       <div className="flex items-center gap-0.5 shrink-0">
         <OpenInEditorButton projectId={projectId} path={path} />
         <button
@@ -265,17 +265,16 @@ function PaneHeader({
         >
           <WrapText className="size-3.5" />
         </button>
-        {view.kind === "diff" ? (
-          <button
-            type="button"
-            onClick={onResetView}
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 h-6 rounded hover:bg-muted"
-            title={t("files.viewer.showCurrent")}
-          >
-            <RotateCcw className="size-3" />
-            {t("files.viewer.showCurrent")}
-          </button>
-        ) : null}
+        {/* Diff 빠른 토글 — 변경 이력 있는 파일이면 한 클릭에 최신 diff 로.
+            View=diff 면 같은 버튼이 "현재 보기" 로 토글. 히스토리 popover 와
+            중복이지만 1-click 진입이라 발견성 ↑. */}
+        <DiffToggle
+          projectId={projectId}
+          path={path}
+          view={view}
+          onSelectDiff={onSelectDiff}
+          onResetView={onResetView}
+        />
         <FileHistoryPopover
           projectId={projectId}
           path={path}
@@ -286,6 +285,67 @@ function PaneHeader({
         />
       </div>
     </div>
+  );
+}
+
+function DiffToggle({
+  projectId,
+  path,
+  view,
+  onSelectDiff,
+  onResetView,
+}: {
+  projectId: string;
+  path: string;
+  view: { kind: "current" } | { kind: "diff"; runId: string };
+  onSelectDiff: (runId: string) => void;
+  onResetView: () => void;
+}) {
+  const { t } = useI18n();
+  // 히스토리 popover 와 같은 query key — 캐시 공유.
+  const q = useQuery({
+    queryKey: ["fileHistory", projectId, path],
+    queryFn: () => api.getProjectFileHistory(projectId, path),
+    staleTime: 30_000,
+  });
+  const entries = q.data?.entries ?? [];
+  const latest = entries[0];
+  const isDiffMode = view.kind === "diff";
+
+  // 변경 이력 없고 diff 모드도 아니면 버튼 자체 숨김.
+  if (!latest && !isDiffMode) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (isDiffMode) onResetView();
+        else if (latest) onSelectDiff(latest.runId);
+      }}
+      title={
+        isDiffMode
+          ? t("files.viewer.showCurrent")
+          : t("files.viewer.showLatestDiff")
+      }
+      aria-label={
+        isDiffMode
+          ? t("files.viewer.showCurrent")
+          : t("files.viewer.showLatestDiff")
+      }
+      aria-pressed={isDiffMode}
+      className={cn(
+        "inline-flex size-6 items-center justify-center rounded transition-colors",
+        isDiffMode
+          ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted",
+      )}
+    >
+      {isDiffMode ? (
+        <RotateCcw className="size-3.5" />
+      ) : (
+        <SplitSquareHorizontal className="size-3.5" />
+      )}
+    </button>
   );
 }
 

@@ -7,13 +7,11 @@ import { TooltipProvider } from "./ui/tooltip.js";
 
 const ACTIVITY_KEY = "loom:layout:activity";
 const PANEL_WIDTH_KEY = "loom:layout:activityPanelWidth";
-const CHAT_FULL_MODAL_KEY = "loom:layout:chatFullModal";
 
-/** Forwarded to nested routes via `<Outlet context>`. The workspace
- *  uses `chatFullModal` to know when to hide its own panels. */
+/** Forwarded to nested routes via `<Outlet context>`. 워크스페이스가 자체적으로
+ *  포커스 모드 (canvas 접기) 를 관리하므로 따로 전달할 게 없음. */
 export interface LayoutOutletContext {
-  chatFullModal: boolean;
-  setChatFullModal: (next: boolean) => void;
+  /* empty — kept for future shared state. */
 }
 
 /**
@@ -24,6 +22,10 @@ export interface LayoutOutletContext {
  *
  * lobby 의 페이지들은 풀 너비로 자기 콘텐츠를 다 그리므로 보조 ActivityPanel 이
  * 따라붙지 않음. project 모드에선 기존처럼 rail + panel 동시.
+ *
+ * 채팅/캔버스 포커스 모드는 워크스페이스 자체에서 관리 — Layout 은 항상
+ * 사이드바 + ActivityPanel 을 변동 없이 보여주고, "채팅 집중" 모드는 워크스페이스
+ * 안에서만 칸을 재배분 (canvasCollapsed). ⌘⇧L 핸들링도 WorkspacePage 로 이동.
  */
 export function Layout() {
   const projectMatch = useMatch("/projects/:id/*");
@@ -57,13 +59,6 @@ export function Layout() {
     return Math.min(Math.max(n, 200), 480);
   });
 
-  // ⌘⇧L flips the chat to a full-screen takeover. Activity panel +
-  // file viewer collapse; the bar stays so the user can switch out.
-  const [chatFullModal, setChatFullModalState] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(CHAT_FULL_MODAL_KEY) === "1";
-  });
-
   useEffect(() => {
     try {
       window.localStorage.setItem(
@@ -81,58 +76,15 @@ export function Layout() {
       // ignore
     }
   }, [panelWidth]);
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        CHAT_FULL_MODAL_KEY,
-        chatFullModal ? "1" : "0",
-      );
-    } catch {
-      // ignore
-    }
-  }, [chatFullModal]);
 
   const selectActivity = useCallback((next: ActivityKind) => {
     setActivity(next);
   }, []);
 
-  const setChatFullModal = useCallback((next: boolean) => {
-    setChatFullModalState(next);
-  }, []);
-  // ⌘⇧L toggles full-modal. Skipped while an editable is focused so
-  // the shortcut doesn't fire mid-typing.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        e.shiftKey &&
-        e.key.toLowerCase() === "l"
-      ) {
-        const target = e.target as HTMLElement | null;
-        if (
-          target &&
-          (target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.isContentEditable)
-        ) {
-          return;
-        }
-        e.preventDefault();
-        setChatFullModalState((v) => !v);
-      } else if (e.key === "Escape" && chatFullModal) {
-        e.preventDefault();
-        setChatFullModalState(false);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [chatFullModal]);
-
   // lobby 에선 settings 만 패널을 띄움 — 다른 항목은 풀 페이지가 책임.
   // workshop 에선 대부분 패널을 띄우지만 insights 는 풀 페이지 self-contained 이라
   // 사이드 panel 이 비어 보이는 걸 피하려 제외.
   const showActivityPanel =
-    !chatFullModal &&
     activity !== null &&
     activity !== "insights" &&
     (inProject || activity === "settings");
@@ -141,20 +93,13 @@ export function Layout() {
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen overflow-hidden bg-background">
         {inProject ? (
-          <ActivityBar
-            active={activity}
-            onSelect={(next) => {
-              if (chatFullModal) setChatFullModalState(false);
-              selectActivity(next);
-            }}
-          />
+          <ActivityBar active={activity} onSelect={selectActivity} />
         ) : (
           <MainSidebar
             settingsActive={activity === "settings"}
-            onSettingsClick={() => {
-              if (chatFullModal) setChatFullModalState(false);
-              selectActivity(activity === "settings" ? null : "settings");
-            }}
+            onSettingsClick={() =>
+              selectActivity(activity === "settings" ? null : "settings")
+            }
           />
         )}
         {showActivityPanel ? (
@@ -167,11 +112,7 @@ export function Layout() {
           />
         ) : null}
         <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <Outlet
-            context={
-              { chatFullModal, setChatFullModal } satisfies LayoutOutletContext
-            }
-          />
+          <Outlet context={{} satisfies LayoutOutletContext} />
         </main>
       </div>
     </TooltipProvider>
