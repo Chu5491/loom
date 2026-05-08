@@ -26,7 +26,7 @@ import { useLoomEvent } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
 import { ChatPanel } from "./workspace/ChatPanel.js";
 import { FileTabBar } from "./workspace/FileTabBar.js";
-import { ProjectMap } from "./workspace/ProjectMap.js";
+import { ProjectFloor } from "./workspace/ProjectFloor.js";
 import { ThreadBar } from "./workspace/ThreadBar.js";
 import { ThreadList } from "./workspace/ThreadList.js";
 import { readPersistedTabs } from "./workspace/persistence.js";
@@ -501,7 +501,7 @@ export function WorkspacePage() {
                   view !== "office" && "hidden",
                 )}
               >
-                <ProjectMap
+                <ProjectFloor
                   projectId={p.id}
                   projectName={p.name}
                   agents={agentList}
