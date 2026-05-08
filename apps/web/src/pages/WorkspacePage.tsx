@@ -26,7 +26,7 @@ import { useLoomEvent } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
 import { ChatPanel } from "./workspace/ChatPanel.js";
 import { FileTabBar } from "./workspace/FileTabBar.js";
-import { MeetingRoom } from "./workspace/MeetingRoom.js";
+import { LiveView } from "./workspace/LiveView.js";
 import { ThreadBar } from "./workspace/ThreadBar.js";
 import { ThreadList } from "./workspace/ThreadList.js";
 import { readPersistedTabs } from "./workspace/persistence.js";
@@ -512,7 +512,7 @@ export function WorkspacePage() {
                   view !== "office" && "hidden",
                 )}
               >
-                <MeetingRoom
+                <LiveView
                   projectName={p.name}
                   agents={agentList}
                   workingIds={workingIds}
@@ -665,7 +665,7 @@ function EditorEmpty({
           onClick={onSwitchToOffice}
           className="px-2 h-7 rounded border border-border hover:bg-muted hover:border-foreground/30 transition-colors"
         >
-          👥 {t("workspace.empty.openRoom")}
+          ⚡ {t("workspace.empty.openLive")}
         </button>
       </div>
     </div>
