@@ -282,7 +282,22 @@ export function ChatDock({
         )
       ) : null}
 
-      {/* 헤더 — 32px 고정. 패딩 살짝 조여서 좁은 폭에서도 버튼이 안 잘림. */}
+      {/* 헤더 — 32px 고정. 패딩 살짝 조여서 좁은 폭에서도 버튼이 안 잘림.
+          단, !open && right placement 시엔 32px 폭에 가로 헤더가 안 들어가서
+          깨졌었음. 이 경우만 세로 스트립으로 분기. */}
+      {!open && !isBottom ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={t("chat.dock.expand")}
+          title={t("chat.dock.expand")}
+          className="w-full flex flex-col items-center gap-2 py-2 border-b border-border/70 bg-muted/30 shrink-0 hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+          style={{ minHeight: HEADER_H * 2 }}
+        >
+          <MessageSquare className="size-3.5" />
+          <ChevronUp className="size-3.5" />
+        </button>
+      ) : (
       <header
         className="flex items-center gap-1.5 px-2 h-8 border-b border-border/70 bg-muted/30 shrink-0 select-none"
         style={{ height: HEADER_H }}
@@ -391,6 +406,7 @@ export function ChatDock({
           ) : null}
         </div>
       </header>
+      )}
 
       {open ? (
         <div className="flex-1 min-h-0 flex flex-col">{children}</div>

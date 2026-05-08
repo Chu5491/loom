@@ -71,7 +71,7 @@ export function FileTabBar({
 
       <div
         ref={stripRef}
-        className="flex-1 min-w-0 flex items-stretch gap-px px-1 overflow-x-auto subtle-scrollbar"
+        className="flex-1 min-w-0 flex items-stretch gap-px px-1 overflow-hidden"
       >
         {openFiles.length === 0 ? (
           <span className="self-center px-3 text-[11px] text-muted-foreground/50 italic">
@@ -185,7 +185,7 @@ function Tab({
   return (
     <div
       className={cn(
-        "group flex items-center gap-1.5 px-3 py-1.5 text-sm border-b-2 -mb-px cursor-pointer transition-colors max-w-[14rem]",
+        "group flex items-center gap-1.5 px-3 py-1.5 text-sm border-b-2 -mb-px cursor-pointer transition-colors min-w-0 flex-1 max-w-[14rem]",
         active
           ? "border-foreground bg-background text-foreground font-medium"
           : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40",
