@@ -20,6 +20,7 @@ import {
 } from "react";
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronUp,
   MessageSquare,
   Minimize2,
@@ -295,7 +296,8 @@ export function ChatDock({
           style={{ minHeight: HEADER_H * 2 }}
         >
           <MessageSquare className="size-3.5" />
-          <ChevronUp className="size-3.5" />
+          {/* 우측 dock 은 좌로 확장 → 좌측 화살표가 직관적. */}
+          <ChevronLeft className="size-3.5" />
         </button>
       ) : (
       <header
