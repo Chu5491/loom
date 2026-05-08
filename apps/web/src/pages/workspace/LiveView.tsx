@@ -5,7 +5,8 @@
 // loom 의 본질 = 여러 에이전트가 같이 일하는 거니까 화면 전체가 그걸 보여줘야.
 
 import { useMemo } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, Pencil, Plus, RefreshCw } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
 import type {
   ActiveToolsForAgent,
   ActiveTouch,
@@ -92,7 +93,7 @@ export function LiveView({
   onRefresh,
   refreshing,
 }: Props) {
-  const { t } = useI18n();
+  const { id: projectId } = useParams<{ id: string }>();
 
   const fileByAgent = useMemo(() => {
     const m = new Map<string, string>();
@@ -149,14 +150,6 @@ export function LiveView({
     return items.slice(0, 60);
   }, [activeTools, agents]);
 
-  if (agents.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground italic">
-        {t("live.empty")}
-      </div>
-    );
-  }
-
   const totalWorking = workingIds.size;
 
   return (
@@ -171,7 +164,7 @@ export function LiveView({
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-5 py-5">
-          {/* 상단 — 가로 에이전트 카드들. 모두 동시 가시. */}
+          {/* 상단 — 가로 에이전트 카드들. 모두 동시 가시 + 끝에 "+ 추가" 타일. */}
           <AgentRow
             agents={sortedAgents}
             workingIds={workingIds}
@@ -183,6 +176,7 @@ export function LiveView({
             activeThreadId={activeThreadId}
             threads={threadList}
             workingThreadIds={workingThreadIds}
+            projectId={projectId}
             onPickAgent={onPickAgent}
             onPickFile={onPickFile}
             onPickThread={onPickThread}
@@ -262,6 +256,7 @@ function AgentRow({
   activeThreadId,
   threads,
   workingThreadIds,
+  projectId,
   onPickAgent,
   onPickFile,
   onPickThread,
@@ -276,12 +271,16 @@ function AgentRow({
   activeThreadId: string | null;
   threads: Thread[];
   workingThreadIds: Set<string>;
+  projectId: string | undefined;
   onPickAgent: (id: string) => void;
   onPickFile: (path: string) => void;
   onPickThread: (id: string) => void;
 }) {
   return (
-    <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+    <div
+      className="grid gap-2 mb-4"
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+    >
       {agents.map((a) => (
         <AgentCard
           key={a.id}
@@ -302,12 +301,35 @@ function AgentRow({
             !!threadByAgent.get(a.id) &&
             workingThreadIds.has(threadByAgent.get(a.id)!)
           }
+          editHref={
+            projectId ? `/projects/${projectId}/agents?edit=${a.id}` : null
+          }
           onPickAgent={() => onPickAgent(a.id)}
           onPickFile={onPickFile}
           onPickThread={onPickThread}
         />
       ))}
+      {projectId ? <AddAgentTile projectId={projectId} /> : null}
     </div>
+  );
+}
+
+function AddAgentTile({ projectId }: { projectId: string }) {
+  const { t } = useI18n();
+  return (
+    <Link
+      to={`/projects/${projectId}/agents`}
+      className="group flex flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border/70 bg-card/30 hover:bg-muted/40 hover:border-foreground/40 transition-colors min-h-[120px] text-muted-foreground hover:text-foreground"
+      title={t("live.addAgent.title")}
+    >
+      <span className="inline-flex size-9 items-center justify-center rounded-md border border-dashed border-current/40">
+        <Plus className="size-4" />
+      </span>
+      <span className="text-[11.5px] font-medium">{t("live.addAgent")}</span>
+      <span className="text-[10px] text-muted-foreground/70">
+        {t("live.addAgent.hint")}
+      </span>
+    </Link>
   );
 }
 
@@ -321,6 +343,7 @@ function AgentCard({
   thread,
   inActiveThread,
   threadWorking,
+  editHref,
   onPickAgent,
   onPickFile,
   onPickThread,
@@ -334,6 +357,8 @@ function AgentCard({
   thread: Thread | null;
   inActiveThread: boolean;
   threadWorking: boolean;
+  /** 편집 페이지 링크. null 이면 hover 시 편집 아이콘 안 보임. */
+  editHref: string | null;
   onPickAgent: () => void;
   onPickFile: (path: string) => void;
   onPickThread: (id: string) => void;
@@ -346,7 +371,7 @@ function AgentCard({
   return (
     <div
       className={cn(
-        "rounded-md border bg-card p-3 transition-colors",
+        "group relative rounded-md border bg-card p-3 transition-colors",
         working
           ? "border-emerald-500/40 bg-emerald-500/[0.025]"
           : inActiveThread
@@ -354,6 +379,19 @@ function AgentCard({
             : "border-border",
       )}
     >
+      {/* hover 시 우상단 편집 아이콘 — team 관리 진입점. */}
+      {editHref ? (
+        <Link
+          to={editHref}
+          onClick={(e) => e.stopPropagation()}
+          title={t("live.editAgent")}
+          aria-label={t("live.editAgent")}
+          className="absolute top-1.5 right-1.5 inline-flex size-6 items-center justify-center rounded text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted/60 transition-all"
+        >
+          <Pencil className="size-3" />
+        </Link>
+      ) : null}
+
       {/* 헤더: 로고 + 이름 + 상태 dot. */}
       <div className="flex items-center gap-2 mb-2 min-w-0">
         <button
@@ -395,6 +433,9 @@ function AgentCard({
           </button>
           <div className="text-[10px] mono text-muted-foreground/80 truncate">
             {manifest?.displayName ?? agent.adapterKind}
+            {agent.role ? (
+              <span className="text-muted-foreground/60"> · {agent.role}</span>
+            ) : null}
           </div>
         </div>
       </div>
