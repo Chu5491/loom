@@ -502,15 +502,28 @@ export function WorkspacePage() {
                 )}
               >
                 <ProjectFloor
-                  projectId={p.id}
                   projectName={p.name}
                   agents={agentList}
                   workingIds={workingIds}
                   touchingIds={touchingIds}
                   activeTouches={activeTouchesQuery.data?.touches ?? []}
                   activeTools={activeToolsQuery.data?.tools ?? []}
+                  threadList={threadList}
+                  workingThreadIds={workingThreadIds}
+                  activeThreadId={activeThreadId}
                   onPickFile={openFile}
                   onPickAgent={(id) => setAgentIds([id])}
+                  onPickThread={(id) => setActiveThreadId(id)}
+                  onRefresh={() => {
+                    void runsQuery.refetch();
+                    void threadsQuery.refetch();
+                    void activeTouchesQuery.refetch();
+                  }}
+                  refreshing={
+                    runsQuery.isFetching ||
+                    threadsQuery.isFetching ||
+                    activeTouchesQuery.isFetching
+                  }
                 />
               </div>
               {view === "editor" ? (

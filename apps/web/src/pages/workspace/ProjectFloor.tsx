@@ -1,32 +1,35 @@
-// ProjectFloor — 픽셀 사무실 + 프로젝트 트리.
+// ProjectFloor — Pixel Office Take 2.
 //
-// 일반적인 사무실 풍경 (창·커피·화분) 대신 *진짜 프로젝트의 폴더/파일*이 방과
-// 책상. 캐릭터는 자기가 지금 만지고 있는 파일의 책상까지 걸어가서 앉는다.
-// idle 상태면 자기 home 방 안의 다른 책상들을 둘러보는 wander.
+// 첫 시도(파일 트리를 그리드 사무실로)는 정체성 흐릿. 추상 그리드 + 픽셀
+// 캐릭터가 따로 놀았음. 이 버전은 *진짜 사무실*: 공간이 정보다.
 //
-// 결과적으로 "사무실의 캐릭터 매력" + "프로젝트 구조 한 눈" 둘 다 담음.
+//   - 각 에이전트 = 자기 책상 (이름표 + 모니터 + 캐릭터)
+//   - 모니터 화면 = 지금 만지는 파일명. 클릭하면 에디터로 이동
+//   - 게시판 (벽에 걸림) = 최근 thread 목록. 클릭하면 그 thread 활성화
+//   - 캐릭터는 자기 책상에 출근 / 일끝나면 동료 책상 마실 / 창가에서 한숨
+//   - 파일 트리는 *별도 메뉴* (사이드바). 사무실에 우겨넣지 않음
 //
-// 좌표계: 16:9 floor를 percentage 로. (x, y) ∈ [0, 100].
+// 즉 사무실 = "어디에 누가 있는가" 가 아니라 "누구가 무엇을 하는가" 의 시각화.
+// 멀티에이전트 라는 loom 의 본질이 한 화면에 다 보임.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { FolderOpen, RefreshCw } from "lucide-react";
+import { CornerDownRight, RefreshCw } from "lucide-react";
 import type {
   ActiveToolsForAgent,
   ActiveTouch,
   Agent,
-  TreeEntry,
+  Thread,
 } from "@loom/core";
-import { api } from "../../api/client.js";
 import { agentColorOf, classesFor } from "../../components/agentColor.js";
-import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { basename } from "../../lib/path.js";
 import { cn } from "../../lib/utils.js";
+import {
+  OfficeBookshelf,
+  OfficeCoffee,
+  OfficePlant,
+  OfficeWindow,
+} from "./OfficeDecor.js";
 import { PixelCharacter } from "./PixelCharacter.js";
 import { SpeechBubble } from "./SpeechBubble.js";
 
@@ -70,361 +73,101 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 레이아웃 — 트리 → 방 + 책상
+// 좌석 배치 — 책상 위치를 에이전트 인원에 맞춰 계산.
+// 1~4명: 한 줄, 5~8명: 두 줄. 더 많으면 두 줄에 압축.
+// 좌표는 floor (% 단위) 기준.
 // ──────────────────────────────────────────────────────────────────────────
 
-type Desk = {
-  path: string;
-  label: string;
-  /** 책상 중심 — character가 working 시 도착할 좌표. */
-  x: number;
-  y: number;
-  roomIdx: number;
-  touched: boolean;
-  lastAgentId?: string;
-};
+const DESK_ROW_FRONT_Y = 82;
+const DESK_ROW_BACK_Y = 60;
+const SIT_OFFSET_Y = -8; // 캐릭터 sit pose 시 책상 위쪽으로 살짝.
 
-type Room = {
-  kind: "folder" | "root";
-  path: string;
-  label: string;
-  /** top-left of room box, % units. */
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  desks: Desk[];
-  touchedCount: number;
-};
-
-type Floor = {
-  rooms: Room[];
-  deskByPath: Map<string, Desk>;
-  /** 책상 0개 = 빈 프로젝트. 빈 floor 메시지 표시용. */
-  totalDesks: number;
-};
-
-const FLOOR_PAD = 2.5;
-const ROOM_GAP = 2;
-const ROOM_HEADER_H = 5; // % of room height
-const ROOM_INNER_PAD = 1.2;
-const DESK_GAP = 0.7;
-const MAX_ROOMS = 9;
-const MAX_DESKS_PER_ROOM = 12;
-
-function buildFloor(
-  rootEntries: TreeEntry[],
-  folderEntries: Map<string, TreeEntry[]>,
-  touched: Map<string, string>,
-): Floor {
-  const touchedUnder = (prefix: string): number => {
-    if (prefix === "") {
-      let n = 0;
-      for (const path of touched.keys()) if (!path.includes("/")) n++;
-      return n;
-    }
-    const p = prefix + "/";
-    let n = 0;
-    for (const path of touched.keys()) if (path.startsWith(p)) n++;
-    return n;
-  };
-
-  // 활동 많은 폴더가 위/왼쪽 — touched count 동률이면 alphabetical.
-  const folders = rootEntries
-    .filter((e) => e.kind === "directory")
-    .sort((a, b) => {
-      const ta = touchedUnder(a.path);
-      const tb = touchedUnder(b.path);
-      if (ta !== tb) return tb - ta;
-      return a.name.localeCompare(b.name);
-    })
-    .slice(0, MAX_ROOMS - 1); // 1칸 root files 용 예약
-
-  const rootFiles = rootEntries
-    .filter((e) => e.kind === "file")
-    .sort((a, b) => {
-      const ta = touched.has(a.path) ? 1 : 0;
-      const tb = touched.has(b.path) ? 1 : 0;
-      if (ta !== tb) return tb - ta;
-      return a.name.localeCompare(b.name);
-    });
-
-  const totalRooms = folders.length + (rootFiles.length > 0 ? 1 : 0);
-  if (totalRooms === 0) {
-    return { rooms: [], deskByPath: new Map(), totalDesks: 0 };
-  }
-
-  // grid: 1~2 → 그대로, 3~4 → 2col, 5~6 → 3col, 7~9 → 3col 3row.
-  const cols =
-    totalRooms <= 2 ? totalRooms : totalRooms <= 4 ? 2 : 3;
-  const rows = Math.ceil(totalRooms / cols);
-  const cellW = (100 - FLOOR_PAD * 2 - ROOM_GAP * (cols - 1)) / cols;
-  const cellH = (100 - FLOOR_PAD * 2 - ROOM_GAP * (rows - 1)) / rows;
-
-  const placeRoom = (
-    kind: Room["kind"],
-    path: string,
-    label: string,
-    files: TreeEntry[],
-    idx: number,
-  ): Room => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    const x = FLOOR_PAD + col * (cellW + ROOM_GAP);
-    const y = FLOOR_PAD + row * (cellH + ROOM_GAP);
-
-    const sorted = files
-      .filter((e) => e.kind === "file")
-      .sort((a, b) => {
-        const ta = touched.has(a.path) ? 1 : 0;
-        const tb = touched.has(b.path) ? 1 : 0;
-        if (ta !== tb) return tb - ta;
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, MAX_DESKS_PER_ROOM);
-
-    const n = sorted.length;
-    const innerCols = n === 0 ? 1 : n <= 2 ? n : n <= 4 ? 2 : n <= 9 ? 3 : 4;
-    const innerRows = n === 0 ? 1 : Math.ceil(n / innerCols);
-
-    const headerAbs = (cellH * ROOM_HEADER_H) / 100;
-    const innerX0 = x + ROOM_INNER_PAD;
-    const innerY0 = y + headerAbs + ROOM_INNER_PAD;
-    const innerW = cellW - ROOM_INNER_PAD * 2;
-    const innerH = cellH - headerAbs - ROOM_INNER_PAD * 2;
-
-    const deskW = (innerW - DESK_GAP * (innerCols - 1)) / innerCols;
-    const deskH = (innerH - DESK_GAP * (innerRows - 1)) / innerRows;
-
-    const desks: Desk[] = sorted.map((f, i) => {
-      const c = i % innerCols;
-      const r = Math.floor(i / innerCols);
-      return {
-        path: f.path,
-        label: f.name,
-        x: innerX0 + c * (deskW + DESK_GAP) + deskW / 2,
-        y: innerY0 + r * (deskH + DESK_GAP) + deskH / 2,
-        roomIdx: idx,
-        touched: touched.has(f.path),
-        lastAgentId: touched.get(f.path),
-      };
-    });
-
-    return {
-      kind,
-      path,
-      label,
-      x,
-      y,
-      w: cellW,
-      h: cellH,
-      desks,
-      touchedCount:
-        kind === "root"
-          ? sorted.filter((f) => touched.has(f.path)).length
-          : touchedUnder(path),
-    };
-  };
-
-  const rooms: Room[] = [];
-  let idx = 0;
-  for (const folder of folders) {
-    const entries = folderEntries.get(folder.path) ?? [];
-    rooms.push(placeRoom("folder", folder.path, folder.name, entries, idx));
-    idx++;
-  }
-  if (rootFiles.length > 0) {
-    rooms.push(placeRoom("root", "", "/", rootFiles, idx));
-  }
-
-  const deskByPath = new Map<string, Desk>();
-  let totalDesks = 0;
-  for (const room of rooms) {
-    for (const desk of room.desks) {
-      deskByPath.set(desk.path, desk);
-      totalDesks++;
-    }
-  }
-  return { rooms, deskByPath, totalDesks };
+function deskSlot(index: number, total: number): { x: number; y: number } {
+  const cols = total <= 4 ? Math.max(total, 1) : Math.ceil(total / 2);
+  const row = total <= 4 ? 0 : Math.floor(index / cols);
+  const col = index % cols;
+  const xStart = 10;
+  const xEnd = 90;
+  const span = xEnd - xStart;
+  const x = xStart + ((col + 0.5) / cols) * span;
+  const y = row === 0 && total > 4 ? DESK_ROW_BACK_Y : DESK_ROW_FRONT_Y;
+  return { x, y };
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// 데이터 훅
-// ──────────────────────────────────────────────────────────────────────────
-
-function useFloorLayout(
-  projectId: string,
-  touched: Map<string, string>,
-): { floor: Floor; isLoading: boolean; refresh: () => void } {
-  const qc = useQueryClient();
-
-  const root = useQuery({
-    queryKey: ["projectFloor-root", projectId],
-    queryFn: () => api.getProjectTree(projectId),
-    staleTime: 5_000,
-  });
-  const rootEntries = root.data?.entries ?? [];
-  const topFolders = useMemo(
-    () => rootEntries.filter((e) => e.kind === "directory"),
-    [rootEntries],
-  );
-
-  const childQueries = useQueries({
-    queries: topFolders.map((folder) => ({
-      queryKey: ["projectFloor-dir", projectId, folder.path],
-      queryFn: () => api.getProjectTree(projectId, folder.path),
-      staleTime: 5_000,
-    })),
-  });
-
-  // dataUpdatedAt 모음으로 invalidate 시 재계산 트리거 — childQueries 자체는
-  // 매 렌더 새 배열이라 deps에 못 넣음.
-  const childrenStamp = childQueries
-    .map((q) => q.dataUpdatedAt)
-    .join(",");
-
-  const folderEntries = useMemo(() => {
-    const m = new Map<string, TreeEntry[]>();
-    for (let i = 0; i < topFolders.length; i++) {
-      m.set(topFolders[i]!.path, childQueries[i]?.data?.entries ?? []);
-    }
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topFolders, childrenStamp]);
-
-  const floor = useMemo(
-    () => buildFloor(rootEntries, folderEntries, touched),
-    [rootEntries, folderEntries, touched],
-  );
-
-  return {
-    floor,
-    isLoading:
-      root.isLoading || childQueries.some((q) => q.isLoading),
-    refresh: () => {
-      qc.invalidateQueries({ queryKey: ["projectFloor-root", projectId] });
-      qc.invalidateQueries({ queryKey: ["projectFloor-dir", projectId] });
-    },
-  };
-}
+// 산책 spot — 데코 앞 / 정수기 / 게시판 앞. 책상 위치와 안 겹치게.
+type WanderKind = "window" | "coffee" | "books" | "plant" | "board" | "cooler";
+type WanderSpot = {
+  kind: WanderKind;
+  x: number;
+  y: number;
+  bubbles: ReadonlyArray<string>;
+};
+const WANDER_SPOTS: ReadonlyArray<WanderSpot> = [
+  { kind: "window", x: 12, y: 38, bubbles: ["🌤", "💭", "🐦"] },
+  { kind: "coffee", x: 88, y: 38, bubbles: ["☕", "🥐", "😌"] },
+  { kind: "books", x: 50, y: 38, bubbles: ["📚", "💡", "✏️"] },
+  { kind: "plant", x: 28, y: 50, bubbles: ["🪴", "💧", "🌱"] },
+  { kind: "cooler", x: 72, y: 50, bubbles: ["💧", "🥤", "💬"] },
+];
 
 // ──────────────────────────────────────────────────────────────────────────
 // 메인 컴포넌트
 // ──────────────────────────────────────────────────────────────────────────
 
 export function ProjectFloor({
-  projectId,
   projectName,
   agents,
   workingIds,
   touchingIds,
   activeTouches,
   activeTools,
+  threadList,
+  workingThreadIds,
+  activeThreadId,
   onPickFile,
   onPickAgent,
+  onPickThread,
+  onRefresh,
+  refreshing,
 }: {
-  projectId: string;
   projectName: string;
   agents: Agent[];
   workingIds: Set<string>;
   touchingIds: Set<string>;
   activeTouches: ActiveTouch[];
   activeTools: ActiveToolsForAgent[];
+  threadList: Thread[];
+  workingThreadIds: Set<string>;
+  activeThreadId: string | null;
   onPickFile: (path: string) => void;
   onPickAgent: (id: string) => void;
+  onPickThread: (id: string) => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const { t } = useI18n();
 
-  // 누적 터치 — 책상 dot + 활동 많은 폴더 정렬용.
-  const touched = useQuery({
-    queryKey: ["projectTouched", projectId],
-    queryFn: () => api.getProjectTouched(projectId),
-    refetchInterval: 30_000,
-  });
-  const touchedMap = useMemo(() => {
+  // 에이전트 → 자기가 만지는 첫 파일 (모니터에 표시).
+  const fileByAgent = useMemo(() => {
     const m = new Map<string, string>();
-    for (const tp of touched.data?.paths ?? []) m.set(tp.path, tp.lastAgentId);
-    return m;
-  }, [touched.data]);
-
-  const { floor, isLoading, refresh } = useFloorLayout(projectId, touchedMap);
-
-  // 에이전트 → 자기가 만지고 있는 파일 책상 (있으면).
-  const targetDeskByAgent = useMemo(() => {
-    const m = new Map<string, Desk>();
     for (const tch of activeTouches) {
-      if (m.has(tch.agentId)) continue;
-      for (const p of tch.paths) {
-        const desk = floor.deskByPath.get(p);
-        if (desk) {
-          m.set(tch.agentId, desk);
-          break;
-        }
-      }
+      const first = tch.paths[0];
+      if (first && !m.has(tch.agentId)) m.set(tch.agentId, first);
     }
     return m;
-  }, [activeTouches, floor]);
+  }, [activeTouches]);
 
-  // 에이전트의 home 책상 — 가장 최근 자기가 만진 파일 책상. 없으면 deterministic
-  // (agent.id 해시로 desks 하나 픽). 빈 프로젝트면 undefined.
-  const homeDeskByAgent = useMemo(() => {
-    const allDesks = [...floor.deskByPath.values()];
-    const m = new Map<string, Desk>();
-    if (allDesks.length === 0) return m;
-
-    // 에이전트별 자기 누적 터치 파일들 (lastAgentId 매칭)
-    const ownTouches = new Map<string, Desk[]>();
-    for (const desk of allDesks) {
-      if (desk.lastAgentId) {
-        if (!ownTouches.has(desk.lastAgentId))
-          ownTouches.set(desk.lastAgentId, []);
-        ownTouches.get(desk.lastAgentId)!.push(desk);
-      }
-    }
-    for (const a of agents) {
-      const owned = ownTouches.get(a.id);
-      if (owned && owned.length > 0) {
-        // deterministic pick — agent 중복 시 같은 책상 잡지 않게 hash 로.
-        const seed = hashSeed(a.id);
-        m.set(a.id, owned[seed % owned.length]!);
-      } else {
-        const seed = hashSeed(a.id);
-        m.set(a.id, allDesks[seed % allDesks.length]!);
-      }
-    }
+  // 책상 위치 (인덱스/총인원 기준).
+  const deskByAgent = useMemo(() => {
+    const m = new Map<string, { x: number; y: number }>();
+    agents.forEach((a, i) => m.set(a.id, deskSlot(i, agents.length)));
     return m;
-  }, [agents, floor]);
+  }, [agents]);
 
-  // 활동 칩 — "@A · foo.ts"
-  const liveChips = useMemo(() => {
-    type Chip = { agent: Agent; filePath: string | null; toolName: string | null };
-    const chips: Chip[] = [];
-    const seen = new Set<string>();
-    for (const tch of activeTouches) {
-      const a = agents.find((x) => x.id === tch.agentId);
-      if (!a || seen.has(a.id)) continue;
-      seen.add(a.id);
-      const tool = activeTools.find((x) => x.agentId === a.id);
-      const latest = tool?.recent[tool.recent.length - 1];
-      chips.push({
-        agent: a,
-        filePath: tch.paths[0] ?? null,
-        toolName: latest?.name ?? null,
-      });
-    }
-    for (const a of agents) {
-      if (seen.has(a.id) || !workingIds.has(a.id)) continue;
-      seen.add(a.id);
-      chips.push({ agent: a, filePath: null, toolName: null });
-    }
-    return chips;
-  }, [activeTouches, activeTools, agents, workingIds]);
-
-  if (floor.totalDesks === 0 && !isLoading) {
+  if (agents.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground italic">
-        <FolderOpen className="size-6 opacity-40" />
-        {t("floor.empty")}
+      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground italic">
+        {t("office.empty")}
       </div>
     );
   }
@@ -433,58 +176,95 @@ export function ProjectFloor({
     <div className="flex flex-col h-full min-h-0 bg-background">
       <FloorHeader
         projectName={projectName}
-        liveChips={liveChips}
-        touchingIds={touchingIds}
-        onPickAgent={onPickAgent}
-        onPickFile={onPickFile}
-        onRefresh={refresh}
-        refreshing={touched.isFetching || isLoading}
+        onRefresh={onRefresh}
+        refreshing={refreshing}
       />
 
       <div className="flex-1 min-h-0 flex items-center justify-center p-3 overflow-hidden">
-        <div className="relative w-full h-full max-h-[680px] aspect-[16/9] mx-auto rounded-md overflow-hidden bg-card shadow-[inset_0_0_0_2px_color-mix(in_oklch,var(--foreground)_8%,transparent)]">
-          {/* 방들 */}
-          {floor.rooms.map((room, i) => (
-            <RoomBox key={`${room.kind}:${room.path || "-"}:${i}`} room={room} />
-          ))}
+        <div className="relative w-full h-full max-h-[680px] aspect-[16/9] mx-auto rounded-md overflow-hidden office-room shadow-[inset_0_0_0_2px_color-mix(in_oklch,var(--foreground)_8%,transparent),inset_0_0_0_4px_var(--card)]">
+          {/* 벽 (상단 28%) + 카펫 (하단). 기존 office 톤 그대로. */}
+          <div className="absolute inset-x-0 top-0 h-[28%] office-wall" />
+          <div
+            className="absolute inset-x-0 office-skirt"
+            style={{ top: "27.5%", height: "1%" }}
+          />
+          <div className="absolute inset-x-0 bottom-0 top-[28%] office-carpet" />
 
-          {/* 책상들 — 모든 방의 책상을 평면으로 그리고 클릭 받음. */}
-          {floor.rooms.flatMap((room) =>
-            room.desks.map((desk) => (
-              <DeskTile
-                key={desk.path}
-                desk={desk}
-                lastAgent={
-                  desk.lastAgentId
-                    ? agents.find((a) => a.id === desk.lastAgentId)
-                    : undefined
-                }
-                onPick={onPickFile}
+          {/* 벽 데코 — 창문, 책장, 화분. 정수기. */}
+          <div
+            className="absolute pointer-events-none"
+            style={{ left: "5%", top: "3%" }}
+          >
+            <OfficeWindow />
+          </div>
+          <div
+            className="absolute pointer-events-none"
+            style={{ right: "5%", top: "1%" }}
+          >
+            <OfficeBookshelf />
+          </div>
+          <div
+            className="absolute pointer-events-none"
+            style={{ left: "1%", bottom: "1%" }}
+          >
+            <OfficePlant />
+          </div>
+          <div
+            className="absolute pointer-events-none"
+            style={{ right: "1%", bottom: "1%" }}
+          >
+            <OfficePlant />
+          </div>
+          <div
+            className="absolute pointer-events-none"
+            style={{ left: "44%", top: "5%", transform: "translateX(-50%)" }}
+          >
+            <OfficeCoffee />
+          </div>
+
+          {/* 게시판 — 벽 가운데 걸림. thread 목록 + 클릭 활성화. */}
+          <BulletinBoard
+            threadList={threadList}
+            workingThreadIds={workingThreadIds}
+            activeThreadId={activeThreadId}
+            onPickThread={onPickThread}
+          />
+
+          {/* 책상 + 모니터 — 에이전트별. */}
+          {agents.map((agent, i) => {
+            const slot = deskSlot(i, agents.length);
+            const file = fileByAgent.get(agent.id) ?? null;
+            return (
+              <AgentDesk
+                key={`desk-${agent.id}`}
+                agent={agent}
+                x={slot.x}
+                y={slot.y}
+                working={workingIds.has(agent.id)}
+                touching={touchingIds.has(agent.id)}
+                file={file}
+                onPickFile={onPickFile}
               />
-            )),
-          )}
+            );
+          })}
 
-          {/* 캐릭터들 */}
+          {/* 캐릭터 — 책상 위에 sit / floor 위에 wander. */}
           {agents.map((agent) => {
-            const home = homeDeskByAgent.get(agent.id);
+            const home = deskByAgent.get(agent.id);
             if (!home) return null;
-            const targetDesk = targetDeskByAgent.get(agent.id) ?? null;
-            // 같은 방 책상들 — wander 풀.
-            const homeRoomDesks =
-              floor.rooms[home.roomIdx]?.desks ?? [];
             return (
               <AgentChar
                 key={agent.id}
                 agent={agent}
-                homeDesk={home}
-                targetDesk={targetDesk}
-                roomDesks={homeRoomDesks}
-                allDesks={[...floor.deskByPath.values()]}
+                homeX={home.x}
+                homeY={home.y}
                 working={workingIds.has(agent.id)}
                 touching={touchingIds.has(agent.id)}
+                file={fileByAgent.get(agent.id) ?? null}
                 activeTool={
                   activeTools.find((x) => x.agentId === agent.id) ?? null
                 }
+                deskByAgent={deskByAgent}
                 onPick={() => onPickAgent(agent.id)}
               />
             );
@@ -496,205 +276,221 @@ export function ProjectFloor({
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 헤더 (라이브 ribbon + refresh)
+// 헤더
 // ──────────────────────────────────────────────────────────────────────────
 
 function FloorHeader({
   projectName,
-  liveChips,
-  touchingIds,
-  onPickAgent,
-  onPickFile,
   onRefresh,
   refreshing,
 }: {
   projectName: string;
-  liveChips: Array<{ agent: Agent; filePath: string | null; toolName: string | null }>;
-  touchingIds: Set<string>;
-  onPickAgent: (id: string) => void;
-  onPickFile: (path: string) => void;
-  onRefresh: () => void;
-  refreshing: boolean;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const { t } = useI18n();
   return (
     <header className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/20">
-      <div className="flex items-center gap-2 min-w-0 shrink-0">
-        <span className="text-sm font-semibold truncate" title={projectName}>
-          🏢 {projectName}
-        </span>
-      </div>
-      <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto subtle-scrollbar">
-        {liveChips.length === 0 ? (
-          <span className="text-[11px] text-muted-foreground/60 italic shrink-0">
-            {t("map.idle")}
-          </span>
-        ) : (
-          liveChips.map((c) => (
-            <LiveChip
-              key={c.agent.id}
-              agent={c.agent}
-              filePath={c.filePath}
-              toolName={c.toolName}
-              touching={touchingIds.has(c.agent.id)}
-              onClick={() => onPickAgent(c.agent.id)}
-              onPickFile={onPickFile}
-            />
-          ))
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={onRefresh}
-        title={t("map.refresh")}
-        aria-label={t("map.refresh")}
-        className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-      >
-        <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-      </button>
+      <span className="text-sm font-semibold truncate" title={projectName}>
+        🏢 {projectName} <span className="text-muted-foreground/70 font-normal">— office</span>
+      </span>
+      {onRefresh ? (
+        <button
+          type="button"
+          onClick={onRefresh}
+          title={t("map.refresh")}
+          aria-label={t("map.refresh")}
+          className="ml-auto inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+        >
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+        </button>
+      ) : null}
     </header>
   );
 }
 
-function LiveChip({
-  agent,
-  filePath,
-  toolName,
-  touching,
-  onClick,
-  onPickFile,
+// ──────────────────────────────────────────────────────────────────────────
+// 게시판 — 벽에 걸린 thread 목록.
+// ──────────────────────────────────────────────────────────────────────────
+
+function BulletinBoard({
+  threadList,
+  workingThreadIds,
+  activeThreadId,
+  onPickThread,
 }: {
-  agent: Agent;
-  filePath: string | null;
-  toolName: string | null;
-  touching: boolean;
-  onClick: () => void;
-  onPickFile: (path: string) => void;
+  threadList: Thread[];
+  workingThreadIds: Set<string>;
+  activeThreadId: string | null;
+  onPickThread: (id: string) => void;
 }) {
-  const cls = classesFor(agentColorOf(agent));
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`@${agent.name}${filePath ? " · " + filePath : ""}${toolName ? " · " + toolName : ""}`}
-      className={cn(
-        "group inline-flex items-center gap-1.5 h-6 px-1.5 rounded-full border text-[11px] transition-colors shrink-0",
-        cls.bgSoft,
-        cls.border,
-        "hover:bg-foreground/5",
-      )}
-    >
-      <AgentInitialBadge agent={agent} live={touching} size="xs" />
-      <span className={cn("font-medium truncate max-w-[8rem]", cls.text)}>
-        @{agent.name}
-      </span>
-      {filePath ? (
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            onPickFile(filePath);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.stopPropagation();
-              e.preventDefault();
-              onPickFile(filePath);
-            }
-          }}
-          className="text-muted-foreground/80 mono truncate max-w-[10rem] hover:text-foreground hover:underline cursor-pointer"
-        >
-          {basename(filePath)}
-        </span>
-      ) : toolName ? (
-        <span className="text-muted-foreground/70 mono truncate max-w-[10rem]">
-          {toolName}
-        </span>
-      ) : null}
-    </button>
-  );
-}
+  const { t } = useI18n();
+  // 최근 활성 thread 4개. working > active > recent updated.
+  const top = useMemo(() => {
+    const sorted = [...threadList].sort((a, b) => {
+      const wa = workingThreadIds.has(a.id) ? 1 : 0;
+      const wb = workingThreadIds.has(b.id) ? 1 : 0;
+      if (wa !== wb) return wb - wa;
+      return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+    });
+    return sorted.slice(0, 4);
+  }, [threadList, workingThreadIds]);
 
-// ──────────────────────────────────────────────────────────────────────────
-// 방 / 책상 시각화
-// ──────────────────────────────────────────────────────────────────────────
-
-function RoomBox({ room }: { room: Room }) {
   return (
     <div
-      className="absolute pointer-events-none rounded-md border border-border/60 bg-foreground/[0.015]"
+      className="absolute pointer-events-none"
       style={{
-        left: `${room.x}%`,
-        top: `${room.y}%`,
-        width: `${room.w}%`,
-        height: `${room.h}%`,
+        left: "30%",
+        top: "3%",
+        width: "40%",
       }}
     >
-      <div className="flex items-center gap-1 px-1.5 h-[18px] mt-0.5 text-[10px] mono text-muted-foreground/80 truncate">
-        <span className="opacity-60">{room.kind === "root" ? "·" : "▸"}</span>
-        <span className="truncate" title={room.path || "/"}>
-          {room.label}
-        </span>
-        {room.touchedCount > 0 ? (
-          <span
-            aria-hidden
-            className="ml-auto inline-flex min-w-[1rem] items-center justify-center rounded-full bg-sky-500/15 px-1 text-[8.5px] font-semibold text-sky-700 dark:text-sky-400"
-          >
-            {room.touchedCount > 9 ? "9+" : room.touchedCount}
-          </span>
-        ) : null}
+      <div className="pointer-events-auto rounded-sm border-2 border-amber-700/40 bg-amber-50/95 dark:bg-amber-950/30 dark:border-amber-700/60 p-1.5 shadow-md">
+        <div className="flex items-center gap-1 mb-1 text-[9px] font-semibold uppercase tracking-wider text-amber-800/70 dark:text-amber-200/70">
+          📋 {t("office.board.title")}
+        </div>
+        {top.length === 0 ? (
+          <div className="text-[9px] italic text-amber-800/50 dark:text-amber-200/50 px-1 py-0.5">
+            {t("office.board.empty")}
+          </div>
+        ) : (
+          <ul className="flex flex-col gap-0.5">
+            {top.map((th) => {
+              const working = workingThreadIds.has(th.id);
+              const active = th.id === activeThreadId;
+              return (
+                <li key={th.id}>
+                  <button
+                    type="button"
+                    onClick={() => onPickThread(th.id)}
+                    title={th.name ?? t("thread.untitled")}
+                    className={cn(
+                      "w-full flex items-center gap-1 px-1 py-0.5 rounded text-[10px] transition-colors text-left",
+                      active
+                        ? "bg-amber-200/80 dark:bg-amber-800/40 text-amber-900 dark:text-amber-100 font-medium"
+                        : "hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-900/80 dark:text-amber-100/80",
+                    )}
+                  >
+                    {working ? (
+                      <span
+                        aria-hidden
+                        className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                      />
+                    ) : (
+                      <CornerDownRight className="size-2.5 opacity-50 shrink-0" />
+                    )}
+                    <span className="truncate">
+                      {th.name ?? t("thread.untitled")}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );
 }
 
-function DeskTile({
-  desk,
-  lastAgent,
-  onPick,
+// ──────────────────────────────────────────────────────────────────────────
+// 책상 — 데스크 + 모니터 + 이름표. (캐릭터는 별도 레이어)
+// ──────────────────────────────────────────────────────────────────────────
+
+function AgentDesk({
+  agent,
+  x,
+  y,
+  working,
+  touching,
+  file,
+  onPickFile,
 }: {
-  desk: Desk;
-  lastAgent?: Agent;
-  onPick: (path: string) => void;
+  agent: Agent;
+  x: number;
+  y: number;
+  working: boolean;
+  touching: boolean;
+  file: string | null;
+  onPickFile: (path: string) => void;
 }) {
-  const cls = lastAgent ? classesFor(agentColorOf(lastAgent)) : null;
+  const cls = classesFor(agentColorOf(agent));
   return (
-    <button
-      type="button"
-      onClick={() => onPick(desk.path)}
-      title={desk.path}
-      className={cn(
-        "absolute group rounded-sm border border-border/50 bg-card hover:border-foreground/40 hover:bg-muted/60 transition-colors flex items-center justify-center px-1",
-        // 클릭 영역: 책상 중심 기준 작은 박스. 너무 작으면 클릭 어려우니 7%×7% 정도.
-      )}
+    <div
+      className="absolute flex flex-col items-center gap-0.5"
       style={{
-        left: `${desk.x}%`,
-        top: `${desk.y}%`,
-        width: "8%",
-        height: "9%",
+        left: `${x}%`,
+        top: `${y}%`,
         transform: "translate(-50%, -50%)",
+        width: "13%",
       }}
     >
-      <span className="text-[8.5px] mono text-muted-foreground/80 truncate group-hover:text-foreground">
-        {desk.label}
-      </span>
-      {desk.touched && cls ? (
+      {/* 모니터 — 작은 CRT 스크린. 클릭 시 그 파일 에디터로. */}
+      <button
+        type="button"
+        disabled={!file}
+        onClick={() => file && onPickFile(file)}
+        title={file ?? agent.name}
+        className={cn(
+          "relative w-full max-w-[110px] rounded-sm border border-zinc-700/80 bg-zinc-900 px-1 py-0.5 mono shadow-sm transition-colors",
+          file ? "hover:border-foreground cursor-pointer" : "cursor-default",
+          working
+            ? "ring-1 ring-emerald-500/70 ring-offset-1 ring-offset-card"
+            : "",
+        )}
+        style={{ minHeight: "16px" }}
+      >
         <span
-          aria-hidden
           className={cn(
-            "absolute top-0.5 right-0.5 size-1.5 rounded-full",
-            cls.dot,
+            "block text-[8.5px] truncate leading-tight",
+            file
+              ? "text-emerald-400"
+              : working
+                ? "text-emerald-400/70"
+                : "text-zinc-500",
           )}
-        />
-      ) : null}
-    </button>
+        >
+          {file ? basename(file) : working ? "$ thinking…" : "$ idle"}
+        </span>
+        {touching ? (
+          <span
+            aria-hidden
+            className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-emerald-400 animate-pulse"
+          />
+        ) : null}
+      </button>
+
+      {/* 책상 천판 — 픽셀 책상 대신 단순한 막대로. 캐릭터 시각이 메인이라 책상은
+          오버하지 않는 게 깔끔. */}
+      <div
+        className={cn(
+          "w-full rounded-sm shadow-sm",
+          "bg-amber-900/70 dark:bg-amber-950",
+          working && cls.ring,
+          working ? "ring-2 ring-offset-1 ring-offset-card" : "",
+        )}
+        style={{ height: "5px" }}
+      />
+
+      {/* 이름표 — 책상 앞면 살짝 아래. */}
+      <span
+        className={cn(
+          "text-[9px] mono px-1 rounded-sm",
+          cls.bgSoft,
+          cls.text,
+        )}
+        title={agent.name}
+        style={{ marginTop: "-1px" }}
+      >
+        @{agent.name}
+      </span>
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // 캐릭터 — wander/linger/working 상태머신.
-// OfficeFloor 의 로직에서 파생, DESTINATIONS = 같은 방 책상들.
+// 자기 책상이 home, idle 산책지는 데코 spot + 다른 동료 책상.
 // ──────────────────────────────────────────────────────────────────────────
 
 type CharState = "idle" | "wander" | "linger" | "going" | "working" | "leaving";
@@ -703,26 +499,23 @@ const IDLE_ACTIONS = ["🙆", "🥱", "💭", "📱", "🎵", "👀"] as const;
 
 function AgentChar({
   agent,
-  homeDesk,
-  targetDesk,
-  roomDesks,
-  allDesks,
+  homeX,
+  homeY,
   working,
   touching,
+  file,
   activeTool,
+  deskByAgent,
   onPick,
 }: {
   agent: Agent;
-  homeDesk: Desk;
-  /** 지금 만지고 있는 파일 책상. working 동안 이 자리로 이동. null 이면 home 에 앉음. */
-  targetDesk: Desk | null;
-  /** 같은 home 방 안 책상들 — idle wander 의 자연스런 풀. */
-  roomDesks: Desk[];
-  /** 전체 책상 — 가끔 다른 방으로 마실 다녀올 때. */
-  allDesks: Desk[];
+  homeX: number;
+  homeY: number;
   working: boolean;
   touching: boolean;
+  file: string | null;
   activeTool: ActiveToolsForAgent | null;
+  deskByAgent: Map<string, { x: number; y: number }>;
   onPick: () => void;
 }) {
   const personality = useMemo(() => {
@@ -733,75 +526,55 @@ function AgentChar({
     };
   }, [agent.id]);
 
-  // working 시 효과적 책상 — 만지는 파일이 있으면 그쪽, 없으면 home.
-  const effectiveDesk = targetDesk ?? homeDesk;
+  const sitPos = useMemo(
+    () => ({ x: homeX, y: homeY + SIT_OFFSET_Y }),
+    [homeX, homeY],
+  );
 
   const initial = useMemo(() => {
     if (working) {
-      return {
-        pos: { x: effectiveDesk.x, y: effectiveDesk.y },
-        state: "working" as CharState,
-      };
+      return { pos: sitPos, state: "working" as CharState };
     }
-    // idle 시작 — home 책상 옆 살짝 떨어진 spot.
     const seed = hashSeed(agent.id);
     const ox = ((seed >> 4) % 6) - 3;
-    const oy = ((seed >> 8) % 4) - 2;
     return {
-      pos: {
-        x: clamp(homeDesk.x + ox, 4, 96),
-        y: clamp(homeDesk.y + oy, 8, 92),
-      },
+      pos: { x: clamp(homeX + ox, 6, 94), y: clamp(homeY - 4, 32, 92) },
       state: "idle" as CharState,
     };
-    // homeDesk 좌표가 트리 재계산으로 자주 바뀌면 캐릭터가 텔레포트됨 — 마운트
-    // 시 1회만 사용. 후속 변경은 useEffect 들이 처리.
+    // homeX/Y 변동시 텔레포트 막으려고 마운트 1회만.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id]);
 
   const [pos, setPos] = useState(initial.pos);
   const [target, setTarget] = useState(initial.pos);
   const [state, setState] = useState<CharState>(initial.state);
-  const [destDesk, setDestDesk] = useState<Desk | null>(null);
+  const [destSpot, setDestSpot] = useState<WanderSpot | null>(null);
+  const [destDeskAgentId, setDestDeskAgentId] = useState<string | null>(null);
   const [iconIdx, setIconIdx] = useState(0);
   const [idleAction, setIdleAction] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
 
   const lastWorkingRef = useRef(working);
-  const lastTargetPathRef = useRef<string | null>(targetDesk?.path ?? null);
 
-  // working 토글 → 즉시 인터럽트.
+  // working 토글.
   useEffect(() => {
     const wasWorking = lastWorkingRef.current;
     lastWorkingRef.current = working;
     if (working && !wasWorking) {
-      setTarget({ x: effectiveDesk.x, y: effectiveDesk.y });
-      setDestDesk(null);
+      setTarget(sitPos);
+      setDestSpot(null);
+      setDestDeskAgentId(null);
       setState("going");
     } else if (!working && wasWorking) {
-      // 떠날 땐 같은 방 안 한 발짝.
+      // 일 끝나면 책상 옆 한 발짝.
       const seed = hashSeed(agent.id) ^ Date.now();
       const ox = ((seed >> 4) % 8) - 4;
-      const oy = ((seed >> 8) % 6) - 3;
-      setTarget({
-        x: clamp(homeDesk.x + ox, 4, 96),
-        y: clamp(homeDesk.y + oy, 8, 92),
-      });
-      setDestDesk(null);
+      setTarget({ x: clamp(homeX + ox, 6, 94), y: clamp(homeY - 6, 32, 92) });
+      setDestSpot(null);
+      setDestDeskAgentId(null);
       setState("leaving");
     }
-  }, [working, agent.id, effectiveDesk.x, effectiveDesk.y, homeDesk.x, homeDesk.y]);
-
-  // working 중 targetDesk 변경 → 새 책상으로 슬라이드. state 는 "going" 으로
-  // 잠깐 바뀌어 walking 자세, 도착 시 working 으로 복귀.
-  useEffect(() => {
-    if (!working) return;
-    const newPath = targetDesk?.path ?? null;
-    if (newPath === lastTargetPathRef.current) return;
-    lastTargetPathRef.current = newPath;
-    setTarget({ x: effectiveDesk.x, y: effectiveDesk.y });
-    setState("going");
-  }, [targetDesk, working, effectiveDesk.x, effectiveDesk.y]);
+  }, [working, agent.id, sitPos, homeX, homeY]);
 
   // 위치 보간.
   useEffect(() => {
@@ -838,27 +611,42 @@ function AgentChar({
     return () => cancelAnimationFrame(raf);
   }, [target, state, personality.speedMul]);
 
-  // idle → 같은 방 다른 책상으로 wander. 가끔 (15%) 다른 방으로 마실.
+  // idle → 50% 데코 spot, 50% 동료 책상 방문. 외톨이면 100% 데코.
   useEffect(() => {
     if (state !== "idle") return;
     const wait = (2500 + Math.random() * 4000) * personality.waitMul;
     const id = window.setTimeout(() => {
-      const pool = Math.random() < 0.15 ? allDesks : roomDesks;
-      if (pool.length === 0) return;
-      const dest = pool[Math.floor(Math.random() * pool.length)]!;
-      const jx = (Math.random() - 0.5) * 4;
-      const jy = (Math.random() - 0.5) * 3;
-      setTarget({
-        x: clamp(dest.x + jx, 4, 96),
-        y: clamp(dest.y + jy, 8, 92),
-      });
-      setDestDesk(dest);
+      const others = [...deskByAgent.entries()].filter(([id]) => id !== agent.id);
+      const visitDesk = others.length > 0 && Math.random() < 0.5;
+      if (visitDesk) {
+        const [otherId, deskPos] =
+          others[Math.floor(Math.random() * others.length)]!;
+        const jx = (Math.random() - 0.5) * 4;
+        // 동료 책상 *옆* 으로 가서 인사 (정확히 위에 X).
+        setTarget({
+          x: clamp(deskPos.x + jx + 5, 6, 94),
+          y: clamp(deskPos.y - 4, 32, 92),
+        });
+        setDestSpot(null);
+        setDestDeskAgentId(otherId);
+      } else {
+        const spot =
+          WANDER_SPOTS[Math.floor(Math.random() * WANDER_SPOTS.length)]!;
+        const jx = (Math.random() - 0.5) * 4;
+        const jy = (Math.random() - 0.5) * 3;
+        setTarget({
+          x: clamp(spot.x + jx, 6, 94),
+          y: clamp(spot.y + jy, 32, 92),
+        });
+        setDestSpot(spot);
+        setDestDeskAgentId(null);
+      }
       setState("wander");
     }, wait);
     return () => window.clearTimeout(id);
-  }, [state, personality.waitMul, roomDesks, allDesks]);
+  }, [state, personality.waitMul, deskByAgent, agent.id]);
 
-  // idle 중 micro-action.
+  // idle micro-action.
   useEffect(() => {
     if (state !== "idle") {
       setIdleAction(null);
@@ -880,15 +668,15 @@ function AgentChar({
     return () => window.clearTimeout(onsetId);
   }, [state]);
 
-  // linger 진입 시 destDesk 의 라벨 일부 글자 회전 (이모지 없으니 책상명 일부).
+  // linger 이모지 회전.
   useEffect(() => {
-    if (state !== "linger" || !destDesk) return;
-    setIconIdx(0);
+    if (state !== "linger") return;
+    setIconIdx(Math.floor(Math.random() * 3));
     const id = window.setInterval(() => {
       setIconIdx((i) => i + 1);
     }, 1800 + Math.random() * 800);
     return () => window.clearInterval(id);
-  }, [state, destDesk]);
+  }, [state, destSpot, destDeskAgentId]);
 
   // linger → idle.
   useEffect(() => {
@@ -896,7 +684,8 @@ function AgentChar({
     const wait = (2500 + Math.random() * 3000) * personality.waitMul;
     const id = window.setTimeout(() => {
       setState("idle");
-      setDestDesk(null);
+      setDestSpot(null);
+      setDestDeskAgentId(null);
     }, wait);
     return () => window.clearTimeout(id);
   }, [state, personality.waitMul]);
@@ -904,7 +693,7 @@ function AgentChar({
   // 머리 위 표시.
   const bubble = useMemo<string | null>(() => {
     if (state === "working") {
-      if (targetDesk) return `✎ ${targetDesk.label}`;
+      if (file) return `✎ ${basename(file)}`;
       const latest = activeTool?.recent[activeTool.recent.length - 1];
       if (latest) {
         if (latest.name.startsWith("mcp__")) {
@@ -917,14 +706,18 @@ function AgentChar({
     }
     if (state === "going") return "→";
     if (state === "leaving") return "✓";
-    if (state === "linger" && destDesk) {
-      // basename 첫 6글자 + 점점이 = "linger 중 뭐 보고있다" 느낌.
-      const tags = ["📂", "👀", "💭", "✨"];
-      return tags[iconIdx % tags.length] ?? "💭";
+    if (state === "linger") {
+      if (destSpot) {
+        return destSpot.bubbles[iconIdx % destSpot.bubbles.length] ?? null;
+      }
+      if (destDeskAgentId) {
+        const tags = ["💬", "👋", "😄"];
+        return tags[iconIdx % tags.length] ?? "💬";
+      }
     }
     if (state === "idle" && idleAction) return idleAction;
     return null;
-  }, [state, targetDesk, activeTool, destDesk, iconIdx, idleAction]);
+  }, [state, file, activeTool, destSpot, destDeskAgentId, iconIdx, idleAction]);
 
   const isMoving =
     state === "going" || state === "leaving" || state === "wander";
@@ -959,17 +752,14 @@ function AgentChar({
         shirtColor={shirtColorOf(agent)}
         pose={pose}
         flipX={movingLeft}
-        scale={2}
+        scale={3}
       />
-      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-0.5 text-[9px] mono text-muted-foreground/80 whitespace-nowrap pointer-events-none flex items-center gap-0.5">
-        {touching ? (
-          <span
-            aria-hidden
-            className="size-1 rounded-full bg-emerald-500 animate-pulse"
-          />
-        ) : null}
-        @{agent.name}
-      </div>
+      {touching ? (
+        <span
+          aria-hidden
+          className="absolute -top-1 -right-1 size-2 rounded-full bg-emerald-500 animate-pulse pointer-events-none"
+        />
+      ) : null}
     </div>
   );
 }
