@@ -26,6 +26,7 @@ import type {
   Thread,
 } from "@loom/core";
 import { agentColorOf, classesFor } from "../../components/agentColor.js";
+import { AgentAvatar, type AvatarState } from "../../components/AgentAvatar.js";
 import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { basename } from "../../lib/path.js";
@@ -58,6 +59,16 @@ function seatPos(index: number, total: number): { x: number; y: number } {
 // ──────────────────────────────────────────────────────────────────────────
 // Tool 이름 → 아이콘 (간단 매핑)
 // ──────────────────────────────────────────────────────────────────────────
+
+function avatarState(
+  badge: "edit" | "thinking" | "idle",
+  working: boolean,
+): AvatarState {
+  if (badge === "edit") return "editing";
+  if (badge === "thinking") return "working";
+  if (working) return "thinking";
+  return "idle";
+}
 
 function toolIcon(name: string): string {
   if (name.startsWith("mcp__")) return "🔌";
@@ -587,17 +598,19 @@ function AgentSeat({
           ) : null}
         </div>
 
-        {/* 배지 — bob 애니메이션 idle 시. */}
+        {/* 아바타 — 에이전트별 고유 SVG 미니 봇. idle bob, working/thinking/editing
+            은 SVG 내부 애니메이션이 처리. */}
         <button
           type="button"
           onClick={onPickAgent}
           title={`${t("room.talk")} @${agent.name}`}
           aria-label={`Talk to ${agent.name}`}
           className={cn(
-            "relative cursor-pointer transition-transform hover:scale-110 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded-md",
-            cls.ring,
+            "relative cursor-pointer transition-transform hover:scale-110 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded-lg p-1",
+            working && cls.ring,
             working && "ring-2 ring-offset-2 ring-offset-card",
             threadActive && !working && "ring-1 ring-offset-1 ring-offset-card",
+            touching && "shadow-lg",
           )}
           style={
             !working && !hovered
@@ -605,7 +618,17 @@ function AgentSeat({
               : undefined
           }
         >
-          <AgentInitialBadge agent={agent} size="xl" live={touching} />
+          <AgentAvatar
+            agent={agent}
+            size={64}
+            state={avatarState(stateBadge, working)}
+          />
+          {touching ? (
+            <span
+              aria-hidden
+              className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-card animate-pulse"
+            />
+          ) : null}
 
           {/* tool 버스트 — 머리 위로 떠오름. */}
           {bursts.map((b) => (
