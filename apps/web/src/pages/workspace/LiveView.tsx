@@ -1,27 +1,11 @@
-// LiveView — Devin 풍 활동 피드.
+// LiveView — 멀티에이전트 ops 화면.
 //
-// "사무실/회의실/맵" 같은 공간 메타포 다 폐기. 본인이 진짜 보는 건 *각 에이전트가
-// 지금 뭐 하고 있는지* 의 정보. 이 view 가 그것만 한다.
-//
-// 레이아웃:
-//   ┌─ 세션 리스트 ─┐  ┌─ 선택된 에이전트의 활동 피드 ────┐
-//   │ ● @arch       │  │ ⏳ 지금 뭐 하는지 (Currently)    │
-//   │   editing foo │  │                                  │
-//   │ ◯ @coder      │  │ ──── 최근 활동 ────              │
-//   │   idle        │  │ 10:34  📖 Read foo.ts            │
-//   │ ◯ @rev        │  │ 10:34  ⚡ Bash npm test           │
-//   │   editing plan│  │ ...                              │
-//   └───────────────┘  └──────────────────────────────────┘
-//
-// 회의실의 모든 픽셀/캐릭터/벽/책상/게시판 폐기. 단순함이 미덕.
+// 좌-리스트/우-디테일 패턴은 AgentsTab(팀 메뉴)와 너무 비슷해서 폐기. 대신
+// 모든 에이전트를 *동시에* 보고 (상단 가로 카드들), 그 아래에 *통합 활동 스트림*.
+// loom 의 본질 = 여러 에이전트가 같이 일하는 거니까 화면 전체가 그걸 보여줘야.
 
-import { useMemo, useState } from "react";
-import {
-  ChevronRight,
-  Loader2,
-  RefreshCw,
-  Wrench,
-} from "lucide-react";
+import { useMemo } from "react";
+import { Loader2, RefreshCw } from "lucide-react";
 import type {
   ActiveToolsForAgent,
   ActiveTouch,
@@ -62,7 +46,7 @@ function liveStateOf(
   tool: ActiveToolsForAgent | null,
 ): LiveState {
   if (file) return "editing";
-  if (working && tool?.recent.length) return "tooling";
+  if (working && tool && tool.recent.length > 0) return "tooling";
   if (working) return "thinking";
   return "idle";
 }
@@ -125,20 +109,45 @@ export function LiveView({
     return m;
   }, [activeTools]);
 
-  // 선택 default — 일하는 사람 우선, 없으면 첫 에이전트.
-  const [explicit, setExplicit] = useState<string | null>(null);
-  const autoSelected = useMemo(() => {
-    if (explicit && agents.some((a) => a.id === explicit)) return explicit;
-    const working = agents.find((a) => workingIds.has(a.id));
-    if (working) return working.id;
-    return agents[0]?.id ?? null;
-  }, [explicit, agents, workingIds]);
+  // 정렬: working > touching > 알파벳.
+  const sortedAgents = useMemo(() => {
+    return [...agents].sort((a, b) => {
+      const wa = workingIds.has(a.id) ? 1 : 0;
+      const wb = workingIds.has(b.id) ? 1 : 0;
+      if (wa !== wb) return wb - wa;
+      const ta = touchingIds.has(a.id) ? 1 : 0;
+      const tb = touchingIds.has(b.id) ? 1 : 0;
+      if (ta !== tb) return tb - ta;
+      return a.name.localeCompare(b.name);
+    });
+  }, [agents, workingIds, touchingIds]);
 
-  // 외부에서 selectedAgentId 가 변경되면 (다른 panel 클릭 등) 따라가도 됨 — 일단 내부 상태만.
-  const selected = useMemo(
-    () => agents.find((a) => a.id === autoSelected) ?? null,
-    [agents, autoSelected],
-  );
+  // 통합 스트림 — 모든 에이전트의 tool.recent 를 ts desc 로 병합.
+  type StreamItem = {
+    key: string;
+    ts: string;
+    agent: Agent;
+    name: string;
+    target: string | null;
+  };
+  const stream = useMemo<StreamItem[]>(() => {
+    const items: StreamItem[] = [];
+    for (const tool of activeTools) {
+      const a = agents.find((x) => x.id === tool.agentId);
+      if (!a) continue;
+      tool.recent.forEach((r, i) => {
+        items.push({
+          key: `${a.id}-${tool.runId}-${i}-${r.ts}`,
+          ts: r.ts,
+          agent: a,
+          name: r.name,
+          target: r.target ?? null,
+        });
+      });
+    }
+    items.sort((a, b) => (b.ts > a.ts ? 1 : b.ts < a.ts ? -1 : 0));
+    return items.slice(0, 60);
+  }, [activeTools, agents]);
 
   if (agents.length === 0) {
     return (
@@ -148,58 +157,59 @@ export function LiveView({
     );
   }
 
+  const totalWorking = workingIds.size;
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-background">
       <Header
         projectName={projectName}
+        totalWorking={totalWorking}
+        totalAgents={agents.length}
         onRefresh={onRefresh}
         refreshing={refreshing}
       />
 
-      <div className="flex-1 min-h-0 flex">
-        <SessionList
-          agents={agents}
-          workingIds={workingIds}
-          touchingIds={touchingIds}
-          fileByAgent={fileByAgent}
-          toolByAgent={toolByAgent}
-          adapterByKind={adapterByKind}
-          threadByAgent={threadByAgent}
-          activeThreadId={activeThreadId}
-          selectedId={selected?.id ?? null}
-          onSelect={(id) => setExplicit(id)}
-          onPickAgent={onPickAgent}
-        />
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="max-w-5xl mx-auto px-5 py-5">
+          {/* 상단 — 가로 에이전트 카드들. 모두 동시 가시. */}
+          <AgentRow
+            agents={sortedAgents}
+            workingIds={workingIds}
+            touchingIds={touchingIds}
+            fileByAgent={fileByAgent}
+            toolByAgent={toolByAgent}
+            adapterByKind={adapterByKind}
+            threadByAgent={threadByAgent}
+            activeThreadId={activeThreadId}
+            threads={threadList}
+            workingThreadIds={workingThreadIds}
+            onPickAgent={onPickAgent}
+            onPickFile={onPickFile}
+            onPickThread={onPickThread}
+          />
 
-        <ActivityFeed
-          agent={selected}
-          manifest={selected ? adapterByKind[selected.adapterKind] : undefined}
-          working={selected ? workingIds.has(selected.id) : false}
-          touching={selected ? touchingIds.has(selected.id) : false}
-          file={selected ? (fileByAgent.get(selected.id) ?? null) : null}
-          tool={selected ? (toolByAgent.get(selected.id) ?? null) : null}
-          threadId={selected ? (threadByAgent.get(selected.id) ?? null) : null}
-          threads={threadList}
-          workingThreadIds={workingThreadIds}
-          onPickFile={onPickFile}
-          onPickAgent={onPickAgent}
-          onPickThread={onPickThread}
-        />
+          {/* 통합 활동 스트림. */}
+          <Stream stream={stream} onPickFile={onPickFile} onPickAgent={onPickAgent} />
+        </div>
       </div>
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 헤더 — 단순.
+// 헤더
 // ──────────────────────────────────────────────────────────────────────────
 
 function Header({
   projectName,
+  totalWorking,
+  totalAgents,
   onRefresh,
   refreshing,
 }: {
   projectName: string;
+  totalWorking: number;
+  totalAgents: number;
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
@@ -211,6 +221,16 @@ function Header({
         <span className="text-muted-foreground/70 font-normal ml-2">
           · {t("live.label")}
         </span>
+      </span>
+      <span className="text-[11px] text-muted-foreground mono">
+        {totalWorking > 0 ? (
+          <span className="inline-flex items-center gap-1">
+            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            {totalWorking} working · {totalAgents} agents
+          </span>
+        ) : (
+          <span>{totalAgents} agents · idle</span>
+        )}
       </span>
       {onRefresh ? (
         <button
@@ -228,10 +248,10 @@ function Header({
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 세션 리스트 — 좌측 사이드.
+// 에이전트 카드 row — 가로 grid. 모두 동시 가시.
 // ──────────────────────────────────────────────────────────────────────────
 
-function SessionList({
+function AgentRow({
   agents,
   workingIds,
   touchingIds,
@@ -240,8 +260,11 @@ function SessionList({
   adapterByKind,
   threadByAgent,
   activeThreadId,
-  selectedId,
-  onSelect,
+  threads,
+  workingThreadIds,
+  onPickAgent,
+  onPickFile,
+  onPickThread,
 }: {
   agents: Agent[];
   workingIds: Set<string>;
@@ -251,364 +274,171 @@ function SessionList({
   adapterByKind: Record<string, AdapterManifest>;
   threadByAgent: Map<string, string>;
   activeThreadId: string | null;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  threads: Thread[];
+  workingThreadIds: Set<string>;
   onPickAgent: (id: string) => void;
+  onPickFile: (path: string) => void;
+  onPickThread: (id: string) => void;
 }) {
-  const { t } = useI18n();
-  // 정렬: working > touching > 알파벳.
-  const sorted = useMemo(() => {
-    return [...agents].sort((a, b) => {
-      const wa = workingIds.has(a.id) ? 1 : 0;
-      const wb = workingIds.has(b.id) ? 1 : 0;
-      if (wa !== wb) return wb - wa;
-      const ta = touchingIds.has(a.id) ? 1 : 0;
-      const tb = touchingIds.has(b.id) ? 1 : 0;
-      if (ta !== tb) return tb - ta;
-      return a.name.localeCompare(b.name);
-    });
-  }, [agents, workingIds, touchingIds]);
-
   return (
-    <aside className="w-64 shrink-0 border-r border-border overflow-y-auto bg-card/30">
-      <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-        {t("live.sessions")} · {agents.length}
-      </div>
-      <ul>
-        {sorted.map((a) => {
-          const working = workingIds.has(a.id);
-          const touching = touchingIds.has(a.id);
-          const file = fileByAgent.get(a.id) ?? null;
-          const tool = toolByAgent.get(a.id) ?? null;
-          const state = liveStateOf(working, file, tool);
-          const selected = a.id === selectedId;
-          const inActiveThread =
+    <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+      {agents.map((a) => (
+        <AgentCard
+          key={a.id}
+          agent={a}
+          manifest={adapterByKind[a.adapterKind]}
+          working={workingIds.has(a.id)}
+          touching={touchingIds.has(a.id)}
+          file={fileByAgent.get(a.id) ?? null}
+          tool={toolByAgent.get(a.id) ?? null}
+          thread={
+            threads.find((th) => th.id === threadByAgent.get(a.id)) ?? null
+          }
+          inActiveThread={
             threadByAgent.get(a.id) === activeThreadId &&
-            activeThreadId !== null;
-          const cls = classesFor(agentColorOf(a));
-          const manifest = adapterByKind[a.adapterKind];
-
-          return (
-            <li key={a.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(a.id)}
-                className={cn(
-                  "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border-l-2 border-transparent",
-                  selected
-                    ? "bg-foreground/[0.06] border-l-foreground"
-                    : "hover:bg-muted/40",
-                )}
-              >
-                <span
-                  className={cn(
-                    "relative inline-flex size-8 items-center justify-center rounded-md border bg-card shrink-0",
-                    cls.border,
-                  )}
-                >
-                  {manifest ? (
-                    <AdapterIcon manifest={manifest} size={22} />
-                  ) : (
-                    <span className={cn("text-xs font-semibold", cls.text)}>
-                      {a.name.slice(0, 1).toUpperCase()}
-                    </span>
-                  )}
-                  {/* 우하단 상태 dot */}
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-card",
-                      working
-                        ? "bg-emerald-500 animate-pulse"
-                        : "bg-muted-foreground/30",
-                    )}
-                  />
-                </span>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1">
-                    <span className={cn("text-[12px] font-medium truncate", cls.text)}>
-                      @{a.name}
-                    </span>
-                    {inActiveThread ? (
-                      <ChevronRight className="size-3 text-muted-foreground/60 shrink-0" />
-                    ) : null}
-                  </div>
-                  <div className="text-[10.5px] text-muted-foreground truncate mono">
-                    <SessionStateLine
-                      state={state}
-                      file={file}
-                      tool={tool}
-                      touching={touching}
-                    />
-                  </div>
-                </div>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </aside>
+            activeThreadId !== null
+          }
+          threadWorking={
+            !!threadByAgent.get(a.id) &&
+            workingThreadIds.has(threadByAgent.get(a.id)!)
+          }
+          onPickAgent={() => onPickAgent(a.id)}
+          onPickFile={onPickFile}
+          onPickThread={onPickThread}
+        />
+      ))}
+    </div>
   );
 }
 
-function SessionStateLine({
-  state,
-  file,
-  tool,
-  touching,
-}: {
-  state: LiveState;
-  file: string | null;
-  tool: ActiveToolsForAgent | null;
-  touching: boolean;
-}) {
-  const { t } = useI18n();
-  if (state === "editing" && file) {
-    return (
-      <span className={touching ? "text-emerald-700 dark:text-emerald-400" : ""}>
-        ✎ {basename(file)}
-      </span>
-    );
-  }
-  if (state === "tooling" && tool) {
-    const latest = tool.recent[tool.recent.length - 1];
-    if (latest) {
-      return (
-        <span>
-          {toolIcon(latest.name)} {latest.name}
-        </span>
-      );
-    }
-  }
-  if (state === "thinking") {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <span className="size-1 rounded-full bg-emerald-500 animate-pulse" />
-        {t("live.state.thinking")}
-      </span>
-    );
-  }
-  return <span className="opacity-60">{t("live.state.idle")}</span>;
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// 활동 피드 — 우측 메인.
-// ──────────────────────────────────────────────────────────────────────────
-
-function ActivityFeed({
+function AgentCard({
   agent,
   manifest,
   working,
   touching,
   file,
   tool,
-  threadId,
-  threads,
-  workingThreadIds,
-  onPickFile,
+  thread,
+  inActiveThread,
+  threadWorking,
   onPickAgent,
+  onPickFile,
   onPickThread,
 }: {
-  agent: Agent | null;
+  agent: Agent;
   manifest: AdapterManifest | undefined;
   working: boolean;
   touching: boolean;
   file: string | null;
   tool: ActiveToolsForAgent | null;
-  threadId: string | null;
-  threads: Thread[];
-  workingThreadIds: Set<string>;
+  thread: Thread | null;
+  inActiveThread: boolean;
+  threadWorking: boolean;
+  onPickAgent: () => void;
   onPickFile: (path: string) => void;
-  onPickAgent: (id: string) => void;
   onPickThread: (id: string) => void;
 }) {
   const { t } = useI18n();
-
-  if (!agent) {
-    return (
-      <main className="flex-1 min-w-0 flex items-center justify-center text-sm text-muted-foreground italic">
-        {t("live.selectAgent")}
-      </main>
-    );
-  }
-
   const cls = classesFor(agentColorOf(agent));
   const state = liveStateOf(working, file, tool);
-  const currentThread = threads.find((th) => th.id === threadId) ?? null;
-
-  return (
-    <main className="flex-1 min-w-0 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-6 py-5">
-        {/* 에이전트 헤더 */}
-        <div className="flex items-center gap-3 mb-4">
-          <button
-            type="button"
-            onClick={() => onPickAgent(agent.id)}
-            className={cn(
-              "relative inline-flex size-12 items-center justify-center rounded-lg border bg-card shadow-sm hover:shadow transition-shadow",
-              cls.border,
-            )}
-            title={`${t("room.talk")} @${agent.name}`}
-          >
-            {manifest ? (
-              <AdapterIcon manifest={manifest} size={32} />
-            ) : (
-              <span className={cn("text-base font-semibold", cls.text)}>
-                {agent.name.slice(0, 1).toUpperCase()}
-              </span>
-            )}
-          </button>
-          <div className="min-w-0">
-            <div className="flex items-baseline gap-2">
-              <h2 className={cn("text-lg font-semibold", cls.text)}>
-                @{agent.name}
-              </h2>
-              {agent.role ? (
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-                  {agent.role}
-                </span>
-              ) : null}
-            </div>
-            <div className="text-xs text-muted-foreground mono">
-              {manifest?.displayName ?? agent.adapterKind}
-              {currentThread ? (
-                <>
-                  {" "}
-                  ·{" "}
-                  <button
-                    type="button"
-                    onClick={() => onPickThread(currentThread.id)}
-                    className="hover:text-foreground hover:underline"
-                  >
-                    in {currentThread.name ?? t("thread.untitled")}
-                  </button>
-                  {workingThreadIds.has(currentThread.id) ? (
-                    <span className="ml-1 inline-block size-1.5 rounded-full bg-emerald-500 animate-pulse align-middle" />
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {/* Currently 카드 */}
-        <CurrentlyCard
-          state={state}
-          working={working}
-          touching={touching}
-          file={file}
-          tool={tool}
-          colorClass={cls}
-          onPickFile={onPickFile}
-        />
-
-        {/* 최근 활동 */}
-        <RecentActivity tool={tool} onPickFile={onPickFile} />
-      </div>
-    </main>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Currently 카드 — 지금 뭐 하는지.
-// ──────────────────────────────────────────────────────────────────────────
-
-function CurrentlyCard({
-  state,
-  working,
-  touching,
-  file,
-  tool,
-  colorClass,
-  onPickFile,
-}: {
-  state: LiveState;
-  working: boolean;
-  touching: boolean;
-  file: string | null;
-  tool: ActiveToolsForAgent | null;
-  colorClass: ReturnType<typeof classesFor>;
-  onPickFile: (path: string) => void;
-}) {
-  const { t } = useI18n();
   const latest = tool?.recent[tool.recent.length - 1];
 
   return (
     <div
       className={cn(
-        "rounded-md border bg-card p-4 mb-6 transition-colors",
-        working ? "border-emerald-500/40 bg-emerald-500/[0.03]" : "border-border",
+        "rounded-md border bg-card p-3 transition-colors",
+        working
+          ? "border-emerald-500/40 bg-emerald-500/[0.025]"
+          : inActiveThread
+            ? "border-foreground/30"
+            : "border-border",
       )}
     >
-      <div className="flex items-center gap-2 mb-2">
-        {working ? (
-          <Loader2 className="size-3.5 text-emerald-500 animate-spin" />
-        ) : (
-          <span className="size-2 rounded-full bg-muted-foreground/30" />
-        )}
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {working ? t("live.now") : t("live.lastSeen")}
-        </span>
+      {/* 헤더: 로고 + 이름 + 상태 dot. */}
+      <div className="flex items-center gap-2 mb-2 min-w-0">
+        <button
+          type="button"
+          onClick={onPickAgent}
+          title={`${t("room.talk")} @${agent.name}`}
+          className={cn(
+            "relative inline-flex size-9 items-center justify-center rounded-md border bg-card shrink-0 hover:shadow-sm transition-shadow",
+            cls.border,
+          )}
+        >
+          {manifest ? (
+            <AdapterIcon manifest={manifest} size={26} />
+          ) : (
+            <span className={cn("text-xs font-semibold", cls.text)}>
+              {agent.name.slice(0, 1).toUpperCase()}
+            </span>
+          )}
+          {/* 우하단 상태 dot */}
+          <span
+            aria-hidden
+            className={cn(
+              "absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-card",
+              working ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/30",
+            )}
+          />
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={onPickAgent}
+            className={cn(
+              "block text-[12.5px] font-semibold truncate hover:underline text-left max-w-full",
+              cls.text,
+            )}
+          >
+            @{agent.name}
+          </button>
+          <div className="text-[10px] mono text-muted-foreground/80 truncate">
+            {manifest?.displayName ?? agent.adapterKind}
+          </div>
+        </div>
       </div>
 
-      {state === "editing" && file ? (
-        <div>
-          <div className="text-base font-semibold mb-1">
-            {touching ? t("live.now.editing") : t("live.now.had_file")}
-          </div>
+      {/* 상태 라인 */}
+      <div className="text-[11.5px] mono text-foreground/85 truncate min-w-0 mb-1.5">
+        {state === "editing" && file ? (
           <button
             type="button"
             onClick={() => onPickFile(file)}
             className={cn(
-              "inline-flex items-center gap-1.5 px-2 py-1 rounded mono text-xs hover:bg-muted/60 transition-colors border",
-              colorClass.bgSoft,
-              colorClass.border,
+              "inline-flex items-center gap-1 hover:underline truncate max-w-full",
+              touching ? "text-emerald-700 dark:text-emerald-300" : cls.text,
             )}
+            title={file}
           >
             <span>✎</span>
-            <span className="truncate max-w-[400px]">{file}</span>
+            <span className="truncate">{basename(file)}</span>
           </button>
-        </div>
-      ) : state === "tooling" && latest ? (
-        <div>
-          <div className="text-base font-semibold mb-1">
-            {t("live.now.using_tool")}
-          </div>
-          <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-muted/50 mono text-xs">
-            <Wrench className="size-3 text-muted-foreground" />
+        ) : state === "tooling" && latest ? (
+          <span className="inline-flex items-center gap-1 truncate">
             <span>{toolIcon(latest.name)}</span>
-            <span className="font-medium">{latest.name}</span>
+            <span className="truncate">{latest.name}</span>
             {latest.target ? (
-              <span className="text-muted-foreground truncate max-w-[300px]">
-                · {latest.target}
+              <span className="text-muted-foreground/70 truncate">
+                · {latest.target.slice(0, 30)}
               </span>
             ) : null}
-          </div>
-        </div>
-      ) : state === "thinking" ? (
-        <div>
-          <div className="text-base font-semibold mb-1">
-            {t("live.now.thinking")}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {t("live.now.thinking_hint")}
-          </div>
-        </div>
-      ) : (
-        <div>
-          <div className="text-base font-semibold text-muted-foreground/80 mb-1">
-            {t("live.now.idle")}
-          </div>
-          <div className="text-xs text-muted-foreground/70">
-            {t("live.now.idle_hint")}
-          </div>
-        </div>
-      )}
+          </span>
+        ) : state === "thinking" ? (
+          <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+            <Loader2 className="size-3 animate-spin" />
+            {t("live.state.thinking")}
+          </span>
+        ) : (
+          <span className="text-muted-foreground/60">
+            {t("live.state.idle")}
+          </span>
+        )}
+      </div>
 
-      {/* 진행 progress bar — working 시. */}
-      {working ? (
-        <div className="mt-3 h-0.5 w-full rounded-full bg-muted overflow-hidden">
+      {/* 진행 바 */}
+      <div className="h-0.5 w-full rounded-full bg-muted overflow-hidden">
+        {working ? (
           <div
             className="h-full rounded-full bg-emerald-500/60"
             style={{
@@ -616,8 +446,8 @@ function CurrentlyCard({
               width: "30%",
             }}
           />
-        </div>
-      ) : null}
+        ) : null}
+      </div>
       <style>{`
         @keyframes live-scan {
           0% { transform: translateX(-100%); }
@@ -625,64 +455,84 @@ function CurrentlyCard({
         }
       `}</style>
 
-      {/* MCP 서버 chip — 있으면. */}
-      {tool && tool.mcpServers.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-1">
-          {tool.mcpServers.slice(0, 5).map((s) => (
-            <span
-              key={s}
-              className="inline-flex items-center px-1.5 h-4 rounded text-[10px] mono bg-violet-500/10 text-violet-700 dark:text-violet-300"
-            >
-              🔌 {s}
-            </span>
-          ))}
-        </div>
+      {/* thread 표시 — 클릭하면 활성화. */}
+      {thread ? (
+        <button
+          type="button"
+          onClick={() => onPickThread(thread.id)}
+          className={cn(
+            "mt-2 w-full text-left text-[10px] mono truncate inline-flex items-center gap-1 transition-colors",
+            inActiveThread
+              ? "text-foreground/80"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+          title={thread.name ?? t("thread.untitled")}
+        >
+          {threadWorking ? (
+            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          ) : (
+            <span className="size-1.5 rounded-full bg-muted-foreground/30 shrink-0" />
+          )}
+          <span className="truncate">
+            in {thread.name ?? t("thread.untitled")}
+          </span>
+        </button>
       ) : null}
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 최근 활동 — tool.recent 를 chronological 로.
+// 통합 스트림 — 모든 에이전트의 활동 시간순 병합.
 // ──────────────────────────────────────────────────────────────────────────
 
-function RecentActivity({
-  tool,
+function Stream({
+  stream,
   onPickFile,
+  onPickAgent,
 }: {
-  tool: ActiveToolsForAgent | null;
+  stream: Array<{
+    key: string;
+    ts: string;
+    agent: Agent;
+    name: string;
+    target: string | null;
+  }>;
   onPickFile: (path: string) => void;
+  onPickAgent: (id: string) => void;
 }) {
   const { t } = useI18n();
-  const ref = useAutoAnimate<HTMLUListElement>({ duration: 200, easing: "ease-out" });
-  const recent = useMemo(() => {
-    if (!tool) return [] as ActiveToolsForAgent["recent"];
-    return [...tool.recent].reverse();
-  }, [tool]);
+  const ref = useAutoAnimate<HTMLUListElement>({
+    duration: 220,
+    easing: "ease-out",
+  });
 
   return (
     <section>
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-2 px-1">
         <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("live.recent")}
+          {t("live.stream")}
         </h3>
         <span className="text-[10px] text-muted-foreground/60">
-          {recent.length > 0 ? `· ${recent.length} actions` : ""}
+          {stream.length > 0 ? `· ${stream.length} actions` : ""}
         </span>
       </div>
-      {recent.length === 0 ? (
-        <div className="text-sm text-muted-foreground/60 italic px-1">
-          {t("live.recent.empty")}
+      {stream.length === 0 ? (
+        <div className="text-sm text-muted-foreground/60 italic px-1 py-3">
+          {t("live.stream.empty")}
         </div>
       ) : (
-        <ul ref={ref} className="space-y-0.5">
-          {recent.map((r, i) => (
-            <FeedRow
-              key={`${r.ts}-${i}-${r.name}`}
-              ts={r.ts}
-              name={r.name}
-              target={r.target ?? null}
+        <ul ref={ref} className="space-y-px">
+          {stream.map((item, idx) => (
+            <StreamRow
+              key={item.key}
+              ts={item.ts}
+              agent={item.agent}
+              name={item.name}
+              target={item.target}
+              recent={idx < 3}
               onPickFile={onPickFile}
+              onPickAgent={onPickAgent}
             />
           ))}
         </ul>
@@ -691,19 +541,26 @@ function RecentActivity({
   );
 }
 
-function FeedRow({
+function StreamRow({
   ts,
+  agent,
   name,
   target,
+  recent,
   onPickFile,
+  onPickAgent,
 }: {
   ts: string;
+  agent: Agent;
   name: string;
   target: string | null;
+  /** 상위 3개 만 emerald dot — 진짜 직전 활동 강조. */
+  recent: boolean;
   onPickFile: (path: string) => void;
+  onPickAgent: (id: string) => void;
 }) {
   const { t } = useI18n();
-  // target 이 절대/상대 path 로 보이면 클릭으로 파일 열기. heuristic 단순.
+  const cls = classesFor(agentColorOf(agent));
   const isPath =
     !!target &&
     (target.startsWith("/") || target.includes("/") || target.includes("."));
@@ -712,24 +569,45 @@ function FeedRow({
     : `${toolIcon(name)} ${name}`;
 
   return (
-    <li className="group flex items-baseline gap-2 px-1 py-1 rounded hover:bg-muted/30 transition-colors">
-      <span className="text-[10px] mono text-muted-foreground/60 w-14 shrink-0 tabular-nums">
+    <li className="group flex items-baseline gap-2 px-2 py-1 rounded hover:bg-muted/40 transition-colors">
+      {/* dot — 최근이면 emerald pulse, 아니면 gray. */}
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 rounded-full shrink-0 self-center",
+          recent ? "bg-emerald-500" : "bg-muted-foreground/30",
+          recent && "animate-pulse",
+        )}
+      />
+      <span className="text-[10px] mono text-muted-foreground/70 w-12 shrink-0 tabular-nums">
         {formatTimeAgo(ts, t)}
       </span>
-      <span className="text-xs mono text-foreground/90">{display}</span>
+      <button
+        type="button"
+        onClick={() => onPickAgent(agent.id)}
+        className={cn(
+          "text-[11px] font-medium hover:underline shrink-0",
+          cls.text,
+        )}
+      >
+        @{agent.name}
+      </button>
+      <span className="text-xs mono text-foreground/85 shrink-0">
+        {display}
+      </span>
       {target ? (
         isPath ? (
           <button
             type="button"
             onClick={() => onPickFile(target)}
-            className="text-[11px] mono text-muted-foreground hover:text-foreground hover:underline truncate"
+            className="text-[11px] mono text-muted-foreground hover:text-foreground hover:underline truncate min-w-0"
             title={target}
           >
             {basename(target)}
           </button>
         ) : (
           <span
-            className="text-[11px] mono text-muted-foreground truncate"
+            className="text-[11px] mono text-muted-foreground truncate min-w-0"
             title={target}
           >
             {target}
