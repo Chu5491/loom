@@ -26,7 +26,7 @@ import { useLoomEvent } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
 import { ChatPanel } from "./workspace/ChatPanel.js";
 import { FileTabBar } from "./workspace/FileTabBar.js";
-import { Office } from "./workspace/Office.js";
+import { ProjectMap } from "./workspace/ProjectMap.js";
 import { ThreadBar } from "./workspace/ThreadBar.js";
 import { ThreadList } from "./workspace/ThreadList.js";
 import { readPersistedTabs } from "./workspace/persistence.js";
@@ -493,22 +493,23 @@ export function WorkspacePage() {
               차지하도록 의도. */}
           {!canvasCollapsed ? (
             <section className="flex-1 min-w-0 min-h-0 flex flex-col">
-              {/* Office는 view 전환에도 unmount 안 함 — 캐릭터 wander 위치 / linger
-                  타이머가 OfficeFloor 내부 state라서 mount 깨면 모두 리셋됨.
-                  에디터 갔다 와도 사무실이 그 자리에서 계속 돌아가게 CSS로만 숨김. */}
+              {/* ProjectMap (협업 캔버스) ↔ FileTab (에디터) 모드 전환. Map 은
+                  view 전환에도 mount 유지 — 트리 펼침 상태/로드된 children 유지하려고. */}
               <div
                 className={cn(
                   "flex-1 min-h-0 flex flex-col",
                   view !== "office" && "hidden",
                 )}
               >
-                <Office
+                <ProjectMap
+                  projectId={p.id}
+                  projectName={p.name}
                   agents={agentList}
                   workingIds={workingIds}
                   touchingIds={touchingIds}
                   activeTouches={activeTouchesQuery.data?.touches ?? []}
                   activeTools={activeToolsQuery.data?.tools ?? []}
-                  activeThread={activeThread}
+                  onPickFile={openFile}
                   onPickAgent={(id) => setAgentIds([id])}
                 />
               </div>
@@ -638,7 +639,7 @@ function EditorEmpty({
           onClick={onSwitchToOffice}
           className="px-2 h-7 rounded border border-border hover:bg-muted hover:border-foreground/30 transition-colors"
         >
-          🏢 {t("workspace.empty.openOffice")}
+          🗺 {t("workspace.empty.openMap")}
         </button>
       </div>
     </div>

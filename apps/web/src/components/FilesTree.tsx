@@ -36,6 +36,8 @@ export function FilesTree({
   activeByAgent,
   agents,
   onPick,
+  defaultOpenDepth = 0,
+  staleTime = 30_000,
 }: {
   projectId: string;
   selectedPath: string | null;
@@ -45,6 +47,14 @@ export function FilesTree({
   activeByAgent?: Map<string, string>;
   agents?: Agent[];
   onPick: (path: string) => void;
+  /** Auto-expand directories up to this depth. 0 = current behavior
+   *  (everything closed). 1 = root-level dirs open. ProjectMap canvas
+   *  view passes 1 so the user sees one level deep on first paint. */
+  defaultOpenDepth?: number;
+  /** Override the default 30s staleTime — ProjectMap wants fresher data
+   *  per the "매번 분석" requirement, FilesTab in activity panel keeps
+   *  the cached default. */
+  staleTime?: number;
 }) {
   return (
     <TreeChildren
@@ -56,6 +66,8 @@ export function FilesTree({
       activeByAgent={activeByAgent}
       agents={agents}
       onPick={onPick}
+      defaultOpenDepth={defaultOpenDepth}
+      staleTime={staleTime}
     />
   );
 }
@@ -85,6 +97,8 @@ function TreeNode({
   activeByAgent,
   agents,
   onPick,
+  defaultOpenDepth,
+  staleTime,
 }: {
   projectId: string;
   path: string;
@@ -95,8 +109,12 @@ function TreeNode({
   activeByAgent?: Map<string, string>;
   agents?: Agent[];
   onPick: (path: string) => void;
+  defaultOpenDepth: number;
+  staleTime: number;
 }) {
-  const [open, setOpen] = useState(false);
+  // depth 0 means "직속 root" — defaultOpenDepth=1 면 root 직속 dir 들이 펼쳐져
+  // 한 단계 깊이까지 보임. 그 아래는 lazy.
+  const [open, setOpen] = useState(depth < defaultOpenDepth);
   // When the folder is closed, surface how many files inside have been
   // touched so the user can see *how much* changed without expanding.
   // Once open, descendant decorations speak for themselves so the
@@ -140,6 +158,8 @@ function TreeNode({
           activeByAgent={activeByAgent}
           agents={agents}
           onPick={onPick}
+          defaultOpenDepth={defaultOpenDepth}
+          staleTime={staleTime}
         />
       ) : null}
     </div>
@@ -155,6 +175,8 @@ function TreeChildren({
   activeByAgent,
   agents,
   onPick,
+  defaultOpenDepth,
+  staleTime,
 }: {
   projectId: string;
   path: string;
@@ -164,12 +186,14 @@ function TreeChildren({
   activeByAgent?: Map<string, string>;
   agents?: Agent[];
   onPick: (path: string) => void;
+  defaultOpenDepth: number;
+  staleTime: number;
 }) {
   const { t } = useI18n();
   const q = useQuery({
     queryKey: ["projectTree", projectId, path],
     queryFn: () => api.getProjectTree(projectId, path || undefined),
-    staleTime: 30_000,
+    staleTime,
   });
 
   if (q.isLoading) {
@@ -218,6 +242,8 @@ function TreeChildren({
               activeByAgent={activeByAgent}
               agents={agents}
               onPick={onPick}
+              defaultOpenDepth={defaultOpenDepth}
+              staleTime={staleTime}
             />
           </li>
         ) : (
