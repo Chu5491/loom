@@ -26,7 +26,7 @@ import { useLoomEvent } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
 import { ChatPanel } from "./workspace/ChatPanel.js";
 import { FileTabBar } from "./workspace/FileTabBar.js";
-import { ProjectFloor } from "./workspace/ProjectFloor.js";
+import { MeetingRoom } from "./workspace/MeetingRoom.js";
 import { ThreadBar } from "./workspace/ThreadBar.js";
 import { ThreadList } from "./workspace/ThreadList.js";
 import { readPersistedTabs } from "./workspace/persistence.js";
@@ -377,6 +377,17 @@ export function WorkspacePage() {
     return s;
   }, [projectRuns]);
 
+  // 회의실: 현재 진행 중 run 의 thread → 그 에이전트. 같은 thread 끼리 tether.
+  const threadByAgent = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of projectRuns) {
+      if ((r.status === "running" || r.status === "queued") && r.threadId) {
+        m.set(r.agentId, r.threadId);
+      }
+    }
+    return m;
+  }, [projectRuns]);
+
   // 채팅 dock의 open/height 상태는 ChatDock 자체가 관리. 여기서는 unread count
   // 같은 floating-launcher 시절의 보조 상태가 더 이상 필요 없음.
 
@@ -501,7 +512,7 @@ export function WorkspacePage() {
                   view !== "office" && "hidden",
                 )}
               >
-                <ProjectFloor
+                <MeetingRoom
                   projectName={p.name}
                   agents={agentList}
                   workingIds={workingIds}
@@ -511,6 +522,7 @@ export function WorkspacePage() {
                   threadList={threadList}
                   workingThreadIds={workingThreadIds}
                   activeThreadId={activeThreadId}
+                  threadByAgent={threadByAgent}
                   onPickFile={openFile}
                   onPickAgent={(id) => setAgentIds([id])}
                   onPickThread={(id) => setActiveThreadId(id)}
@@ -652,7 +664,7 @@ function EditorEmpty({
           onClick={onSwitchToOffice}
           className="px-2 h-7 rounded border border-border hover:bg-muted hover:border-foreground/30 transition-colors"
         >
-          🗺 {t("workspace.empty.openMap")}
+          👥 {t("workspace.empty.openRoom")}
         </button>
       </div>
     </div>

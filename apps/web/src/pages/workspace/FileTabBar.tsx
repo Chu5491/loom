@@ -2,7 +2,7 @@
 // 채팅은 floating overlay로 분리됐으므로 가짜 Chat 탭은 제거됨.
 // 활성 에이전트 라이브 배지 + 라인 번호 + 닫기. auto-animate로 추가/삭제 모핑.
 
-import { Code2, FileText, FolderTree, PanelRightClose, X } from "lucide-react";
+import { Code2, FileText, PanelRightClose, Users, X } from "lucide-react";
 import type { Agent } from "@loom/core";
 import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 import { useI18n } from "../../context/I18nContext.js";
@@ -55,9 +55,9 @@ export function FileTabBar({
       <div className="flex items-stretch shrink-0 px-1.5 py-1 gap-0.5 border-r border-border">
         <ViewModeButton
           active={view === "office"}
-          icon={<FolderTree className="size-3.5" />}
-          label={t("workspace.tabs.map")}
-          title={t("workspace.tabs.mapTitle")}
+          icon={<Users className="size-3.5" />}
+          label={t("workspace.tabs.room")}
+          title={t("workspace.tabs.roomTitle")}
           onClick={onSelectOffice}
         />
         <ViewModeButton

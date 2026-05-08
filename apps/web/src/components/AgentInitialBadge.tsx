@@ -36,7 +36,7 @@ export function AgentInitialBadge({
 }: {
   agent: Agent;
   live?: boolean;
-  size?: "xs" | "sm" | "md";
+  size?: "xs" | "sm" | "md" | "lg" | "xl";
   className?: string;
 }) {
   const { t } = useI18n();
@@ -46,7 +46,11 @@ export function AgentInitialBadge({
       ? "size-3.5 text-[8px]"
       : size === "md"
         ? "size-5 text-[10px]"
-        : "size-4 text-[9px]";
+        : size === "lg"
+          ? "size-9 text-[14px] rounded-md"
+          : size === "xl"
+            ? "size-12 text-[18px] rounded-lg"
+            : "size-4 text-[9px]";
   const bg = SOLID_BG[color] ?? "bg-foreground/60";
 
   return (
