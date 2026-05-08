@@ -658,6 +658,11 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.text();
   },
+  /** Returns before/after full text for side-by-side diff (Monaco DiffEditor). */
+  getRunSides: (id: string, path: string) =>
+    request<{ before: string; after: string }>(
+      `/api/runs/${id}/changes/sides?path=${encodeURIComponent(path)}`,
+    ),
   createRun: (body: CreateRunBody) =>
     request<{ run: Run }>("/api/runs", {
       method: "POST",

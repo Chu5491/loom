@@ -17,6 +17,7 @@ import type { AdapterManifest, Agent, FileHistoryEntry } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "./AdapterIcon.js";
 import { AgentInitialBadge } from "./AgentInitialBadge.js";
+import { MonacoDiff } from "./MonacoDiff.js";
 import { MonacoView, type AgentPresence } from "./MonacoView.js";
 import { Badge } from "./ui/badge.js";
 import {
@@ -184,12 +185,9 @@ function ContentPane({
       {/* current 모드는 Monaco가 자체 스크롤(미니맵·가로/세로 스크롤바 포함)
        *  하므로 부모는 relative로 자리만 잡아준다. diff 모드는 평문 렌더라
        *  부모 컨테이너 overflow-auto가 필요. */}
-      <div
-        className={cn(
-          "flex-1 min-h-0 min-w-0",
-          view.kind === "current" ? "relative" : "overflow-auto",
-        )}
-      >
+      {/* current 와 diff 둘 다 Monaco 기반 → 부모는 relative + 자식이 absolute inset-0.
+          Monaco 가 본인 스크롤/리사이즈 처리. */}
+      <div className="flex-1 min-h-0 min-w-0 relative">
         {view.kind === "current" ? (
           <CurrentContent
             projectId={projectId}
@@ -418,71 +416,40 @@ function DiffContent({
   wrap: boolean;
 }) {
   const { t } = useI18n();
-  // Re-uses the existing per-run-per-file patch endpoint — the same
-  // bytes that ChangedFiles in chat shows, just reached from the file
-  // side instead of the message side.
-  const patch = useQuery({
-    queryKey: ["run", runId, "patch", path],
-    queryFn: () => api.getRunPatch(runId, path),
+  // before/after 양쪽 *전체* 텍스트 — Monaco DiffEditor 가 split-view 로 그림.
+  // 옛 unified-diff 텍스트 렌더는 폐기 (한 컬럼 +/-/@ 줄로 보기 어려웠음).
+  const sides = useQuery({
+    queryKey: ["run", runId, "sides", path],
+    queryFn: () => api.getRunSides(runId, path),
     staleTime: 60_000,
   });
-  if (patch.isLoading) {
+  if (sides.isLoading) {
     return (
       <div className="px-5 py-4 text-sm text-muted-foreground">
         {t("common.loading")}
       </div>
     );
   }
-  if (patch.isError) {
+  if (sides.isError) {
     return (
       <div className="px-5 py-4 text-sm text-destructive">
-        {(patch.error as Error).message}
+        {(sides.error as Error).message}
       </div>
     );
   }
-  // Skip the per-file `diff --git ...` preamble — the pane header above
-  // already shows the path + a diff badge, so the preamble is just noise.
-  const text = patch.data ?? "";
-  const hunkStart = text.indexOf("\n@@");
-  const body = hunkStart >= 0 ? text.slice(hunkStart + 1) : "";
-  if (!body.trim()) {
+  const before = sides.data?.before ?? "";
+  const after = sides.data?.after ?? "";
+  if (before === after) {
     return (
       <p className="px-5 py-4 text-sm text-muted-foreground italic">
         {t("files.viewer.noTextDiff")}
       </p>
     );
   }
-  const lines = body.split("\n");
   return (
-    <pre
-      className={cn(
-        "px-2 py-2 mono text-[12px] leading-relaxed",
-        wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
-      )}
-    >
-      <code className="block">
-        {lines.map((line, i) => {
-          if (!line) return <span key={i} className="block">&nbsp;</span>;
-          const ch = line[0];
-          let className = "block px-3 py-px";
-          if (ch === "+") {
-            className +=
-              " bg-emerald-500/10 text-success";
-          } else if (ch === "-") {
-            className += " bg-rose-500/10 text-rose-700 dark:text-rose-300";
-          } else if (ch === "@") {
-            className += " bg-sky-500/10 text-sky-700 dark:text-sky-300";
-          } else {
-            className += " text-muted-foreground";
-          }
-          return (
-            <span key={i} className={className}>
-              {line || " "}
-            </span>
-          );
-        })}
-      </code>
-    </pre>
+    <div className="absolute inset-0">
+      <MonacoDiff before={before} after={after} path={path} wrap={wrap} />
+    </div>
   );
 }
 

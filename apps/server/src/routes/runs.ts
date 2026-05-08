@@ -7,6 +7,7 @@ import { cancelRun, startRun } from "../services/run-service.js";
 import {
   diffPatch,
   diffStat,
+  readDiffSides,
   restoreWorkTree,
 } from "../services/git-snapshot.js";
 import {
@@ -161,6 +162,20 @@ runsRoute.get("/:id/changes/patch", async (c) => {
   const patch = await diffPatch(run.beforeRef, run.afterRef, path, run.cwd);
   if (patch === null) return c.json({ error: "diff_unavailable" }, 404);
   return c.text(patch);
+});
+
+/**
+ * Side-by-side diff 용 — before / after 양쪽의 *전체 파일 텍스트* 동시 반환.
+ * Monaco DiffEditor 가 두 인풋을 직접 받아 두 칸 split 으로 표시.
+ */
+runsRoute.get("/:id/changes/sides", async (c) => {
+  const run = getRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not_found" }, 404);
+  const path = c.req.query("path");
+  if (!path) return c.json({ error: "path_required" }, 400);
+  const sides = await readDiffSides(run.beforeRef, run.afterRef, path, run.cwd);
+  if (sides === null) return c.json({ error: "diff_unavailable" }, 404);
+  return c.json(sides);
 });
 
 runsRoute.post("/:id/cancel", (c) => {

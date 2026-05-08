@@ -206,3 +206,49 @@ export async function diffPatch(
     return null;
   }
 }
+
+/**
+ * 한 snapshot 에서 path 의 raw 파일 콘텐츠를 가져옴. side-by-side diff 가
+ * 양쪽을 동시에 보여주려면 unified patch 가 아니라 두 *전체* 텍스트가 필요.
+ * 그 ref 에 path 가 존재하지 않으면 빈 문자열 (added / deleted 케이스).
+ */
+async function showBlob(
+  ref: string,
+  path: string,
+  cwd: string,
+): Promise<string> {
+  try {
+    const { stdout } = await execFile("git", ["show", `${ref}:${path}`], {
+      cwd,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return stdout;
+  } catch {
+    // ref 에 그 path 가 없으면 (added 또는 deleted) "" 반환.
+    return "";
+  }
+}
+
+export interface DiffSides {
+  before: string;
+  after: string;
+}
+
+/**
+ * before/after snapshot 에서 path 의 두 버전을 동시에 fetch. side-by-side
+ * Monaco DiffEditor 가 그대로 소비.
+ */
+export async function readDiffSides(
+  beforeRef: string | null,
+  afterRef: string | null,
+  path: string,
+  cwd: string,
+): Promise<DiffSides | null> {
+  if (!beforeRef || !afterRef) return null;
+  if (!(await isGitRepo(cwd))) return null;
+  const [before, after] = await Promise.all([
+    showBlob(beforeRef, path, cwd),
+    showBlob(afterRef, path, cwd),
+  ]);
+  return { before, after };
+}
