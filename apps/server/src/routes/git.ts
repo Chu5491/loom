@@ -13,12 +13,14 @@ import {
   deleteBranch,
   dropStash,
   fetch as gitFetchOp,
+  getCollaborators,
   getCommitFileDiff,
   getCommitInfo,
   getDiff,
   getLog,
   getStatus,
   getUntrackedDiff,
+  getWorkingTreeSides,
   GhNotInstalledError,
   listBranches,
   listStash,
@@ -148,6 +150,25 @@ gitRoute.get("/projects/:id/git/diff", async (c) => {
   }
 });
 
+gitRoute.get("/projects/:id/git/sides", async (c) => {
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "project_not_found" }, 404);
+  const path = c.req.query("path");
+  if (!path) return c.json({ error: "missing_path" }, 400);
+  const staged = c.req.query("staged") === "1";
+  const untracked = c.req.query("untracked") === "1";
+  try {
+    const sides = await getWorkingTreeSides(project.path, path, staged, untracked);
+    return c.json(sides);
+  } catch (err) {
+    if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
+    return c.json(
+      { error: "git_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
+
 gitRoute.post("/projects/:id/git/stage", async (c) => {
   const project = getProject(c.req.param("id"));
   if (!project) return c.json({ error: "project_not_found" }, 404);
@@ -211,6 +232,21 @@ gitRoute.get("/projects/:id/git/log", async (c) => {
   try {
     const entries = await getLog(project.path, { limit, allBranches: all });
     return c.json({ entries });
+  } catch (err) {
+    if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
+    return c.json(
+      { error: "git_failed", message: (err as Error).message },
+      500,
+    );
+  }
+});
+
+gitRoute.get("/projects/:id/git/collaborators", async (c) => {
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "project_not_found" }, 404);
+  try {
+    const collaborators = await getCollaborators(project.path);
+    return c.json({ collaborators });
   } catch (err) {
     if (err instanceof NotAGitRepoError) return c.json({ error: "not_a_git_repo" }, 409);
     return c.json(

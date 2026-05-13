@@ -75,6 +75,7 @@ export function ContextDrawer({
         if (!v) commitAndClose();
       }}
       direction="right"
+      shouldScaleBackground={false}
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-foreground/20 data-[state=open]:animate-fade-in" />

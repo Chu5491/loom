@@ -127,7 +127,13 @@ function ProjectCard({
     queryKey: ["agents", { projectId: project.id }],
     queryFn: () => api.listAgents({ projectId: project.id }),
   });
+  const threads = useQuery({
+    queryKey: ["threads", { projectId: project.id }],
+    queryFn: () => api.listThreads({ projectId: project.id }),
+    staleTime: 60_000,
+  });
   const agentCount = agents.data?.agents.length ?? 0;
+  const threadCount = threads.data?.threads.length ?? 0;
 
   const setEditor = useMutation({
     mutationFn: (editor: PreferredEditor) =>
@@ -170,12 +176,24 @@ function ProjectCard({
           {project.description}
         </p>
       ) : null}
+      {project.cloneUrl ? (
+        <p className="text-[10px] text-muted-foreground/60 mono truncate" title={project.cloneUrl}>
+          {project.cloneUrl}
+        </p>
+      ) : null}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Link
           to={`/projects/${project.id}`}
           className="hover:underline"
         >
           {t("projects.agentsLink", { count: agentCount })}
+        </Link>
+        <span className="text-border">·</span>
+        <Link
+          to={`/projects/${project.id}`}
+          className="hover:underline"
+        >
+          {t("projects.threads", { count: threadCount })}
         </Link>
         <span className="text-border">·</span>
         <EditorPicker

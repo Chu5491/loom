@@ -3,8 +3,6 @@
 import { ArrowRight } from "lucide-react";
 import type { Agent, Run } from "@loom/core";
 import { useI18n } from "../../context/I18nContext.js";
-import { cn } from "../../lib/utils.js";
-import { agentColorOf, classesFor } from "../agentColor.js";
 import { MessageRow, ParentReference } from "./MessageRow.js";
 import { UserAvatar } from "./AgentAvatar.js";
 
@@ -22,7 +20,6 @@ export function UserMessage({
   isContinuation: boolean;
 }) {
   const { t } = useI18n();
-  const cls = target ? classesFor(agentColorOf(target)) : null;
   return (
     <MessageRow
       avatar={<UserAvatar />}
@@ -32,9 +29,9 @@ export function UserMessage({
       runId={{ id: run.id, kind: "user" }}
       tag={
         target ? (
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-[11px] opacity-70">
             <ArrowRight className="size-3" />
-            <span className={cn("font-medium", cls?.text)}>@{target.name}</span>
+            <span className="font-medium">@{target.name}</span>
           </span>
         ) : undefined
       }
@@ -45,7 +42,7 @@ export function UserMessage({
           parentRunId={run.parentRunId}
         />
       ) : null}
-      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+      <p className="whitespace-pre-wrap break-words">
         {run.prompt}
       </p>
     </MessageRow>

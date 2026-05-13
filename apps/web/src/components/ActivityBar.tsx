@@ -7,6 +7,8 @@ import {
   Files as FilesIcon,
   GitBranch,
   Home,
+  LayoutDashboard,
+  MessageSquare,
 } from "lucide-react";
 import { LoomLogo } from "./LoomLogo.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.js";
@@ -29,6 +31,8 @@ import { useConfirm } from "./ConfirmDialog.js";
 export type ActivityKind =
   | "projects"
   | "files"
+  | "chat"
+  | "dashboard"
   | "skills"
   | "mcps"
   | "agents"
@@ -128,8 +132,10 @@ export function ActivityBar({
   const routeFor = (kind: ActivityKind): string | null => {
     if (!projectId) return null;
     switch (kind) {
-      case "files":
+      case "chat":
         return `/projects/${projectId}`;
+      case "dashboard":
+        return `/projects/${projectId}/dashboard`;
       case "agents":
         return `/projects/${projectId}/agents`;
       case "history":
@@ -155,6 +161,16 @@ export function ActivityBar({
   };
 
   const loadoutItems: ReadonlyArray<NavItem> = [
+    {
+      kind: "dashboard",
+      icon: <LayoutDashboard className="size-5" />,
+      label: t("activity.dashboard"),
+    },
+    {
+      kind: "chat",
+      icon: <MessageSquare className="size-5" />,
+      label: t("activity.chat"),
+    },
     {
       kind: "files",
       icon: <FilesIcon className="size-5" />,

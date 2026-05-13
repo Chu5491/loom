@@ -47,6 +47,11 @@ const GitPage = lazy(() =>
 const InsightsPage = lazy(() =>
   import("./pages/InsightsPage.js").then((m) => ({ default: m.InsightsPage })),
 );
+const DashboardPage = lazy(() =>
+  import("./pages/DashboardPage.js").then((m) => ({
+    default: m.DashboardPage,
+  })),
+);
 const WorkspaceInsightsPage = lazy(() =>
   import("./pages/WorkspaceInsightsPage.js").then((m) => ({
     default: m.WorkspaceInsightsPage,
@@ -130,6 +135,14 @@ export function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <WorkspacePage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="dashboard"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <DashboardPage />
               </Suspense>
             }
           />

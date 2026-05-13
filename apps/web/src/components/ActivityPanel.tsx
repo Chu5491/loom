@@ -9,6 +9,8 @@
 
 import type { ActivityKind } from "./ActivityBar.js";
 import { cn } from "../lib/utils.js";
+import { ChatTab } from "./activity/ChatTab.js";
+import { DashboardTab } from "./activity/DashboardTab.js";
 import { ProjectsTab } from "./activity/ProjectsTab.js";
 import { FilesTab } from "./activity/FilesTab.js";
 import { SkillsTab } from "./activity/SkillsTab.js";
@@ -67,6 +69,10 @@ export function ActivityPanel({
 
 function ActivityContent({ activity }: { activity: ActivityKind }) {
   switch (activity) {
+    case "chat":
+      return <ChatTab />;
+    case "dashboard":
+      return <DashboardTab />;
     case "projects":
       return <ProjectsTab />;
     case "files":

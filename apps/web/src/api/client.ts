@@ -106,6 +106,13 @@ export interface McpMarketplaceEntry {
   }>;
 }
 
+export interface GitCollaborator {
+  name: string;
+  email: string;
+  avatarUrl: string;
+  commitCount: number;
+  lastCommitAt: string;
+}
 export interface GitStashEntry {
   index: number;
   message: string;
@@ -473,6 +480,18 @@ export const api = {
       `/api/projects/${id}/git/diff?${qs.toString()}`,
     );
   },
+  getGitSides: (
+    id: string,
+    path: string,
+    opts: { staged?: boolean; untracked?: boolean } = {},
+  ) => {
+    const qs = new URLSearchParams({ path });
+    if (opts.staged) qs.set("staged", "1");
+    if (opts.untracked) qs.set("untracked", "1");
+    return request<{ before: string; after: string }>(
+      `/api/projects/${id}/git/sides?${qs.toString()}`,
+    );
+  },
   gitStage: (id: string, paths: string[]) =>
     request<{ ok: true }>(`/api/projects/${id}/git/stage`, {
       method: "POST",
@@ -500,6 +519,10 @@ export const api = {
   getGitBranches: (id: string) =>
     request<{ branches: GitBranchInfo[] }>(
       `/api/projects/${id}/git/branches`,
+    ),
+  getGitCollaborators: (id: string) =>
+    request<{ collaborators: GitCollaborator[] }>(
+      `/api/projects/${id}/git/collaborators`,
     ),
   getCommit: (id: string, sha: string) =>
     request<{ commit: GitCommitInfo }>(

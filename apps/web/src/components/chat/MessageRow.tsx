@@ -33,52 +33,73 @@ export function MessageRow({
   runId?: { id: string; kind: "user" | "agent" };
   children: ReactNode;
 }) {
+  const isUser = runId?.kind === "user";
+
   return (
     <motion.div
       data-run-id={runId?.id}
       data-msg-kind={runId?.kind}
-      // 새 발화 첫 줄만 슬라이드 인. 연속 메시지는 가만히 — 스크롤이 흔들리지 않음.
       initial={isContinuation ? false : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
       className={cn(
-        // 좁은 폭(@chat 컨테이너 < 480px) 대응 — 좌우 여백을 줄이고
-        // gap도 좁혀서 채팅 dock / 분할 모드에서 텍스트 폭 확보.
-        "group relative flex items-start gap-2 px-2 py-0.5 hover:bg-foreground/[0.03]",
-        "@[480px]:gap-3 @[480px]:px-4",
-        !isContinuation && "mt-1.5 pt-1",
+        "group relative flex px-2 py-0.5",
+        "@[480px]:px-4",
+        isUser ? "justify-end" : "justify-start",
+        !isContinuation && "mt-3 pt-0.5",
       )}
     >
-      <div className="w-7 @[480px]:w-8 shrink-0 mt-0.5 relative">
-        {isContinuation ? (
-          <>
-            {/* 연속 메시지를 그룹 아바타에 잇는 희미한 세로선. */}
-            <span
-              aria-hidden
-              className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-foreground/[0.08] group-hover:bg-foreground/[0.15] transition-colors"
-            />
-            <span className="invisible group-hover:visible block text-right text-[10px] text-muted-foreground/70 mono leading-9 -mt-2 relative">
-              {fmtTime(timestamp)}
-            </span>
-          </>
-        ) : (
-          avatar
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
+      {/* 에이전트: 아바타 왼쪽 */}
+      {!isUser ? (
+        <div className="w-7 @[480px]:w-8 shrink-0 mt-0.5 mr-2 @[480px]:mr-2.5">
+          {isContinuation ? null : avatar}
+        </div>
+      ) : null}
+
+      <div className={cn("min-w-0", isUser ? "max-w-[90%] @[480px]:max-w-[85%]" : "max-w-[95%] @[480px]:max-w-[90%] flex-1")}>
+        {/* 이름 + 시간 헤더 */}
         {!isContinuation ? (
-          <div className="flex items-baseline gap-2 mb-0.5">
-            <span className={cn("text-sm font-semibold", nameClassName)}>{name}</span>
-            <span className="text-[11px] text-muted-foreground mono">
+          <div className={cn(
+            "flex items-baseline gap-2 mb-1",
+            isUser && "justify-end",
+          )}>
+            {!isUser ? (
+              <span className={cn("text-[13px] font-semibold", nameClassName)}>{name}</span>
+            ) : null}
+            <span className="text-[10px] text-muted-foreground/60 mono">
               {fmtTime(timestamp)}
             </span>
-            {tag}
+            {!isUser && tag ? tag : null}
           </div>
         ) : null}
-        {children}
+
+        {/* 말풍선 */}
+        <div
+          className={cn(
+            "relative rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+            isUser
+              ? "bg-primary text-primary-foreground rounded-tr-md"
+              : "bg-muted/60 dark:bg-muted/40 text-foreground rounded-tl-md",
+          )}
+        >
+          {children}
+          {/* 사용자 메시지 태그 (대상 에이전트) */}
+          {isUser && tag ? (
+            <div className="mt-1.5 flex justify-end">{tag}</div>
+          ) : null}
+        </div>
+
+        {/* 에이전트 상태 태그 — 말풍선 아래 */}
+        {!isUser && tag && isContinuation ? (
+          <div className="mt-0.5 px-1">{tag}</div>
+        ) : null}
       </div>
+
       {actions ? (
-        <div className="absolute right-1.5 @[480px]:right-3 -top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className={cn(
+          "absolute -top-2 opacity-0 group-hover:opacity-100 transition-opacity",
+          isUser ? "left-1.5 @[480px]:left-3" : "right-1.5 @[480px]:right-3",
+        )}>
           {actions}
         </div>
       ) : null}

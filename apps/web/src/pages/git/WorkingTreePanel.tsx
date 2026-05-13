@@ -3,9 +3,9 @@
 // 컴팩트 사이드 패널(GitTab) 의 status 모드와 데이터/뮤테이션은 동일.
 // 풀 페이지에선 가로폭이 넉넉해 우측에 diff 를 띄움.
 
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, GitCommit, Minus, Plus } from "lucide-react";
+import { ChevronRight, Columns2, GitCommit, Minus, Plus, Rows2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, type GitWorkingChange } from "../../api/client.js";
 import { Button } from "../../components/ui/button.js";
@@ -16,6 +16,14 @@ import { HunkDiffView } from "../../components/git/HunkDiffView.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
 import { basename } from "../../lib/path.js";
+
+const MonacoDiff = lazy(() =>
+  import("../../components/git/MonacoDiff.js").then((m) => ({
+    default: m.MonacoDiff,
+  })),
+);
+
+type DiffMode = "inline" | "split";
 
 interface FileSelection {
   path: string;
@@ -358,6 +366,8 @@ function FileDiffView({
 }) {
   const { t } = useI18n();
   const qc = useQueryClient();
+  const [mode, setMode] = useState<DiffMode>("inline");
+
   const diff = useQuery({
     queryKey: [
       "gitDiff",
@@ -374,8 +384,23 @@ function FileDiffView({
     retry: false,
   });
 
-  // hunk 단위 stage/unstage. 성공 시 status + diff 둘 다 갱신해야 다음
-  // 그림이 정확.
+  const sides = useQuery({
+    queryKey: [
+      "gitSides",
+      projectId,
+      selection.path,
+      selection.staged,
+      selection.untracked,
+    ],
+    queryFn: () =>
+      api.getGitSides(projectId, selection.path, {
+        staged: selection.staged,
+        untracked: selection.untracked,
+      }),
+    enabled: mode === "split",
+    retry: false,
+  });
+
   const applyHunk = useMutation({
     mutationFn: (input: { patch: string; cached: true; reverse: boolean }) =>
       api.gitApplyPatch(projectId, input),
@@ -383,6 +408,9 @@ function FileDiffView({
       qc.invalidateQueries({ queryKey: ["gitStatus", projectId] });
       qc.invalidateQueries({
         queryKey: ["gitDiff", projectId, selection.path],
+      });
+      qc.invalidateQueries({
+        queryKey: ["gitSides", projectId, selection.path],
       });
     },
     onError: (err) => toast.error((err as Error).message),
@@ -399,9 +427,61 @@ function FileDiffView({
               ? t("git.staged")
               : t("git.unstaged")}
         </span>
+        <div className="flex items-center rounded border border-border/60 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setMode("inline")}
+            title={t("git.diffMode.inline")}
+            className={cn(
+              "inline-flex items-center justify-center size-6 transition-colors",
+              mode === "inline"
+                ? "bg-foreground/10 text-foreground"
+                : "text-muted-foreground/60 hover:text-foreground hover:bg-muted/60",
+            )}
+          >
+            <Rows2 className="size-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("split")}
+            title={t("git.diffMode.split")}
+            className={cn(
+              "inline-flex items-center justify-center size-6 transition-colors",
+              mode === "split"
+                ? "bg-foreground/10 text-foreground"
+                : "text-muted-foreground/60 hover:text-foreground hover:bg-muted/60",
+            )}
+          >
+            <Columns2 className="size-3" />
+          </button>
+        </div>
       </div>
       <div className="flex-1 min-h-0 overflow-auto">
-        {diff.isLoading ? (
+        {mode === "split" ? (
+          sides.isLoading ? (
+            <p className="px-3 py-4 text-xs text-muted-foreground italic">
+              {t("common.loading")}
+            </p>
+          ) : sides.isError ? (
+            <p className="px-3 py-4 text-xs text-destructive">
+              {(sides.error as Error).message}
+            </p>
+          ) : (
+            <Suspense
+              fallback={
+                <p className="px-3 py-4 text-xs text-muted-foreground italic">
+                  {t("common.loading")}
+                </p>
+              }
+            >
+              <MonacoDiff
+                original={sides.data?.before ?? ""}
+                modified={sides.data?.after ?? ""}
+                path={selection.path}
+              />
+            </Suspense>
+          )
+        ) : diff.isLoading ? (
           <p className="px-3 py-4 text-xs text-muted-foreground italic">
             {t("common.loading")}
           </p>
@@ -410,7 +490,6 @@ function FileDiffView({
             {(diff.error as Error).message}
           </p>
         ) : selection.untracked ? (
-          // untracked 는 hunk 단위 stage 가 의미 없음 — 통째로 plain DiffView.
           <DiffView text={diff.data?.diff ?? ""} />
         ) : (
           <HunkDiffView

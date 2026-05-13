@@ -27,9 +27,7 @@ import {
   Maximize2,
   MoreHorizontal,
   PanelBottom,
-  PanelLeftOpen,
   PanelRight,
-  X,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useI18n } from "../context/I18nContext.js";
@@ -46,14 +44,14 @@ const MIN_HEIGHT = 160;
 const DEFAULT_HEIGHT = 280;
 // right 모드 폭 — 360은 message + composer가 답답하지 않은 최소.
 const MIN_WIDTH = 280;
-const DEFAULT_WIDTH = 360;
+const DEFAULT_WIDTH = 420;
 
 export type DockPlacement = "bottom" | "right";
 
 export function readDockPlacement(): DockPlacement {
-  if (typeof window === "undefined") return "bottom";
+  if (typeof window === "undefined") return "right";
   const raw = window.localStorage.getItem(PLACEMENT_KEY);
-  return raw === "right" ? "right" : "bottom";
+  return raw === "bottom" ? "bottom" : "right";
 }
 function readSize(key: string, def: number, min: number): number {
   if (typeof window === "undefined") return def;
@@ -82,19 +80,12 @@ export function ChatDock({
   headerExtra,
   placement,
   onPlacementChange,
-  fullSize = false,
-  onShowCanvas,
   children,
 }: {
   title?: string;
   headerExtra?: ReactNode;
-  /** 외부에서 controlled — WorkspacePage가 layout을 바꿔야 해서 같이 알아야 함. */
   placement: DockPlacement;
   onPlacementChange: (next: DockPlacement) => void;
-  /** 캔버스가 접혔을 때 dock이 메인 영역 전체를 차지. height/width 무시. */
-  fullSize?: boolean;
-  /** fullSize 모드에서 캔버스를 다시 펼치는 헤더 버튼 — 미정의면 안 보임. */
-  onShowCanvas?: () => void;
   children: ReactNode;
 }) {
   const { t } = useI18n();
@@ -223,11 +214,8 @@ export function ChatDock({
     [open, maximized, height, width, placement],
   );
 
-  // dock의 실제 크기 — placement 별로 다른 축에 적용.
-  // fullSize 모드(캔버스 collapsed) 일 땐 부모 flex 가 100% 채우게 — 사이즈 헬퍼 우회.
-  const sizeStyle: React.CSSProperties = fullSize
-    ? { flex: 1, minWidth: 0, minHeight: 0 }
-    : placement === "bottom"
+  const sizeStyle: React.CSSProperties =
+    placement === "bottom"
       ? {
           height: !open
             ? HEADER_H
@@ -244,8 +232,6 @@ export function ChatDock({
         };
 
   const isBottom = placement === "bottom";
-  // fullSize 면 리사이즈 핸들 / placement 토글 / maximize 의미 없음 — 다 숨김.
-  const showResizeAndPlacement = !fullSize;
 
   return (
     <aside
@@ -256,8 +242,7 @@ export function ChatDock({
       )}
       style={sizeStyle}
     >
-      {/* 드래그 핸들 — placement 별로 위치/축이 다름. fullSize 모드엔 리사이즈 의미 없음. */}
-      {open && !maximized && showResizeAndPlacement ? (
+      {open && !maximized ? (
         isBottom ? (
           <div
             role="separator"
@@ -328,20 +313,7 @@ export function ChatDock({
           </div>
         ) : null}
         <div className="ml-auto flex items-center gap-0.5 shrink-0">
-          {open && onShowCanvas ? (
-            <button
-              type="button"
-              onClick={onShowCanvas}
-              title={t("workspace.canvas.show")}
-              aria-label={t("workspace.canvas.show")}
-              className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              <PanelLeftOpen className="size-3.5" />
-            </button>
-          ) : null}
-          {/* 부차 액션(placement 토글, 최대화)은 kebab 메뉴로 — 헤더 아이콘 수 ↓.
-              주 액션(접기, 닫기)만 노출. */}
-          {open && showResizeAndPlacement ? (
+          {open ? (
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <button
@@ -407,17 +379,6 @@ export function ChatDock({
               <ChevronUp className="size-3.5" />
             )}
           </button>
-          {open ? (
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              title={t("chat.dock.close")}
-              aria-label={t("chat.dock.close")}
-              className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              <X className="size-3.5" />
-            </button>
-          ) : null}
         </div>
       </header>
       )}

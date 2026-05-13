@@ -5,6 +5,7 @@ import { useEffect } from "react";
 
 export interface LoomEventMap {
   openFile: { path: string };
+  viewFile: { path: string };
   pickThread: { id: string };
   newThread: undefined;
   pickAgent: { id: string };

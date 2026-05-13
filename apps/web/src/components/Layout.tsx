@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Outlet, useMatch } from "react-router-dom";
+import { Outlet, useLocation, useMatch } from "react-router-dom";
 import { ActivityBar, type ActivityKind } from "./ActivityBar.js";
 import { ActivityPanel } from "./ActivityPanel.js";
 import { MainSidebar } from "./MainSidebar.js";
@@ -38,6 +38,8 @@ export function Layout() {
     if (
       raw === "projects" ||
       raw === "files" ||
+      raw === "chat" ||
+      raw === "dashboard" ||
       raw === "skills" ||
       raw === "mcps" ||
       raw === "history" ||
@@ -74,6 +76,20 @@ export function Layout() {
       // ignore
     }
   }, [panelWidth]);
+
+  const location = useLocation();
+  useEffect(() => {
+    if (!inProject) return;
+    const tail = projectMatch?.params["*"] ?? "";
+    const kind: ActivityKind =
+      tail.startsWith("dashboard") ? "dashboard"
+      : tail.startsWith("git") ? "git"
+      : tail.startsWith("runs") ? "history"
+      : tail.startsWith("agents") ? "agents"
+      : tail.startsWith("insights") ? "insights"
+      : "chat";
+    setActivity(kind);
+  }, [inProject, location.pathname, projectMatch?.params]);
 
   const selectActivity = useCallback((next: ActivityKind) => {
     setActivity(next);

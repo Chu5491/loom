@@ -5,7 +5,20 @@
 // loom 의 본질 = 여러 에이전트가 같이 일하는 거니까 화면 전체가 그걸 보여줘야.
 
 import { memo, useMemo, useState } from "react";
-import { Loader2, Pencil, Plus, RefreshCw } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import {
+  Activity,
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  FileCode,
+  GitBranch,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
 import { useParams } from "react-router-dom";
 import type {
   ActiveToolsForAgent,
@@ -13,8 +26,10 @@ import type {
   AdapterManifest,
   Agent,
   Delegation,
+  Run,
   Thread,
 } from "@loom/core";
+import { api, type GitStatus, type GitBranchInfo, type GitCollaborator } from "../../api/client.js";
 import { AdapterIcon } from "../../components/AdapterIcon.js";
 import { agentColorOf, classesFor } from "../../components/agentColor.js";
 import { useI18n } from "../../context/I18nContext.js";
@@ -60,8 +75,8 @@ function liveStateOf(
 // ──────────────────────────────────────────────────────────────────────────
 
 interface Props {
-  projectName: string;
   agents: Agent[];
+  runs: Run[];
   workingIds: Set<string>;
   touchingIds: Set<string>;
   activeTouches: ActiveTouch[];
@@ -81,8 +96,8 @@ interface Props {
 }
 
 export const LiveView = memo(function LiveView({
-  projectName,
   agents,
+  runs,
   workingIds,
   touchingIds,
   activeTouches,
@@ -101,6 +116,14 @@ export const LiveView = memo(function LiveView({
 }: Props) {
   const { id: projectId } = useParams<{ id: string }>();
   const [formState, setFormState] = useState<FormMode | null>(null);
+
+  const lastRunByAgent = useMemo(() => {
+    const m = new Map<string, Run>();
+    for (const r of runs) {
+      if (!m.has(r.agentId)) m.set(r.agentId, r);
+    }
+    return m;
+  }, [runs]);
 
   const fileByAgent = useMemo(() => {
     const m = new Map<string, string>();
@@ -191,26 +214,61 @@ export const LiveView = memo(function LiveView({
 
   const totalWorking = workingIds.size;
 
+  const gitLogQuery = useQuery({
+    queryKey: ["gitLog", projectId],
+    queryFn: () => api.getGitLog(projectId!, { limit: 15, all: true }),
+    enabled: !!projectId,
+    refetchInterval: 30_000,
+  });
+  const gitStatusQuery = useQuery({
+    queryKey: ["gitStatus", projectId],
+    queryFn: () => api.getGitStatus(projectId!),
+    enabled: !!projectId,
+    refetchInterval: 15_000,
+  });
+  const insightsQuery = useQuery({
+    queryKey: ["projectInsights", projectId],
+    queryFn: () => api.getProjectInsights(projectId!, 7),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+  const commits = gitLogQuery.data?.entries ?? [];
+  const gitStatus = gitStatusQuery.data?.status ?? null;
+  const insights = insightsQuery.data ?? null;
+
+  const recentCompletedRuns = useMemo(
+    () =>
+      runs
+        .filter(
+          (r) =>
+            r.status === "succeeded" ||
+            r.status === "failed" ||
+            r.status === "cancelled",
+        )
+        .slice(0, 8),
+    [runs],
+  );
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-background">
-      <Header
-        projectName={projectName}
-        totalWorking={totalWorking}
-        totalAgents={agents.length}
-        onRefresh={onRefresh}
-        refreshing={refreshing}
-      />
-
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-5 py-5">
-          {/* 상단 — 가로 에이전트 카드들. 모두 동시 가시 + 끝에 "+ 추가" 타일.
-              edit / add 는 모두 모달로 — 라이브 화면을 안 떠남. */}
+        <div className="px-5 py-5">
+          <ProjectInfoBar
+            gitStatus={gitStatus}
+            agentCount={agents.length}
+            workingCount={totalWorking}
+            insights={insights?.summary ?? null}
+            onRefresh={onRefresh}
+            refreshing={refreshing}
+          />
+
           <AgentRow
             agents={sortedAgents}
             workingIds={workingIds}
             touchingIds={touchingIds}
             fileByAgent={fileByAgent}
             toolByAgent={toolByAgent}
+            lastRunByAgent={lastRunByAgent}
             adapterByKind={adapterByKind}
             threadByAgent={threadByAgent}
             activeThreadId={activeThreadId}
@@ -224,8 +282,25 @@ export const LiveView = memo(function LiveView({
             onAddAgent={() => setFormState({ mode: "create" })}
           />
 
-          {/* 통합 활동 스트림. */}
           <Stream stream={stream} onPickFile={onPickFile} onPickAgent={onPickAgent} />
+
+          <GitPanel
+            projectId={projectId!}
+            commits={commits}
+            gitStatus={gitStatus}
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+            <RecentRuns
+              runs={recentCompletedRuns}
+              agents={agents}
+              onPickAgent={onPickAgent}
+            />
+            <HotFiles
+              files={insights?.files ?? []}
+              onPickFile={onPickFile}
+            />
+          </div>
         </div>
       </div>
 
@@ -242,53 +317,105 @@ export const LiveView = memo(function LiveView({
 });
 
 // ──────────────────────────────────────────────────────────────────────────
-// 헤더
+// ProjectInfoBar — compact chip row replacing old Header + QuickStats.
 // ──────────────────────────────────────────────────────────────────────────
 
-function Header({
-  totalWorking,
-  totalAgents,
+function ProjectInfoBar({
+  gitStatus,
+  agentCount,
+  workingCount,
+  insights,
   onRefresh,
   refreshing,
 }: {
-  projectName: string;
-  totalWorking: number;
-  totalAgents: number;
+  gitStatus: GitStatus | null;
+  agentCount: number;
+  workingCount: number;
+  insights: {
+    totalRuns: number;
+    totalCostUsd: number;
+    successRate: number;
+    activeRuns: number;
+  } | null;
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
   const { t } = useI18n();
-  // 프로젝트명/라이브 라벨은 위쪽 TeamRibbon + FileTabBar 가 이미 표시. 여기는
-  // 카운트만 — 중복 제거하니 시각 노이즈 ↓.
+  const chip =
+    "inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/50 text-[10.5px] mono text-muted-foreground shrink-0";
+  const dirtyCount = gitStatus
+    ? gitStatus.staged.length + gitStatus.unstaged.length + gitStatus.untracked.length
+    : 0;
+
   return (
-    <header className="shrink-0 flex items-center gap-3 px-4 py-1.5 border-b border-border/60">
-      <span className="text-[11px] text-muted-foreground mono">
-        {totalWorking > 0 ? (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            {totalWorking} {t("live.workingShort")} ·{" "}
-            <span className="text-muted-foreground/60">
-              {totalAgents} {t("live.agentsShort")}
+    <div className="flex flex-wrap items-center gap-1.5 mb-4">
+      {gitStatus?.branch ? (
+        <span className={chip}>
+          <GitBranch className="size-3" />
+          {gitStatus.branch}
+          {gitStatus.ahead ? (
+            <span className="text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-px">
+              <ArrowUp className="size-2.5" />{gitStatus.ahead}
             </span>
-          </span>
-        ) : (
-          <span className="text-muted-foreground/60">
-            {totalAgents} {t("live.agentsShort")} · {t("live.state.idle")}
-          </span>
-        )}
+          ) : null}
+          {gitStatus.behind ? (
+            <span className="text-rose-600 dark:text-rose-400 inline-flex items-center gap-px">
+              <ArrowDown className="size-2.5" />{gitStatus.behind}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+
+      {gitStatus ? (
+        <span className={cn(chip, !gitStatus.clean && "text-amber-700 dark:text-amber-400")}>
+          {gitStatus.clean ? t("git.status.clean") : `${dirtyCount} ${t("git.status.changes")}`}
+        </span>
+      ) : null}
+
+      <span className={cn(chip, workingCount > 0 && "text-emerald-700 dark:text-emerald-400")}>
+        {workingCount > 0 ? (
+          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        ) : null}
+        {agentCount} {t("live.agentsShort")}
+        {workingCount > 0
+          ? ` · ${workingCount} ${t("live.workingShort")}`
+          : null}
       </span>
+
+      {insights ? (
+        <>
+          <span className="text-border mx-0.5">|</span>
+          <span className={chip}>{insights.totalRuns} {t("live.stats.totalRuns")}</span>
+          <span
+            className={cn(
+              chip,
+              insights.successRate >= 0.9
+                ? "text-emerald-700 dark:text-emerald-400"
+                : insights.successRate >= 0.7
+                  ? "text-amber-700 dark:text-amber-400"
+                  : "text-rose-700 dark:text-rose-400",
+            )}
+          >
+            {Math.round(insights.successRate * 100)}%
+          </span>
+          {insights.totalCostUsd > 0 ? (
+            <span className={chip}>${insights.totalCostUsd.toFixed(2)}</span>
+          ) : null}
+        </>
+      ) : null}
+
       {onRefresh ? (
         <button
           type="button"
           onClick={onRefresh}
           title={t("map.refresh")}
           aria-label={t("map.refresh")}
-          className="ml-auto inline-flex size-6 items-center justify-center rounded text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          className="ml-auto inline-flex size-5 items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors shrink-0"
         >
           <RefreshCw className={cn("size-3", refreshing && "animate-spin")} />
         </button>
       ) : null}
-    </header>
+    </div>
   );
 }
 
@@ -302,6 +429,7 @@ function AgentRow({
   touchingIds,
   fileByAgent,
   toolByAgent,
+  lastRunByAgent,
   adapterByKind,
   threadByAgent,
   activeThreadId,
@@ -319,6 +447,7 @@ function AgentRow({
   touchingIds: Set<string>;
   fileByAgent: Map<string, string>;
   toolByAgent: Map<string, ActiveToolsForAgent>;
+  lastRunByAgent: Map<string, Run>;
   adapterByKind: Record<string, AdapterManifest>;
   threadByAgent: Map<string, string>;
   activeThreadId: string | null;
@@ -333,8 +462,8 @@ function AgentRow({
 }) {
   return (
     <div
-      className="grid gap-2 mb-4"
-      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+      className="grid gap-3 mb-4"
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}
     >
       {agents.map((a) => (
         <AgentCard
@@ -345,6 +474,7 @@ function AgentRow({
           touching={touchingIds.has(a.id)}
           file={fileByAgent.get(a.id) ?? null}
           tool={toolByAgent.get(a.id) ?? null}
+          lastRun={lastRunByAgent.get(a.id) ?? null}
           thread={
             threads.find((th) => th.id === threadByAgent.get(a.id)) ?? null
           }
@@ -390,6 +520,7 @@ function AgentCard({
   touching,
   file,
   tool,
+  lastRun,
   thread,
   inActiveThread,
   threadWorking,
@@ -405,10 +536,10 @@ function AgentCard({
   touching: boolean;
   file: string | null;
   tool: ActiveToolsForAgent | null;
+  lastRun: Run | null;
   thread: Thread | null;
   inActiveThread: boolean;
   threadWorking: boolean;
-  /** false 면 hover 시 편집 아이콘 숨김. */
   canEdit: boolean;
   onPickAgent: () => void;
   onPickFile: (path: string) => void;
@@ -423,7 +554,7 @@ function AgentCard({
   return (
     <div
       className={cn(
-        "group relative rounded-xl p-3.5 transition-all",
+        "group relative rounded-xl p-4 transition-all",
         working
           ? "bg-emerald-500/[0.04] ring-1 ring-emerald-500/30 shadow-sm"
           : inActiveThread
@@ -525,6 +656,15 @@ function AgentCard({
           <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
             <Loader2 className="size-3 animate-spin" />
             {t("live.state.thinking")}
+          </span>
+        ) : lastRun ? (
+          <span className="inline-flex items-center gap-1 text-muted-foreground/60">
+            <span>
+              {lastRun.status === "succeeded" ? "✓" : lastRun.status === "failed" ? "✗" : "—"}
+            </span>
+            <span className="truncate">
+              {t("live.lastActive", { time: formatTimeAgo(lastRun.endedAt ?? lastRun.createdAt, t) })}
+            </span>
           </span>
         ) : (
           <span className="text-muted-foreground/60">
@@ -818,5 +958,535 @@ function StreamRow({
         )
       ) : null}
     </li>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// GitPanel — tabbed panel: Commits | Branches | Contributors.
+// ──────────────────────────────────────────────────────────────────────────
+
+type GitTab = "commits" | "branches" | "contributors";
+
+function GitPanel({
+  projectId,
+  commits,
+  gitStatus: externalStatus,
+}: {
+  projectId: string;
+  commits: Array<{
+    sha: string;
+    shortSha: string;
+    authorName: string;
+    authorEmail: string;
+    authoredAt: string;
+    subject: string;
+    refs: string[];
+  }>;
+  gitStatus: GitStatus | null;
+}) {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<GitTab>("commits");
+
+  const branchesQuery = useQuery({
+    queryKey: ["gitBranches", projectId],
+    queryFn: () => api.getGitBranches(projectId),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+  const collabQuery = useQuery({
+    queryKey: ["gitCollaborators", projectId],
+    queryFn: () => api.getGitCollaborators(projectId),
+    enabled: !!projectId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const branches = branchesQuery.data?.branches ?? [];
+  const collaborators = collabQuery.data?.collaborators ?? [];
+  const status = externalStatus;
+  const localBranches = branches.filter((b) => b.kind === "local");
+
+  const changedFiles = useMemo(() => {
+    if (!status) return [];
+    const files: { path: string; status: string; group: "staged" | "unstaged" | "untracked" }[] = [];
+    for (const f of status.staged) files.push({ path: f.path, status: f.status, group: "staged" });
+    for (const f of status.unstaged) files.push({ path: f.path, status: f.status, group: "unstaged" });
+    for (const p of status.untracked) files.push({ path: p, status: "?", group: "untracked" });
+    return files;
+  }, [status]);
+
+  const tabs: { key: GitTab; label: string; count: number }[] = [
+    { key: "commits", label: t("git.tab.commits"), count: commits.length },
+    { key: "branches", label: t("git.tab.branches"), count: localBranches.length },
+    { key: "contributors", label: t("git.tab.contributors"), count: collaborators.length },
+  ];
+
+  const warnings = useMemo(() => {
+    if (!status) return [];
+    const w: { key: string; level: "warn" | "error"; msg: string }[] = [];
+    if (status.conflicted.length > 0) {
+      w.push({ key: "conflict", level: "error", msg: t("git.warn.conflict", { n: status.conflicted.length }) });
+    }
+    if (status.behind && status.ahead) {
+      w.push({ key: "diverged", level: "warn", msg: t("git.warn.diverged", { ahead: status.ahead, behind: status.behind }) });
+    } else if (status.behind) {
+      w.push({ key: "behind", level: "warn", msg: t("git.warn.behind", { n: status.behind }) });
+    }
+    return w;
+  }, [status, t]);
+
+  const goGit = () => navigate(`/projects/${projectId}/git`);
+
+  return (
+    <section className="rounded-xl bg-card/40 ring-1 ring-foreground/5 overflow-hidden mt-4">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40">
+        <GitBranch className="size-3.5 text-muted-foreground shrink-0" />
+        {status ? (
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="text-xs font-semibold text-foreground truncate">
+              {status.branch ?? t("git.status.headDetached")}
+            </span>
+            <span
+              className={cn("size-1.5 rounded-full shrink-0", status.clean ? "bg-emerald-500" : "bg-amber-500")}
+              title={status.clean ? t("git.status.clean") : t("git.status.dirty")}
+            />
+            {status.ahead ? (
+              <span className="text-[10px] mono text-emerald-600 dark:text-emerald-400 shrink-0 inline-flex items-center">
+                <ArrowUp className="size-2.5" />{status.ahead}
+              </span>
+            ) : null}
+            {status.behind ? (
+              <span className="text-[10px] mono text-rose-600 dark:text-rose-400 shrink-0 inline-flex items-center">
+                <ArrowDown className="size-2.5" />{status.behind}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <span className="text-[11px] text-muted-foreground flex-1">{t("common.loading")}</span>
+        )}
+        <button
+          type="button"
+          onClick={goGit}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+        >
+          {t("git.openManager")}
+          <ArrowRight className="size-3" />
+        </button>
+      </div>
+
+      {/* Warnings */}
+      {warnings.length > 0 ? (
+        <div className="px-3 py-1.5 space-y-1 border-b border-border/40">
+          {warnings.map((w) => (
+            <div
+              key={w.key}
+              className={cn(
+                "flex items-start gap-1.5 px-2.5 py-1.5 rounded-md text-[10.5px]",
+                w.level === "error"
+                  ? "bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                  : "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+              )}
+            >
+              <span className="shrink-0">!</span>
+              <span>{w.msg}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {/* 2-column body */}
+      <div className="flex min-h-0" style={{ maxHeight: 320 }}>
+        {/* Left: working tree changes */}
+        <div className="w-56 shrink-0 border-r border-border/40 flex flex-col overflow-hidden">
+          <div className="px-3 py-2 flex items-center justify-between">
+            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {t("git.workingTree")}
+            </h4>
+            {changedFiles.length > 0 ? (
+              <span className="text-[10px] mono text-amber-600 dark:text-amber-400">
+                {changedFiles.length}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {changedFiles.length === 0 ? (
+              <p className="px-3 py-2 text-[10.5px] text-muted-foreground/50">
+                {t("git.workingTree.clean")}
+              </p>
+            ) : (
+              <ul className="px-1 pb-1 space-y-px">
+                {changedFiles.map((f) => (
+                  <li key={`${f.group}-${f.path}`}>
+                    <button
+                      type="button"
+                      onClick={goGit}
+                      className="w-full flex items-center gap-1.5 px-2 py-1 rounded text-left text-[11px] hover:bg-foreground/[0.04] transition-colors"
+                      title={`${f.path} — ${t("git.clickToDiff")}`}
+                    >
+                      <span
+                        className={cn(
+                          "size-4 inline-flex items-center justify-center mono text-[10px] shrink-0",
+                          f.group === "staged"
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : f.status === "M"
+                              ? "text-amber-600 dark:text-amber-400"
+                              : f.status === "D"
+                                ? "text-rose-600 dark:text-rose-400"
+                                : "text-emerald-600 dark:text-emerald-400",
+                        )}
+                      >
+                        {f.group === "untracked" ? "U" : f.status}
+                      </span>
+                      <span className="truncate text-foreground/80">{basename(f.path)}</span>
+                      {f.group === "staged" ? (
+                        <span className="ml-auto text-[9px] mono text-emerald-600 dark:text-emerald-400 shrink-0">S</span>
+                      ) : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* Right: tabbed content */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <div className="flex items-center gap-0.5 px-3 border-b border-border/40 shrink-0">
+            {tabs.map(({ key, label, count }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key)}
+                className={cn(
+                  "px-2.5 py-1.5 text-[10.5px] font-medium transition-colors border-b-2 -mb-px",
+                  tab === key
+                    ? "border-foreground/60 text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground/80",
+                )}
+              >
+                {label}
+                {count > 0 ? (
+                  <span className="ml-1 text-muted-foreground/50">{count}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {tab === "commits" ? (
+              <CommitList commits={commits} />
+            ) : tab === "branches" ? (
+              <BranchList branches={branches} currentBranch={status?.branch ?? null} />
+            ) : (
+              <ContributorList collaborators={collaborators} />
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CommitList({
+  commits,
+}: {
+  commits: Array<{
+    sha: string;
+    shortSha: string;
+    authorName: string;
+    authoredAt: string;
+    subject: string;
+    refs: string[];
+  }>;
+}) {
+  const { t } = useI18n();
+  if (commits.length === 0) {
+    return (
+      <p className="p-4 text-[11px] text-muted-foreground/60">{t("git.empty.commits")}</p>
+    );
+  }
+  return (
+    <ul className="p-3 space-y-1.5">
+      {commits.map((c) => (
+        <li key={c.sha} className="flex items-start gap-2 text-[11px] rounded-lg hover:bg-foreground/[0.03] transition-colors px-1.5 py-1">
+          <span className="mono text-muted-foreground/50 shrink-0 w-14 tabular-nums pt-px">
+            {c.shortSha}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-foreground/85">{c.subject}</p>
+            <p className="text-[10px] text-muted-foreground/50 truncate">
+              {c.authorName} · {formatTimeAgo(c.authoredAt, t)}
+              {c.refs.length > 0 ? (
+                <>
+                  {" · "}
+                  {c.refs.slice(0, 2).map((r) => (
+                    <span
+                      key={r}
+                      className="inline-block px-1 py-px rounded bg-sky-500/10 text-sky-700 dark:text-sky-400 text-[9px] mono mr-0.5"
+                    >
+                      {r}
+                    </span>
+                  ))}
+                </>
+              ) : null}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function BranchList({
+  branches,
+  currentBranch,
+}: {
+  branches: GitBranchInfo[];
+  currentBranch: string | null;
+}) {
+  const { t } = useI18n();
+  const local = branches.filter((b) => b.kind === "local");
+  const remote = branches.filter((b) => b.kind === "remote");
+
+  if (branches.length === 0) {
+    return (
+      <p className="p-4 text-[11px] text-muted-foreground/60">{t("git.empty.branches")}</p>
+    );
+  }
+
+  return (
+    <div className="p-3 space-y-3">
+      {local.length > 0 ? (
+        <div>
+          <h4 className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-semibold mb-1 px-1.5">
+            {t("git.branches.local")}
+          </h4>
+          <ul className="space-y-px">
+            {local.map((b) => (
+              <li
+                key={b.name}
+                className={cn(
+                  "flex items-center gap-2 text-[11px] px-1.5 py-1 rounded-lg transition-colors",
+                  b.name === currentBranch
+                    ? "bg-emerald-500/[0.06] text-foreground"
+                    : "text-foreground/80 hover:bg-foreground/[0.03]",
+                )}
+              >
+                <GitBranch className="size-3 text-muted-foreground/60 shrink-0" />
+                <span className="mono truncate flex-1">{b.name}</span>
+                {b.name === currentBranch ? (
+                  <span className="text-[9px] mono text-emerald-600 dark:text-emerald-400 shrink-0 px-1 py-px rounded bg-emerald-500/10">
+                    {t("git.branches.current")}
+                  </span>
+                ) : null}
+                {b.upstream ? (
+                  <span className="text-[9px] mono text-muted-foreground/40 shrink-0 truncate max-w-24">
+                    {b.upstream}
+                  </span>
+                ) : null}
+                <span className="mono text-muted-foreground/40 text-[10px] shrink-0 w-14 text-right tabular-nums">
+                  {b.head.slice(0, 7)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {remote.length > 0 ? (
+        <div>
+          <h4 className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-semibold mb-1 px-1.5">
+            {t("git.branches.remote")}
+          </h4>
+          <ul className="space-y-px">
+            {remote.map((b) => (
+              <li
+                key={b.name}
+                className="flex items-center gap-2 text-[11px] px-1.5 py-1 rounded-lg text-muted-foreground/60 hover:bg-foreground/[0.03] transition-colors"
+              >
+                <GitBranch className="size-3 shrink-0" />
+                <span className="mono truncate flex-1">{b.name}</span>
+                <span className="mono text-muted-foreground/40 text-[10px] shrink-0 w-14 text-right tabular-nums">
+                  {b.head.slice(0, 7)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ContributorList({
+  collaborators,
+}: {
+  collaborators: GitCollaborator[];
+}) {
+  const { t } = useI18n();
+
+  if (collaborators.length === 0) {
+    return (
+      <p className="p-4 text-[11px] text-muted-foreground/60">{t("git.empty.contributors")}</p>
+    );
+  }
+
+  return (
+    <ul className="p-3 space-y-0.5">
+      {collaborators.map((c) => (
+        <li
+          key={c.email}
+          className="flex items-center gap-2.5 px-1.5 py-1.5 rounded-lg hover:bg-foreground/[0.03] transition-colors"
+        >
+          <span className="inline-flex size-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground/70 shrink-0 uppercase">
+            {c.name.charAt(0)}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11.5px] font-medium text-foreground/90 truncate">{c.name}</p>
+            <p className="text-[10px] mono text-muted-foreground/50 truncate">{c.email}</p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-[11px] mono tabular-nums text-foreground/70">
+              {c.commitCount} {t("git.contributor.commits")}
+            </p>
+            <p className="text-[10px] mono text-muted-foreground/50">
+              {formatTimeAgo(c.lastCommitAt, t)}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Recent Runs — completed run history.
+// ──────────────────────────────────────────────────────────────────────────
+
+function RecentRuns({
+  runs,
+  agents,
+  onPickAgent,
+}: {
+  runs: Run[];
+  agents: Agent[];
+  onPickAgent: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  if (runs.length === 0) return null;
+
+  const agentMap = new Map(agents.map((a) => [a.id, a]));
+
+  return (
+    <section className="rounded-xl bg-card/40 ring-1 ring-foreground/5 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Activity className="size-3.5 text-muted-foreground" />
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("live.recentRuns")}
+        </h3>
+      </div>
+      <ul className="space-y-0.5">
+        {runs.map((r) => {
+          const agent = agentMap.get(r.agentId);
+          return (
+            <li
+              key={r.id}
+              className="flex items-center gap-2 py-1.5 rounded-lg hover:bg-foreground/[0.03] transition-colors px-1.5"
+            >
+              <span className="shrink-0 text-xs">
+                {r.status === "succeeded" ? (
+                  <span className="text-emerald-600 dark:text-emerald-400">✓</span>
+                ) : r.status === "failed" ? (
+                  <span className="text-rose-600 dark:text-rose-400">✗</span>
+                ) : (
+                  <span className="text-muted-foreground">⊘</span>
+                )}
+              </span>
+              {agent ? (
+                <button
+                  type="button"
+                  onClick={() => onPickAgent(agent.id)}
+                  className="text-[11px] font-medium text-foreground/80 hover:underline shrink-0"
+                >
+                  @{agent.name}
+                </button>
+              ) : null}
+              <span
+                className="text-[11px] mono text-muted-foreground/70 truncate min-w-0 flex-1"
+                title={r.prompt}
+              >
+                &ldquo;{r.prompt.slice(0, 60)}
+                {r.prompt.length > 60 ? "…" : ""}&rdquo;
+              </span>
+              <span className="text-[10px] mono text-muted-foreground/50 shrink-0 tabular-nums">
+                {formatTimeAgo(r.endedAt ?? r.createdAt, t)}
+              </span>
+              {r.costUsd != null ? (
+                <span className="text-[10px] mono text-muted-foreground/50 shrink-0 tabular-nums">
+                  ${r.costUsd.toFixed(2)}
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Hot Files — most-touched files from insights.
+// ──────────────────────────────────────────────────────────────────────────
+
+function HotFiles({
+  files,
+  onPickFile,
+}: {
+  files: Array<{
+    path: string;
+    touches: number;
+    additions: number;
+    deletions: number;
+  }>;
+  onPickFile: (path: string) => void;
+}) {
+  const { t } = useI18n();
+  if (files.length === 0) return null;
+
+  return (
+    <section className="rounded-xl bg-card/40 ring-1 ring-foreground/5 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <FileCode className="size-3.5 text-muted-foreground" />
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("live.hotFiles")}
+        </h3>
+      </div>
+      <ul className="space-y-0.5">
+        {files.slice(0, 8).map((f) => (
+          <li
+            key={f.path}
+            className="flex items-center gap-2 py-1 rounded-lg hover:bg-foreground/[0.03] transition-colors px-1.5"
+          >
+            <button
+              type="button"
+              onClick={() => onPickFile(f.path)}
+              className="text-[11px] mono text-foreground/80 hover:text-foreground hover:underline truncate min-w-0 flex-1 text-left"
+              title={f.path}
+            >
+              {basename(f.path)}
+            </button>
+            <span className="text-[10px] mono text-muted-foreground/50 shrink-0 tabular-nums">
+              {t("live.hotFiles.touches", { n: f.touches })}
+            </span>
+            <span className="text-[10px] mono text-emerald-600 dark:text-emerald-400 shrink-0 tabular-nums">
+              +{f.additions}
+            </span>
+            <span className="text-[10px] mono text-rose-600 dark:text-rose-400 shrink-0 tabular-nums">
+              −{f.deletions}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

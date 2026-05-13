@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import NumberFlow from "@number-flow/react";
 import { Drawer } from "vaul";
 import {
+  Copy,
   GitBranch,
   MessagesSquare,
   Network,
@@ -18,6 +19,7 @@ import { toast } from "sonner";
 import type { AdapterManifest, Agent, Thread } from "@loom/core";
 import { api } from "../../api/client.js";
 import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
+import { threadBranchName, shortenBranch, copyToClipboard } from "../../lib/git-utils.js";
 // 큰 청크(@xyflow/react)는 드로어가 처음 열릴 때만 fetch.
 const HandoffGraph = lazy(() =>
   import("../../components/HandoffGraph.js").then((m) => ({
@@ -113,6 +115,25 @@ export function ThreadBar({
         <span className="text-[12px] font-medium text-foreground truncate">
           {activeThread ? activeThread.name : t("thread.bar.newConversation")}
         </span>
+        {activeThread ? (() => {
+          const branch = threadBranchName(activeThread);
+          return branch ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void copyToClipboard(branch).then(() =>
+                  toast.success(t("thread.branch.copied")),
+                );
+              }}
+              title={t("thread.branch.copy")}
+              className="inline-flex items-center gap-1 px-1.5 h-5 rounded bg-sky-500/10 text-[10px] mono text-sky-700 dark:text-sky-400 hover:bg-sky-500/20 transition-colors shrink-0"
+            >
+              {shortenBranch(branch)}
+              <Copy className="size-2.5" />
+            </button>
+          ) : null;
+        })() : null}
       </div>
 
       {/* 참여자 stack — 누가 이 thread에서 발화했는가. live dot은 touching에 한해. */}

@@ -89,7 +89,7 @@ function FilesSection({ projectId }: { projectId: string }) {
         lineByPath={lineByPath}
         changesByPath={changesByPath}
         agents={agents.data?.agents ?? []}
-        onPick={(path) => emit("openFile", { path })}
+        onPick={(path) => emit("viewFile", { path })}
       />
     </div>
   );

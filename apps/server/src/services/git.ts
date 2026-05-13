@@ -3,6 +3,7 @@
 // 모든 entry-point는 git 저장소가 아니거나 실패 시 명시적 에러를 던짐 — 라우트가
 // 매핑해서 4xx/5xx 응답.
 
+import { createHash } from "node:crypto";
 import { execFile as execFileCb, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -230,6 +231,53 @@ export async function getUntrackedDiff(
     }
     throw err;
   });
+}
+
+/**
+ * Working tree 의 before/after 전체 텍스트. Monaco DiffEditor 가 소비.
+ * staged=true → HEAD vs index, staged=false → index vs working copy,
+ * untracked → "" vs working copy.
+ */
+export async function getWorkingTreeSides(
+  cwd: string,
+  path: string,
+  staged: boolean,
+  untracked: boolean,
+): Promise<{ before: string; after: string }> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+
+  const showRef = async (ref: string): Promise<string> => {
+    try {
+      return (await execFile("git", ["show", ref], { cwd, maxBuffer: 16 * 1024 * 1024 })).stdout;
+    } catch {
+      return "";
+    }
+  };
+  const readDisk = async (): Promise<string> => {
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    try {
+      return await readFile(resolve(cwd, path), "utf8");
+    } catch {
+      return "";
+    }
+  };
+
+  if (untracked) {
+    return { before: "", after: await readDisk() };
+  }
+  if (staged) {
+    const [before, after] = await Promise.all([
+      showRef(`HEAD:${path}`),
+      showRef(`:${path}`),
+    ]);
+    return { before, after };
+  }
+  const [before, after] = await Promise.all([
+    showRef(`:${path}`),
+    readDisk(),
+  ]);
+  return { before, after };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -809,4 +857,85 @@ async function runRemote(cwd: string, args: string[]): Promise<RemoteResult> {
     }
     throw new GitCommandError(e.message ?? "git failed", stderr);
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// collaborators — git log 에서 실제 사람 작성자 추출
+
+export interface GitCollaborator {
+  name: string;
+  email: string;
+  avatarUrl: string;
+  commitCount: number;
+  lastCommitAt: string;
+}
+
+const BOT_PATTERNS = [
+  /\[bot\]/i,
+  /noreply@github\.com$/,
+  /dependabot/i,
+  /renovate/i,
+  /greenkeeper/i,
+  /snyk-bot/i,
+];
+
+function isBotEmail(email: string): boolean {
+  return BOT_PATTERNS.some((re) => re.test(email));
+}
+
+function gravatarUrl(email: string): string {
+  const hash = createHash("md5")
+    .update(email.trim().toLowerCase())
+    .digest("hex");
+  return `https://www.gravatar.com/avatar/${hash}?s=64&d=identicon`;
+}
+
+export async function getCollaborators(
+  cwd: string,
+  opts: { limit?: number } = {},
+): Promise<GitCollaborator[]> {
+  if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
+  let out: string;
+  try {
+    out = await git(cwd, [
+      "log",
+      "--all",
+      `--max-count=${opts.limit ?? 3000}`,
+      "--format=%aN%x1f%aE%x1f%aI",
+      "--date-order",
+    ]);
+  } catch (err) {
+    if (err instanceof GitCommandError) return [];
+    throw err;
+  }
+  const byEmail = new Map<
+    string,
+    { name: string; email: string; count: number; lastAt: string }
+  >();
+  for (const line of out.split("\n")) {
+    if (!line) continue;
+    const [name, email, date] = line.split("\x1f");
+    if (!name || !email || !date) continue;
+    if (isBotEmail(email)) continue;
+    const key = email.toLowerCase();
+    const existing = byEmail.get(key);
+    if (existing) {
+      existing.count++;
+      if (date > existing.lastAt) {
+        existing.lastAt = date;
+        existing.name = name;
+      }
+    } else {
+      byEmail.set(key, { name, email, count: 1, lastAt: date });
+    }
+  }
+  return Array.from(byEmail.values())
+    .sort((a, b) => b.lastAt.localeCompare(a.lastAt))
+    .map((c) => ({
+      name: c.name,
+      email: c.email,
+      avatarUrl: gravatarUrl(c.email),
+      commitCount: c.count,
+      lastCommitAt: c.lastAt,
+    }));
 }

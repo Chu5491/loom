@@ -28,6 +28,7 @@ import {
 } from "../../components/ui/dropdown-menu.js";
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
+import { threadBranchName, shortenBranch } from "../../lib/git-utils.js";
 import { formatTimeAgo } from "../../lib/timeAgo.js";
 
 export function ThreadList({
@@ -82,6 +83,11 @@ export function ThreadList({
             <span className="text-[10px] mono text-muted-foreground/60">
               {threads.length}
             </span>
+            {live.filter((th) => th.worktreePath).length > 0 ? (
+              <span className="text-[9px] mono text-sky-600 dark:text-sky-400/80">
+                {t("thread.list.activeBranches", { n: live.filter((th) => th.worktreePath).length })}
+              </span>
+            ) : null}
           </>
         )}
         <div className={cn("flex items-center gap-0.5", !compact && "ml-auto")}>
@@ -331,9 +337,19 @@ function ThreadRow({
           className="flex-1 min-w-0 bg-transparent border-0 px-0 py-0 text-[12px] focus:outline-none focus:ring-0"
         />
       ) : compact ? null : (
-        <span className="flex-1 min-w-0 truncate text-[12px]">
-          {thread.name}
-        </span>
+        <div className="flex-1 min-w-0">
+          <span className="block truncate text-[12px]">
+            {thread.name}
+          </span>
+          {(() => {
+            const branch = threadBranchName(thread);
+            return branch ? (
+              <span className="block truncate text-[10px] text-muted-foreground/50 mono leading-tight">
+                {shortenBranch(branch)}
+              </span>
+            ) : null;
+          })()}
+        </div>
       )}
 
       {!compact && working ? (
