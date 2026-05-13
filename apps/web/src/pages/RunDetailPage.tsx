@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -17,26 +17,7 @@ import { PageScroll } from "../components/PageScroll.js";
 import { RunChangesBrowser } from "../components/RunChangesBrowser.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
 import { useI18n } from "../context/I18nContext.js";
-
-interface ChunkPayload {
-  ts: string;
-  stream: "stdout" | "stderr";
-  data: string;
-}
-
-interface DonePayload {
-  ts: string;
-  status: "succeeded" | "failed" | "cancelled";
-  exitCode: number | null;
-}
-
-interface ParsedLine {
-  id: number;
-  ts: string;
-  stream: "stdout" | "stderr";
-  raw: string;
-  json: unknown | null;
-}
+import { useRunStream, type ParsedLine } from "../lib/useRunStream.js";
 
 function statusTone(s: RunStatus) {
   switch (s) {
@@ -95,82 +76,10 @@ export function RunDetailPage() {
     enabled: !!run.data?.run.threadId,
   });
 
-  const [lines, setLines] = useState<ParsedLine[]>([]);
-  const [streamDone, setStreamDone] = useState<DonePayload | null>(null);
-  const [streamError, setStreamError] = useState<string | null>(null);
+  const { lines, streamDone, streamError } = useRunStream(id);
   const [view, setView] = useState<"pretty" | "raw">("pretty");
   const [autoscroll, setAutoscroll] = useState(true);
-  const stdoutBufRef = useRef("");
-  const stderrBufRef = useRef("");
-  const lineCounterRef = useRef(0);
-  const doneRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!id) return;
-    setLines([]);
-    setStreamDone(null);
-    setStreamError(null);
-    stdoutBufRef.current = "";
-    stderrBufRef.current = "";
-    lineCounterRef.current = 0;
-    doneRef.current = false;
-
-    const ev = new EventSource(`/api/runs/${id}/logs`);
-
-    const flushBuffer = (
-      stream: "stdout" | "stderr",
-      ts: string,
-      ref: { current: string },
-    ): ParsedLine[] => {
-      const parts = ref.current.split("\n");
-      ref.current = parts.pop() ?? "";
-      const produced: ParsedLine[] = [];
-      for (const line of parts) {
-        if (!line) continue;
-        let json: unknown | null = null;
-        try {
-          json = JSON.parse(line);
-        } catch {
-          json = null;
-        }
-        produced.push({ id: lineCounterRef.current++, ts, stream, raw: line, json });
-      }
-      return produced;
-    };
-
-    ev.addEventListener("chunk", (e) => {
-      const payload = JSON.parse((e as MessageEvent).data) as ChunkPayload;
-      const ref = payload.stream === "stdout" ? stdoutBufRef : stderrBufRef;
-      ref.current += payload.data;
-      const produced = flushBuffer(payload.stream, payload.ts, ref);
-      if (produced.length > 0) setLines((prev) => prev.concat(produced));
-    });
-
-    ev.addEventListener("done", (e) => {
-      const done = JSON.parse((e as MessageEvent).data) as DonePayload;
-      for (const stream of ["stdout", "stderr"] as const) {
-        const ref = stream === "stdout" ? stdoutBufRef : stderrBufRef;
-        if (ref.current) {
-          ref.current += "\n";
-          const produced = flushBuffer(stream, done.ts, ref);
-          if (produced.length > 0) setLines((prev) => prev.concat(produced));
-        }
-      }
-      doneRef.current = true;
-      setStreamDone(done);
-      ev.close();
-      qc.invalidateQueries({ queryKey: ["run", id] });
-    });
-
-    ev.onerror = () => {
-      if (!doneRef.current)
-        setStreamError(t("runDetail.streamError.interrupted"));
-      ev.close();
-    };
-
-    return () => ev.close();
-  }, [id, qc, t]);
 
   useEffect(() => {
     if (autoscroll && containerRef.current) {
@@ -432,7 +341,7 @@ function Meta({
   );
 }
 
-function PrettyLine({ line }: { line: ParsedLine }) {
+const PrettyLine = memo(function PrettyLine({ line }: { line: ParsedLine }) {
   const { t } = useI18n();
   const j = line.json as
     | {
@@ -554,7 +463,7 @@ function PrettyLine({ line }: { line: ParsedLine }) {
       </pre>
     </details>
   );
-}
+});
 
 // ────────────────────────────────────────────────────────────────────────────
 // RunActions — finished run 의 우측 상단 액션 모음.

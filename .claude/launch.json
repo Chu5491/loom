@@ -4,8 +4,8 @@
     {
       "name": "loom-web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@loom/web", "run", "dev"],
-      "port": 3201
+      "runtimeArgs": ["--filter", "@loom/web", "run", "dev", "--port", "3205"],
+      "port": 3205
     }
   ]
 }

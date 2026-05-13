@@ -35,8 +35,6 @@ export function Layout() {
     if (typeof window === "undefined") return "projects";
     const raw = window.localStorage.getItem(ACTIVITY_KEY);
     if (raw === "null") return null;
-    // 'agents' 는 사이드바에서 폐기 (라이브 캔버스가 팀 관리를 대체) — 옛 값이면 files.
-    if (raw === "agents") return "files";
     if (
       raw === "projects" ||
       raw === "files" ||

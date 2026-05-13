@@ -1,13 +1,6 @@
-/**
- * Compatibility shim for our pre-shadcn primitives.
- *
- * The whole project is migrating to shadcn/ui (new component files live in
- * components/ui/*). This file preserves the older import surface that
- * AgentsPage / SpecsPage / RunsPage / etc. still use, mapping the legacy
- * prop names (`variant: "primary"|"danger"`, `tone: "neutral"|"warn"`)
- * onto the shadcn variants underneath. Once every page is migrated this
- * file can be deleted.
- */
+// loom 전용 UI 프리미티브.
+// shadcn/ui 위에 프로젝트 어휘(variant: primary/danger, tone: neutral/warn)를
+// 통일하고, Field·Card(padding 기본 포함) 같은 조합 컴포넌트를 제공.
 
 import * as React from "react";
 import { Button as ShadcnButton, type ButtonProps as ShadcnButtonProps } from "./ui/button.js";

@@ -16,18 +16,12 @@
 import type { MarketplaceSkill } from "../marketplace/skill-catalog.js";
 import { logger } from "../logger.js";
 import { getSkillsShApiKey } from "../db/settings.js";
+import { createCachedFetch } from "./cached-fetch.js";
 
 const SKILLS_SH_BASE_URL =
   process.env.LOOM_SKILLS_SH_BASE_URL ?? "https://skills.sh";
-const LIST_CACHE_MS = 24 * 60 * 60 * 1000;
 const DETAIL_CACHE_MS = 60 * 60 * 1000;
 const FETCH_LIMIT = Number(process.env.LOOM_SKILLS_SH_LIMIT ?? "200");
-
-interface ListCache {
-  fetchedAt: number;
-  entries: MarketplaceSkill[];
-}
-let listCache: ListCache | null = null;
 
 interface DetailCacheEntry {
   fetchedAt: number;
@@ -47,44 +41,32 @@ function authHeaders(): Record<string, string> {
   };
 }
 
-/** 첫 페이지에서 metadata 만 가져옴. content 는 install 시 lazy.
- *  키 없으면 호출 자체를 스킵 — 401 폭격 방지. */
-export async function fetchSkillsShCatalog(): Promise<MarketplaceSkill[]> {
-  if (!skillsShAvailable()) return [];
-  if (listCache && Date.now() - listCache.fetchedAt < LIST_CACHE_MS) {
-    return listCache.entries;
-  }
-  try {
+const listCache = createCachedFetch<MarketplaceSkill>({
+  name: "skills.sh",
+  ttlMs: 24 * 60 * 60 * 1000,
+  errorRetryMs: 60_000,
+  fetch: async () => {
     const url = `${SKILLS_SH_BASE_URL}/api/v1/skills?page=0&perPage=${FETCH_LIMIT}`;
     const res = await fetch(url, {
       headers: authHeaders(),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) {
-      throw new Error(`skills.sh http ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`skills.sh http ${res.status}`);
     const json = (await res.json()) as unknown;
     const data = (json as { data?: unknown[] })?.data ?? [];
     if (!Array.isArray(data)) throw new Error("skills.sh: unexpected shape");
-
     const entries: MarketplaceSkill[] = [];
     for (const raw of data) {
       const e = parseListItem(raw);
       if (e) entries.push(e);
     }
-    listCache = { fetchedAt: Date.now(), entries };
     return entries;
-  } catch (err) {
-    logger.warn(
-      { err: (err as Error).message },
-      "skills.sh fetch failed (will retry next request after short cache)",
-    );
-    listCache = {
-      fetchedAt: Date.now() - (LIST_CACHE_MS - 60_000),
-      entries: [],
-    };
-    return [];
-  }
+  },
+});
+
+export async function fetchSkillsShCatalog(): Promise<MarketplaceSkill[]> {
+  if (!skillsShAvailable()) return [];
+  return listCache.get();
 }
 
 interface SkillsShListItem {
@@ -184,8 +166,7 @@ function extractSkillContent(json: unknown): string | null {
   return null;
 }
 
-/** 테스트용. */
 export function clearSkillsShCache(): void {
-  listCache = null;
+  listCache.clear();
   detailCache.clear();
 }

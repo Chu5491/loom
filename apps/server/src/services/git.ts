@@ -258,6 +258,26 @@ export async function commit(
   return { sha };
 }
 
+/**
+ * Stage all changes + commit in one shot. Returns null when the working
+ * tree is clean (nothing to commit). Used by run-service to auto-commit
+ * after a run finishes in a thread worktree.
+ */
+export async function autoCommitAll(
+  cwd: string,
+  message: string,
+): Promise<{ sha: string } | null> {
+  if (!(await isGitRepo(cwd))) return null;
+  // git add -A 로 untracked / modified / deleted 전부.
+  await git(cwd, ["add", "-A"]);
+  // 커밋할 게 있는지 먼저 확인 — 빈 커밋 방지.
+  const status = await git(cwd, ["status", "--porcelain"]);
+  if (!status.trim()) return null;
+  await git(cwd, ["commit", "-m", message]);
+  const sha = (await git(cwd, ["rev-parse", "HEAD"])).trim();
+  return { sha };
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // log + branches (graph 용)
 

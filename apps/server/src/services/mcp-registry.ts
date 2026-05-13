@@ -20,35 +20,23 @@
 // 캐시: 24h in-memory. 처음 요청만 네트워크.
 
 import type { MarketplaceMcp } from "../marketplace/mcp-catalog.js";
-import { logger } from "../logger.js";
+import { createCachedFetch } from "./cached-fetch.js";
 
 const REGISTRY_BASE_URL =
   process.env.LOOM_MCP_REGISTRY_URL ?? "https://registry.modelcontextprotocol.io";
-const CACHE_MS = 24 * 60 * 60 * 1000;
-// 첫 페이지로 받을 개수. registry 에 수천 개 있어 한 번에 다 받으면 응답 큼.
-// UI 가 client-side search 만 하므로 의미 있는 첫 페이지 사이즈 + nextCursor 무시.
-// 더 많이 보고 싶으면 LOOM_MCP_REGISTRY_LIMIT 으로 override.
 const FETCH_LIMIT = Number(process.env.LOOM_MCP_REGISTRY_LIMIT ?? "200");
 
-interface CacheEntry {
-  fetchedAt: number;
-  entries: MarketplaceMcp[];
-}
-let cache: CacheEntry | null = null;
-
-export async function fetchOfficialMcpRegistry(): Promise<MarketplaceMcp[]> {
-  if (cache && Date.now() - cache.fetchedAt < CACHE_MS) {
-    return cache.entries;
-  }
-  try {
+const registryCache = createCachedFetch<MarketplaceMcp>({
+  name: "mcp-registry",
+  ttlMs: 24 * 60 * 60 * 1000,
+  errorRetryMs: 60_000,
+  fetch: async () => {
     const url = `${REGISTRY_BASE_URL}/v0/servers?limit=${FETCH_LIMIT}`;
     const res = await fetch(url, {
       headers: { Accept: "application/json", "User-Agent": "loom" },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) {
-      throw new Error(`mcp-registry http ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`mcp-registry http ${res.status}`);
     const json = (await res.json()) as unknown;
     const servers = (json as { servers?: unknown[] })?.servers ?? [];
     if (!Array.isArray(servers)) {
@@ -59,18 +47,11 @@ export async function fetchOfficialMcpRegistry(): Promise<MarketplaceMcp[]> {
       const e = parseRegistryServer(wrap);
       if (e) entries.push(e);
     }
-    cache = { fetchedAt: Date.now(), entries };
     return entries;
-  } catch (err) {
-    logger.warn(
-      { err: (err as Error).message },
-      "mcp-registry fetch failed (will retry on next request after cache miss)",
-    );
-    // 실패는 짧게 캐시 — 1분만. 네트워크가 잠시 끊겼다 다시 살아나는 흔한 경우 대응.
-    cache = { fetchedAt: Date.now() - (CACHE_MS - 60_000), entries: [] };
-    return [];
-  }
-}
+  },
+});
+
+export const fetchOfficialMcpRegistry = registryCache.get;
 
 interface RegistryServer {
   name?: string;
@@ -175,7 +156,4 @@ function lastSegment(qualifiedName: string): string {
   return slash >= 0 ? qualifiedName.slice(slash + 1) : qualifiedName;
 }
 
-/** 테스트용. */
-export function clearMcpRegistryCache(): void {
-  cache = null;
-}
+export const clearMcpRegistryCache = registryCache.clear;

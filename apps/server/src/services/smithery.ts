@@ -15,42 +15,29 @@
 // 이 파일이 그 shape 을 가정하는 유일한 곳 — bug 가 보이면 여기만 손보면 됨.
 
 import type { MarketplaceMcp } from "../marketplace/mcp-catalog.js";
-import { logger } from "../logger.js";
 import { getSmitheryApiKey } from "../db/settings.js";
+import { createCachedFetch } from "./cached-fetch.js";
 
 const SMITHERY_BASE_URL =
   process.env.LOOM_SMITHERY_BASE_URL ?? "https://registry.smithery.ai";
-const CACHE_MS = 24 * 60 * 60 * 1000;
 const PAGE_SIZE = 50;
-
-interface CacheEntry {
-  fetchedAt: number;
-  entries: MarketplaceMcp[];
-}
-let cache: CacheEntry | null = null;
+const CACHE_TTL = 24 * 60 * 60 * 1000;
 
 export function smitheryAvailable(): boolean {
   return !!getSmitheryApiKey();
 }
 
+const smitheryCache = createCachedFetch<MarketplaceMcp>({
+  name: "smithery",
+  ttlMs: CACHE_TTL,
+  // 실패 시 전체 TTL 캐시 — 같은 프로세스에서 매 클릭마다 재시도 안 하게.
+  errorRetryMs: CACHE_TTL,
+  fetch: () => fetchPage(1),
+});
+
 export async function fetchSmitheryCatalog(): Promise<MarketplaceMcp[]> {
   if (!smitheryAvailable()) return [];
-  if (cache && Date.now() - cache.fetchedAt < CACHE_MS) {
-    return cache.entries;
-  }
-  try {
-    const entries = await fetchPage(1);
-    cache = { fetchedAt: Date.now(), entries };
-    return entries;
-  } catch (err) {
-    logger.warn(
-      { err: (err as Error).message },
-      "smithery fetch failed (disabled until next process start)",
-    );
-    // 실패도 캐시 — 같은 프로세스에서 매 클릭마다 재시도 안 하게.
-    cache = { fetchedAt: Date.now(), entries: [] };
-    return [];
-  }
+  return smitheryCache.get();
 }
 
 async function fetchPage(page: number): Promise<MarketplaceMcp[]> {
@@ -132,7 +119,4 @@ function pickString(
   return null;
 }
 
-/** 테스트 / 개발용. 캐시 비움. */
-export function clearSmitheryCache(): void {
-  cache = null;
-}
+export const clearSmitheryCache = smitheryCache.clear;

@@ -32,6 +32,7 @@ import {
   startToolTracking,
   stopToolTracking,
 } from "./active-tools.js";
+import { autoCommitAll } from "./git.js";
 import { diffStat, snapshotWorkTree } from "./git-snapshot.js";
 import { appendChunk, finishLog, startLog } from "./log-store.js";
 import { trackActiveRun, untrackActiveRun } from "./run/active-runs.js";
@@ -116,7 +117,8 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const project = getProject(agent.projectId);
 
   // 스레드 결정 (explicit > inherit-from-parent > create-fresh).
-  const threadId = resolveThreadForRun({
+  // git-first: 새 thread 생성 시 worktree 도 자동 할당 (async).
+  const threadId = await resolveThreadForRun({
     explicitThreadId: input.threadId ?? null,
     parentRunId: input.parentRunId ?? null,
     prompt: input.prompt,
@@ -202,6 +204,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     loadout,
     mcpServers,
     abort,
+    !!thread?.worktreePath,
   );
 
   return { ok: true, run: getRun(pendingRun.id)! };
@@ -217,6 +220,7 @@ async function executeRun(
   loadout: AgentLoadout,
   mcpServers: ReturnType<typeof getMcpServersByIds>,
   abort: AbortController,
+  inWorktree: boolean,
 ): Promise<void> {
   const log = runLogger(runId, {
     agentId: agent.id,
@@ -325,6 +329,18 @@ async function executeRun(
     } catch {
       // best-effort. 변경 영속화 실패가 run을 실패시키면 안 됨.
     }
+
+    // git-first: worktree 브랜치에서 돌았으면 변경사항 자동 커밋.
+    // 메인 checkout 에서는 건드리지 않음 — 사용자가 직접 커밋하도록.
+    if (inWorktree) {
+      try {
+        const msg = `loom: ${agent.name} run ${runId.slice(0, 8)}`;
+        await autoCommitAll(cwd, msg);
+      } catch {
+        log.warn("auto-commit failed (best-effort)");
+      }
+    }
+
     stopTracking(runId);
     stopToolTracking(runId);
     untrackActiveRun(runId);

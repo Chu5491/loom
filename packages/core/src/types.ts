@@ -2,7 +2,7 @@ export type AgentRole = "engineer" | "researcher" | "reviewer" | "writer" | "oth
 
 export type ThreadStatus = "active" | "done" | "archived";
 
-export type AdapterKind = "claude-code" | "gemini" | "codex" | "cursor" | string;
+export type AdapterKind = "claude-code" | "gemini" | "codex" | "opencode" | string;
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -298,4 +298,31 @@ export interface FileHistoryEntry {
   runStatus: RunStatus;
   createdAt: string;
   endedAt: string | null;
+}
+
+// ─── Git Account ──────────────────────────────────────────────────────────
+
+export type GitProvider = "github" | "gitlab" | "unknown";
+
+export interface GitAuthStatus {
+  authenticated: boolean;
+  provider: GitProvider;
+  username: string | null;
+  /** gh auth 가 설치돼 있지 않으면 false — UI 가 설치 안내를 보여줌. */
+  ghInstalled: boolean;
+}
+
+export interface GitRepo {
+  nameWithOwner: string;
+  description: string | null;
+  url: string;
+  sshUrl: string;
+  isPrivate: boolean;
+  defaultBranch: string;
+  updatedAt: string;
+}
+
+export interface GitOrg {
+  login: string;
+  description: string | null;
 }

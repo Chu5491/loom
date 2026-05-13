@@ -36,8 +36,8 @@ import {
 const createSchema = z.object({
   projectId: z.string().min(1),
   name: z.string().min(1).max(120),
-  /** When true, allocate an isolated git worktree for this thread so
-   *  it can run alongside other threads without conflicting edits. */
+  /** false 를 명시하면 worktree 생성을 건너뛰고 프로젝트 path 를 공유.
+   *  기본값은 true — git-first 체제에서 thread = branch + worktree. */
   isolate: z.boolean().optional(),
 });
 
@@ -70,12 +70,12 @@ threadsRoute.post("/", async (c) => {
   }
   const thread = createThread(parsed.data);
 
-  // Isolation is best-effort. If the project isn't a git repo or git
-  // worktree fails, the thread still exists with worktree_path = NULL
-  // and runs fall back to the shared project path. Surface the error
-  // shape so the client can decide whether to warn the user.
+  // git-first: 모든 thread 에 worktree + branch 를 기본 생성.
+  // isolate=false 명시 시에만 건너뜀 (레거시 호환 / non-git 프로젝트 fallback).
+  // 실패해도 thread 자체는 살아남고 프로젝트 path 를 공유.
+  const shouldIsolate = parsed.data.isolate !== false;
   let worktreeError: string | undefined;
-  if (parsed.data.isolate) {
+  if (shouldIsolate) {
     const result = await createWorktreeForThread(thread.id, project.path);
     if (result.ok) {
       setThreadWorktreePath(thread.id, result.path);

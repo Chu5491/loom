@@ -4,7 +4,7 @@
 // 모든 에이전트를 *동시에* 보고 (상단 가로 카드들), 그 아래에 *통합 활동 스트림*.
 // loom 의 본질 = 여러 에이전트가 같이 일하는 거니까 화면 전체가 그걸 보여줘야.
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Loader2, Pencil, Plus, RefreshCw } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type {
@@ -80,7 +80,7 @@ interface Props {
   refreshing?: boolean;
 }
 
-export function LiveView({
+export const LiveView = memo(function LiveView({
   projectName,
   agents,
   workingIds,
@@ -239,7 +239,7 @@ export function LiveView({
       />
     </div>
   );
-}
+});
 
 // ──────────────────────────────────────────────────────────────────────────
 // 헤더

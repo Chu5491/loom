@@ -8,6 +8,7 @@ import { adaptersRoute } from "./routes/adapters.js";
 import { agentsRoute } from "./routes/agents.js";
 import { healthRoute } from "./routes/health.js";
 import { gitRoute } from "./routes/git.js";
+import { gitAccountRoute } from "./routes/git-account.js";
 import { geminiSyncRoute } from "./routes/gemini-sync.js";
 import { insightsRoute } from "./routes/insights.js";
 import { mcpServersRoute } from "./routes/mcp-servers.js";
@@ -37,6 +38,7 @@ app.route("/api/runs", runsRoute);
 app.route("/api/insights", insightsRoute);
 app.route("/api/settings", settingsRoute);
 app.route("/api/threads", threadsRoute);
+app.route("/api/git-account", gitAccountRoute);
 app.route("/api", gitRoute);
 
 app.onError((err, c) => {

@@ -7,6 +7,9 @@ import type {
   Delegation,
   FileContent,
   FileHistoryEntry,
+  GitAuthStatus,
+  GitOrg,
+  GitRepo,
   McpServer,
   ModelListResult,
   PreferredEditor,
@@ -775,4 +778,22 @@ export const api = {
     request<{ cleared: number }>(`/api/threads/${id}/reset-session`, {
       method: "POST",
     }),
+
+  // ── Git Account
+  getGitAuthStatus: () =>
+    request<GitAuthStatus>("/api/git-account/auth-status"),
+  getGitRepos: (opts: { org?: string; limit?: number; sort?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.org) qs.set("org", opts.org);
+    if (opts.limit) qs.set("limit", String(opts.limit));
+    if (opts.sort) qs.set("sort", opts.sort);
+    const suffix = qs.toString() ? `?${qs}` : "";
+    return request<{ repos: GitRepo[] }>(`/api/git-account/repos${suffix}`);
+  },
+  getGitOrgs: () =>
+    request<{ orgs: GitOrg[] }>("/api/git-account/orgs"),
+  searchGitRepos: (q: string, limit = 20) =>
+    request<{ repos: GitRepo[] }>(
+      `/api/git-account/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
 };

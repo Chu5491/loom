@@ -1,6 +1,7 @@
-# CLAUDE.md — loom 작업 가이드
+# CLAUDE.md
 
-> 이 문서는 이 저장소에서 작업하는 사람(또는 Claude)을 위한 작업 원칙과 어댑터 구현 가이드.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 > 사용자 관점 문서는 [README.md](./README.md), 초기 설계는 [SLIM-HARNESS-DESIGN.md](./SLIM-HARNESS-DESIGN.md).
 
 ---
@@ -9,272 +10,154 @@
 
 **여러 CLI 에이전트(claude / gemini / codex / opencode …)를 한 워크스페이스에서 같이 부리는 협업 도구.**
 
-시작은 얇은 dispatcher였고, thread / worktree / 핸드오프 / 비용 표시까지 더해지면서 "에이전트들이 같이 일하는 방"의 모습으로 자라남. 단, dispatcher 시절의 핵심 신념은 그대로:
-
-**자동 주입은 죄.** 사용자가 적은 prompt + 사용자가 명시적으로 첨부한 spec — 그게 CLI에 도달하는 입력의 전부다. 시스템 프롬프트 / AGENTS.md / skill bundle을 어댑터가 몰래 끼워넣지 말 것.
+핵심 신념: **자동 주입은 죄.** 사용자가 적은 prompt + 사용자가 명시적으로 첨부한 spec — 그게 CLI에 도달하는 입력의 전부다. 시스템 프롬프트 / AGENTS.md / skill bundle을 어댑터가 몰래 끼워넣지 말 것.
 
 ---
 
-## 2. 핵심 기능 (구현 우선순위)
+## 2. 빌드 · 테스트 · 개발
 
-이 저장소에서 우리가 정말 신경 쓸 기능은 이게 전부다. 그 외는 다 noise.
+```bash
+pnpm install                    # 의존성 설치
+pnpm dev                        # 서버(3200) + Vite(3201) 동시 기동
+pnpm dev:server                 # 서버만
+pnpm dev:web                    # UI만
+pnpm build                      # 전 워크스페이스 빌드
+pnpm typecheck                  # tsc --noEmit (전 워크스페이스)
+pnpm test                       # vitest run (전 워크스페이스)
+```
 
-### Done
+단일 패키지 테스트:
+```bash
+pnpm --filter @loom/server test               # 서버 테스트
+pnpm --filter @loom/adapter-claude-code test   # 어댑터 단일 테스트
+pnpm --filter @loom/adapter-utils test         # adapter-utils 테스트
+```
 
-| # | 기능 | 위치 |
-| - | --- | --- |
-| 1 | 에이전트 CRUD (+ 색상 / autonomy) | `apps/server/src/db/agents.ts` + `routes/agents.ts` + `apps/web/src/pages/agents/*` |
-| 2 | Spec(MD) CRUD + 에디터 | `db/specs.ts` + `routes/specs.ts` + `pages/SpecsPage.tsx` |
-| 3 | Run 라이프사이클 (start / cancel / status) | `services/run-service.ts` + `services/run/*` |
-| 4 | SSE 실시간 로그 | `routes/runs.ts` (`/:id/logs`) + `services/log-store.ts` |
-| 5 | Spec 첨부 (composePrompt 합성) | `services/run/prompt-composer.ts` |
-| 6 | claude-code 어댑터 | `packages/adapters/claude-code/` |
-| 7 | i18n (en/ko) + 테마 (system/light/dark) | `apps/web/src/context/` |
-| 8 | 통합 UI + 파일 관리 | `pages/WorkspacePage.tsx` + `pages/workspace/*` + `ChangedFiles` + Git 스냅샷 |
-| 9 | **Threads** — 대화 단위 컨테이너, parent run 핸드오프 추적 | `db/threads.ts` + `pages/workspace/ThreadBar.tsx` |
-| 10 | **Worktree 격리** — thread별 분리된 git worktree (옵션) | `services/worktree.ts` + `threads.worktree_path` |
-| 11 | **Cost 표시** — CLI가 보고하는 cost_usd 그대로 보여줌 (자체 추정 X) | `runs.cost_usd` |
-| 12 | **Session resume** — 같은 thread/agent의 직전 session_id를 다음 run에 feed | `runs.session_id` + `runs.resumed_session_id` |
-| 13 | **구조화 로깅** — pino 기반 `runLogger(runId)` 자식 로거 | `apps/server/src/logger.ts` |
+단일 테스트 파일:
+```bash
+cd apps/server && npx vitest run test/run-lifecycle.test.ts
+cd packages/adapters/claude-code && npx vitest run src/index.test.ts
+```
 
-### To do — 다음 작업 범위
-
-| # | 기능 | 비고 |
-| - | --- | --- |
-| 14 | **공유 어댑터 유틸** (`@loom/adapter-utils`) | `spawnProcess` + `defineCliAdapter` factory |
-| 15 | **gemini 어댑터** | 구글 gemini CLI |
-| 16 | **codex 어댑터** | OpenAI codex CLI (`codex exec`) |
-| 17 | **opencode 어댑터** | SST opencode CLI (`opencode run`) |
-| 18 | 모든 어댑터 server registry 등록 | `apps/server/src/adapters/registry.ts` |
-
-### 여전히 안 함
-
-- 인증 / 멀티 테넌트
-- 비용을 자체 추정 / 외부 시스템에 적재 (CLI가 주는 값만 표시)
-- 어댑터 자동 발견 / 플러그인 마켓
-- skill bundle / system prompt 자동 합성
-- 추가 의존성 — 정말 꼭 필요한 게 아니면 추가 금지
+- Node ≥ 22 필수 (better-sqlite3 ABI 127)
+- `scripts/dev.sh`가 homebrew/nvm의 node@22를 자동으로 PATH에 넣음
+- Vite dev server(3201)가 `/api` 요청을 서버(3200)로 프록시
+- 테스트는 vitest, `pool: "forks"` + `singleFork: true`. 테스트 setup이 임시 `LOOM_DATA_DIR` 생성/정리
 
 ---
 
-## 3. 코딩 원칙 (AI 냄새 제거)
+## 3. 아키텍처
 
-### 3.1 이름
+### 3.1 패키지 구조
 
-- 짧게, 도메인 단어로. `xxxManager`, `xxxHelper`, `xxxService`, `xxxFactory` 같은 추상 어휘 금지
-- 이미 존재하는 단어 재사용. `Run` 이미 있으면 `RunInstance` 만들지 말 것
-- 변수에 `data`, `info`, `result` 같은 비정보적 이름 금지 (의미가 있으면 그 의미를 이름에 담을 것)
+```
+packages/core/               타입 + 인터페이스 (런타임 의존성 0)
+packages/adapter-utils/       spawnProcess + defineCliAdapter (Node 표준만)
+packages/adapters/
+  claude-code/                claude CLI 어댑터
+  gemini/                     gemini CLI 어댑터
+  codex/                      codex CLI 어댑터
+  opencode/                   opencode CLI 어댑터
+apps/server/                  Hono + better-sqlite3 + SSE
+apps/web/                     React + Vite + Tailwind 4 + Monaco
+```
 
-### 3.2 주석
+의존 방향: `core ← adapter-utils ← adapter-* ← server`. Web은 `@loom/core` 타입만 import. 어댑터는 server 내부를 모른다.
 
-- WHAT 주석 금지. 코드를 읽으면 알 수 있는 건 주석 안 씀
-  ```ts
-  // ❌ DB에서 agent를 가져온다
-  const agent = getAgent(id);
-  ```
-- WHY 주석만 허용. 비직관적 결정 / 회피 / 의도가 있을 때
-  ```ts
-  // ✅ stream-json은 verbose 없이 쓰면 진행률이 빠지므로 기본 활성화
-  if (verbose ?? outputFormat === "stream-json") args.push("--verbose");
-  ```
-- TODO/FIXME는 GitHub issue로 옮길 수 없으면 추가하지 말 것 (썩는다)
+### 3.2 서버 흐름
 
-### 3.3 추상화
+`routes/` → `services/` → `db/` 3계층. Hono 라우트에서 zod 검증, 서비스에서 비즈니스 로직, db는 better-sqlite3 prepared statement.
 
-- **3번 반복되기 전엔 추상화하지 말 것.** 2번까진 복붙해도 좋다 (rule of three)
-- 인터페이스 멤버는 정말 다양하게 구현돼야 할 때만. 하나만 있으면 함수로 충분
-- "혹시 나중에 필요할까봐" 인자 추가 금지. 필요해질 때 추가
+핵심 경로:
+- **Run 시작**: `routes/runs.ts` POST → `services/run-service.ts` → 어댑터 `spawn()` → `child_process.spawn` → SSE로 stdout/stderr 스트리밍
+- **Run 로그**: `routes/runs.ts` GET `/:id/logs` → `services/log-store.ts` 인메모리 버퍼 → SSE EventSource
+- **Git 스냅샷**: run 시작/종료 시 `services/git-snapshot.ts`로 commit-tree 전후 diff 캡처 (working index 건드리지 않음)
 
-### 3.4 모듈 경계
+### 3.3 프론트엔드
 
-- 패키지(`@loom/*`)는 책임 단위로만 분리:
-  - `@loom/core` — 타입 + 인터페이스 (런타임 의존성 0)
-  - `@loom/adapter-utils` — `spawnProcess` + `defineCliAdapter` (Node 표준만 사용)
-  - `@loom/adapter-<kind>` — 단일 CLI에 대한 인자 빌드 + 등록 객체. 50줄 안쪽
-  - `@loom/server` — Hono + DB + 라우트
-  - `@loom/web` — React UI
+React Router (lazy-loaded pages) + TanStack Query + i18n Context + Theme Context. API 호출은 `api/client.ts` 단일 파일. Monaco Editor로 파일 뷰 + diff. SSE는 `EventSource`로 직접 구독.
+
+### 3.4 어댑터 아키텍처
+
+`defineCliAdapter<TConfig>()` 팩토리가 각 CLI의 차이를 흡수:
+
+| Adapter | prompt 전달 | session resume | tool 추출 |
+|---------|-------------|----------------|-----------|
+| claude-code | stdin | `--resume` | stream-json 파싱 |
+| gemini | `--prompt` arg | 없음 | 없음 |
+| codex | stdin | 없음 | 없음 |
+| opencode | trailing arg | `--session` | 없음 |
+
+어댑터는 `buildCommand()` (순수 함수, 테스트 대상) + 옵션 훅(`resolveEnv`, `applyResume`, `extractSessionId`, `extractTouchedPaths`, `extractTouchedEdits`, `extractToolUses`)으로 구성. 등록은 `apps/server/src/adapters/registry.ts`.
+
+---
+
+## 4. 코딩 원칙
+
+### 이름
+- 짧게, 도메인 단어로. `xxxManager`, `xxxHelper`, `xxxService`, `xxxFactory` 금지
+- 이미 있는 단어 재사용. `Run` 있으면 `RunInstance` 만들지 말 것
+- `data`, `info`, `result` 같은 비정보적 이름 금지
+
+### 주석
+- WHAT 주석 금지. WHY 주석만 (비직관적 결정 / 회피 / 의도)
+- TODO/FIXME는 GitHub issue로 옮길 수 없으면 추가하지 말 것
+
+### 추상화
+- 3번 반복되기 전엔 추상화하지 말 것 (rule of three)
+- "혹시 나중에 필요할까봐" 인자 추가 금지
+
+### 모듈 경계
 - 어댑터는 server 내부를 모른다 (역방향 import 금지)
 - Web은 `@loom/core` 타입만 import. 서버 모듈 import 금지
+- 외부 의존성 추가 시 커밋 메시지에 이유 명시
 
-### 3.5 외부 의존성
-
-- 표준 라이브러리로 가능하면 그것부터
-- 추가 시 PR 메시지에 이유 명시 (PR이 없는 이 단계에선 커밋 메시지에)
-- 현재 의존성 목록은 "Done"이라고 생각하고, 추가 전 한 번 더 의심
-
-### 3.6 테스트
-
-- **순수 함수는 무조건 테스트** — `buildClaudeCommand`, `composePrompt` 등
-- spawn / I/O는 통합 수준에서 가짜 명령(`/bin/cat`, `/bin/sh -c`)으로 검증
-- 실제 LLM API 호출은 수동 smoke만. 자동 테스트에 넣지 말 것 (요금 + flake)
-- 한 케이스에 한 가지만 검증 — 이름이 시나리오를 설명해야 함
-
-### 3.7 에러 처리
-
+### 에러 처리
 - 사용자 입력은 zod로 경계에서 검증, 그 이후로는 타입 신뢰
-- 절대 `catch (e) { /* ignore */ }` 금지 — 막을 거면 이유를 한 줄 주석
-- 비동기 함수에 `unhandledRejection` 만들지 말 것 (`void executeRun(...)`처럼 fire-and-forget은 함수 내부에서 모든 에러 처리)
+- `catch (e) { /* ignore */ }` 금지 — 막을 거면 이유를 한 줄 주석
+- fire-and-forget 비동기 함수는 내부에서 모든 에러 처리
 
-### 3.8 UI
+### 테스트
+- 순수 함수는 무조건 테스트 (`buildClaudeCommand`, `composePrompt` 등)
+- spawn / I/O는 가짜 명령(`/bin/cat`, `/bin/sh -c`)으로 검증
+- 실제 LLM API 호출은 자동 테스트에 넣지 말 것
+- 한 케이스에 한 가지만 검증, 이름이 시나리오를 설명
 
-- Tailwind 클래스는 기존 패턴 따름. 새 색 / 새 spacing 도입 자제
-- 모든 컴포넌트는 light/dark 양 톤 명시 — 한쪽만 있으면 PR 거절
-- 새 i18n 키는 `apps/web/src/i18n/dictionaries.ts`에 en + ko 둘 다 추가. 한쪽만 추가 금지
-- 새 페이지면 새 라우트. 기존 페이지 안에 모달로 쑤셔넣지 말 것
+### UI
+- Tailwind 클래스는 기존 패턴 따름. 새 색 / spacing 도입 자제
+- 모든 컴포넌트는 light/dark 양 톤 명시
+- i18n 키는 `apps/web/src/i18n/dictionaries.ts`에 en + ko 둘 다 추가
+- 새 페이지면 새 라우트. 모달로 쑤셔넣지 말 것
 
 ---
 
-## 4. 어댑터 추상화 (이번 작업의 핵심)
+## 5. 어댑터 작성 패턴
 
-### 4.1 인터페이스 (변경 안 함)
-
-```ts
-// packages/core/src/adapter.ts
-export interface CliAdapter {
-  kind: string;
-  buildCommand(config: AdapterConfig): { command: string; args: string[] };
-  spawn(args: SpawnArgs, config: AdapterConfig): Promise<RunHandle>;
-}
-```
-
-### 4.2 공유 유틸 (이번에 추가)
-
-`@loom/adapter-utils`는 어댑터들이 똑같이 반복하던 `child_process.spawn` 보일러플레이트를 제거.
-
-```ts
-// packages/adapter-utils/src/spawn.ts
-export function spawnProcess(opts: {
-  command: string;
-  args: string[];
-  cwd: string;
-  env: Record<string, string>;
-  stdin?: string;                 // 빈 문자열이면 안 보냄
-  signal?: AbortSignal;
-  onStdout: (chunk: string) => void;
-  onStderr: (chunk: string) => void;
-}): Promise<RunHandle>;
-
-// packages/adapter-utils/src/define.ts
-export function defineCliAdapter(def: {
-  kind: string;
-  buildCommand: (config: AdapterConfig) => BuiltCommand;
-  inputMode?: "stdin" | "arg";    // default: stdin
-  resolveEnv?: (config: AdapterConfig) => Record<string, string>;
-}): CliAdapter;
-```
-
-### 4.3 새 어댑터 작성 시 따를 패턴
-
-각 어댑터 패키지는 다음 3개만 가지면 충분:
+새 어댑터 패키지는 다음으로 구성:
 
 ```
 packages/adapters/<kind>/
 ├── package.json
 ├── tsconfig.json
 └── src/
-    ├── index.ts          # buildXxxCommand + 내보낸 어댑터 객체
-    └── index.test.ts     # buildXxxCommand 단위 테스트
+    ├── index.ts          # buildXxxCommand + defineCliAdapter + manifest
+    ├── index.test.ts     # buildXxxCommand 단위 테스트
+    ├── manifest.ts       # UI 설정 폼 필드 정의
+    ├── models.ts         # 모델 목록 조회 (listModels)
+    └── probe.ts          # CLI 바이너리 존재/버전 탐지
 ```
 
-`index.ts` 골격 (~30~50줄):
+핵심 규칙:
+- **prompt를 인자에 넣어 shell-quote 시도 금지.** stdin 또는 spawn args 배열로만 전달
+- **stream-json 파싱을 어댑터 안에서 하지 말 것.** 어댑터는 raw chunk만 emit
+- **자동 주입 금지.** 시스템 프롬프트, skill bundle 등 절대 어댑터에서 추가하지 말 것
 
-```ts
-import { defineCliAdapter } from "@loom/adapter-utils";
-import type { AdapterConfig, BuiltCommand } from "@loom/core";
-
-export interface XxxConfig extends AdapterConfig {
-  command?: string;
-  model?: string;
-  extraArgs?: string[];
-  env?: Record<string, string>;
-  // 어댑터 고유 필드
-}
-
-export function buildXxxCommand(config: XxxConfig = {}): BuiltCommand {
-  const command = config.command ?? "xxx";
-  const args: string[] = [/* ... */];
-  if (config.model) args.push("--model", config.model);
-  if (config.extraArgs?.length) args.push(...config.extraArgs);
-  return { command, args };
-}
-
-export const xxxAdapter = defineCliAdapter({
-  kind: "xxx",
-  buildCommand: (cfg) => buildXxxCommand(cfg as XxxConfig),
-  inputMode: "stdin",  // or "arg" if CLI takes prompt as last argument
-  resolveEnv: (cfg) => (cfg as XxxConfig).env ?? {},
-});
-```
-
-### 4.4 어댑터 작성 시 자주 하는 실수
-
-- **사용자 prompt를 인자에 넣어 shell-quote 시도 금지.** stdin 또는 spawn args 배열로만 전달
-- **stream-json 파싱을 어댑터 안에서 하려고 하지 말 것.** 어댑터는 raw chunk만 emit. 파싱은 UI 책임 (`RunDetailPage.tsx`의 `PrettyLine`)
-- **자동 주입 금지.** 시스템 프롬프트, AGENTS.md, skill bundle 등 절대 어댑터에서 추가하지 말 것. 사용자가 spec으로 명시 첨부할 때만 (RunService가 이미 처리)
-
-### 4.5 4개 어댑터의 입력 방식 정리
-
-| Adapter | 명령 | 인자 형태 | prompt 전달 |
-| --- | --- | --- | --- |
-| `claude-code` | `claude` | `--print - --output-format stream-json --verbose [--model X]` | **stdin** |
-| `gemini` | `gemini` | `[--model X] [--yolo]` | **stdin** (non-TTY 모드) |
-| `codex` | `codex` | `exec [--model X] [--cd path]` | **arg** (마지막 인자) |
-| `opencode` | `opencode` | `run [--model X]` | **arg** (마지막 인자) |
-
-각 CLI의 정확한 플래그는 버전마다 다를 수 있으므로 어댑터는 **최소 공통 분모**만 빌드하고, 사용자가 `extraArgs`로 보강할 수 있게 함. `command`도 override 가능 (절대 경로 / 별칭).
+등록: `apps/server/src/adapters/registry.ts`에 import 후 `registerAdapter()` 호출.
 
 ---
 
-## 5. 참고 자료
+## 6. 커밋 자세
 
-### 5.1 paperclip의 어댑터 구현
-
-- `<paperclip>/packages/adapters/claude-local/src/server/execute.ts` — claude args 빌드 (line 497-516)
-- `<paperclip>/packages/adapters/gemini-local/src/server/execute.ts` — gemini 어댑터 패턴
-- `<paperclip>/packages/adapters/codex-local/src/server/execute.ts` — codex 어댑터 패턴
-- `<paperclip>/packages/adapter-utils/src/server-utils.ts` — `runChildProcess` 헬퍼
-
-가져올 것:
-- 인자 빌드 로직 (필요한 부분만)
-- 프로세스 spawn 패턴 (이미 우리는 spawnBin으로 가지고 있음)
-
-가져오지 말 것:
-- `buildClaudeRuntimeConfig` 같은 자동 조립 로직
-- heartbeat 큐
-- skill 시스템 / plugin SDK
-- 회사·조직 메타데이터
-
-### 5.2 각 CLI 공식 문서
-
-| CLI | 저장소 | 핵심 명령 |
-| --- | --- | --- |
-| Claude Code | <https://github.com/anthropics/claude-code> | `claude --print -` |
-| Gemini CLI | <https://github.com/google-gemini/gemini-cli> | `gemini -m <model>` (stdin) |
-| Codex | <https://github.com/openai/codex> | `codex exec [prompt]` |
-| OpenCode | <https://github.com/sst/opencode> | `opencode run <prompt>` |
-
----
-
-## 6. 작업 흐름 (다음 작업 = 어댑터 4종)
-
-1. ✅ 통합 UI + 파일 관리 구현 완료
-2. ✅ Threads / worktree / session resume / cost 표시 / 구조화 로깅 완료
-3. paperclip의 gemini-local / codex-local 인자 빌드만 빠르게 훑기
-4. `@loom/adapter-utils` 패키지 생성 — `spawnProcess` + `defineCliAdapter`
-5. `@loom/adapter-claude-code`를 새 추상화로 리팩토 (테스트 그대로 통과해야 함)
-6. `@loom/adapter-gemini` / `@loom/adapter-codex` / `@loom/adapter-opencode` 추가
-7. `apps/server/src/adapters/registry.ts`에 4개 모두 등록
-8. `pnpm -r typecheck` + `pnpm -r test` 그린 확인
-9. README의 "어댑터 작성" 섹션을 새 추상화에 맞게 업데이트
-
----
-
-## 7. PR 자세 (앞으로의 작업)
-
-- 한 커밋은 한 가지만. "Add gemini adapter + refactor everything" 같은 거대 커밋 금지
+- 한 커밋은 한 가지만
 - 메시지: `<scope>: <imperative>` (e.g. `adapter-gemini: add basic stdin pass-through`)
 - 본문: WHY (이유) + 변경 범위 + 검증 방법
-
----
-
-이 문서가 길어지면 의미가 없으니, 새 원칙은 정말 반복되는 패턴이 보일 때만 추가.

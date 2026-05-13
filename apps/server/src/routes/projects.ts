@@ -15,6 +15,7 @@ import {
   inferRepoName,
   removeClonedRepo,
 } from "../services/project-clone.js";
+import { isGitRepo } from "../services/git.js";
 import {
   listProjectEnv,
   replaceProjectEnv,
@@ -103,9 +104,15 @@ projectsRoute.post("/", async (c) => {
     }
   }
 
-  // 2) Local path 모드 — 기존 흐름 그대로.
+  // 2) Local path 모드 — git repo 여야 프로젝트로 등록 가능.
   if (!data.path) {
     return c.json({ error: "invalid_body" }, 400);
+  }
+  if (!(await isGitRepo(data.path))) {
+    return c.json(
+      { error: "not_a_git_repo", message: "Project path must be a git repository. Run 'git init' first." },
+      422,
+    );
   }
   const project = createProject({
     name: data.name,

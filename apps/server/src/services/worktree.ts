@@ -1,8 +1,8 @@
 import { execFile as execFileCb } from "node:child_process";
 import { mkdir, rm } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { paths } from "../config.js";
 
 const execFile = promisify(execFileCb);
 
@@ -26,7 +26,7 @@ const execFile = promisify(execFileCb);
  */
 
 function worktreesRoot(): string {
-  return join(homedir(), ".loom", "worktrees");
+  return paths.worktrees;
 }
 
 function worktreePathFor(threadId: string): string {
