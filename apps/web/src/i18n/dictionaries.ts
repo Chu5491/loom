@@ -1,4 +1,4 @@
-import { ADAPTER_DICTIONARIES } from "./adapters.js";
+import { ADAPTER_DICTIONARIES, type AdapterDictKey } from "./adapters.js";
 
 export type Lang = "en" | "ko";
 
@@ -7,7 +7,7 @@ export const SUPPORTED_LANGS: Lang[] = ["en", "ko"];
 /** Flat dictionary using dot-separated keys for simple lookup + grep-ability. */
 export type Dictionary = Record<string, string>;
 
-const en: Dictionary = {
+const en = {
   // common
   "common.save": "Save",
   "common.cancel": "Cancel",
@@ -895,9 +895,13 @@ const en: Dictionary = {
   "teamRibbon.lastCommit": "last commit {time}",
   "projects.threads": "{count} threads",
   "projects.gitUrl": "Git URL",
-};
+} satisfies Record<string, string>;
 
-const ko: Dictionary = {
+export type BaseDictKey = keyof typeof en;
+
+export type DictKey = BaseDictKey | AdapterDictKey;
+
+const ko: Record<BaseDictKey, string> = {
   "common.save": "저장",
   "common.cancel": "취소",
   "common.delete": "삭제",

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { isResponse, parseBody } from "./helpers.js";
 import { randomUUID } from "node:crypto";
 import {
   createProject,
@@ -63,12 +64,8 @@ export const projectsRoute = new Hono();
 projectsRoute.get("/", (c) => c.json({ projects: listProjects() }));
 
 projectsRoute.post("/", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const data = parsed.data;
+  const data = await parseBody(c, createSchema);
+  if (isResponse(data)) return data;
 
   // 1) Clone 모드 — projectId 를 미리 결정해 그 id 로 폴더 만들고, 성공하면 row.
   if (data.cloneUrl) {
@@ -130,12 +127,9 @@ projectsRoute.get("/:id", (c) => {
 });
 
 projectsRoute.patch("/:id", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = updateSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const project = updateProject(c.req.param("id"), parsed.data);
+  const upd = await parseBody(c, updateSchema);
+  if (isResponse(upd)) return upd;
+  const project = updateProject(c.req.param("id"), upd);
   if (!project) return c.json({ error: "not_found" }, 404);
   return c.json({ project });
 });
@@ -209,12 +203,9 @@ const envSchema = z.object({
 projectsRoute.put("/:id/env", async (c) => {
   const project = getProject(c.req.param("id"));
   if (!project) return c.json({ error: "not_found" }, 404);
-  const body = await c.req.json().catch(() => null);
-  const parsed = envSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  replaceProjectEnv(project.id, parsed.data.env);
+  const envData = await parseBody(c, envSchema);
+  if (isResponse(envData)) return envData;
+  replaceProjectEnv(project.id, envData.env);
   return c.json({ env: listProjectEnv(project.id) });
 });
 
@@ -345,17 +336,13 @@ const openSchema = z.object({
 projectsRoute.post("/:id/open-in-editor", async (c) => {
   const project = getProject(c.req.param("id"));
   if (!project) return c.json({ error: "not_found" }, 404);
-  const body = await c.req.json().catch(() => ({}));
-  const parsed = openSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
+  const openData = await parseBody(c, openSchema);
+  if (isResponse(openData)) return openData;
 
-  const editor = parsed.data.editor ?? project.preferredEditor ?? "vscode";
+  const editor = openData.editor ?? project.preferredEditor ?? "vscode";
 
-  // path 정규화 + 프로젝트 루트 탈출 차단. project-fs와 같은 규약.
   const projectRoot = resolve(project.path);
-  const sub = parsed.data.path ?? "";
+  const sub = openData.path ?? "";
   const target = sub
     ? resolve(join(projectRoot, normalize(sub)))
     : projectRoot;
@@ -365,7 +352,7 @@ projectsRoute.post("/:id/open-in-editor", async (c) => {
 
   const result = await openInEditor({
     target,
-    line: parsed.data.line,
+    line: openData.line,
     editor,
   });
   if (!result.ok) {

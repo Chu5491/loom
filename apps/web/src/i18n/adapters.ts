@@ -5,7 +5,7 @@ import type { Dictionary, Lang } from "./dictionaries.js";
 // `adapter.<kind>.field.<key>` 형태의 키로 조회하고, 없으면 매니페스트의
 // 영문 원본으로 폴백.
 
-const en: Dictionary = {
+const en = {
   // claude-code
   "adapter.claude-code.description":
     "Anthropic's official CLI for Claude. Strong for engineering, refactor, and tool-use.",
@@ -100,9 +100,11 @@ const en: Dictionary = {
   "adapter.opencode.field.command": "Command override",
   "adapter.opencode.field.extraArgs": "Extra args",
   "adapter.opencode.field.env": "Environment variables",
-};
+} satisfies Record<string, string>;
 
-const ko: Dictionary = {
+export type AdapterDictKey = keyof typeof en;
+
+const ko: Record<AdapterDictKey, string> = {
   // claude-code
   "adapter.claude-code.description":
     "Anthropic의 공식 Claude CLI. 엔지니어링, 리팩토링, 도구 사용에 강합니다.",

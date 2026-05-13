@@ -136,6 +136,13 @@ export function touchThread(id: string): void {
     .run(new Date().toISOString(), id);
 }
 
+export function listAllThreadIds(): Set<string> {
+  const rows = getDb()
+    .prepare<[], { id: string }>("SELECT id FROM threads")
+    .all();
+  return new Set(rows.map((r) => r.id));
+}
+
 export function deleteThread(id: string): boolean {
   const r = getDb().prepare("DELETE FROM threads WHERE id = ?").run(id);
   return r.changes > 0;

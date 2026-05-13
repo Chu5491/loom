@@ -1,6 +1,3 @@
-// Monaco DiffEditor wrapper — before / after 두 텍스트를 받아 split-view 로.
-// MonacoView 와 동일한 폰트/테마 시스템 공유.
-
 import { DiffEditor } from "@monaco-editor/react";
 import { useTheme } from "../context/ThemeContext.js";
 

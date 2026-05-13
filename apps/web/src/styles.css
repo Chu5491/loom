@@ -310,7 +310,8 @@ body {
   color: var(--foreground);
   font-size: 0.9rem;
   line-height: 1.7;
-  overflow-y: auto;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 .prose-loom h1,
 .prose-loom h2,
@@ -335,10 +336,11 @@ body {
 .prose-loom ul,
 .prose-loom ol {
   margin: 0.75em 0;
-  padding-left: 1.5em;
+  padding-left: 1.8em;
+  list-style-position: inside;
 }
-.prose-loom ul { list-style: disc; }
-.prose-loom ol { list-style: decimal; }
+.prose-loom ul { list-style-type: disc; }
+.prose-loom ol { list-style-type: decimal; }
 .prose-loom li { margin: 0.25em 0; }
 .prose-loom code:not(pre code) {
   font-family: var(--font-mono);

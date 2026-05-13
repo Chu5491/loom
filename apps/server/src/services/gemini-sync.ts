@@ -185,6 +185,7 @@ function readSettings(): SettingsShape {
       ? (parsed as SettingsShape)
       : {};
   } catch {
+    // settings file missing or malformed → fresh start
     return {};
   }
 }

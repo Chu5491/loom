@@ -39,6 +39,7 @@ function parseStringArray(json: string): string[] {
       ? parsed
       : [];
   } catch {
+    // malformed JSON in DB column → empty
     return [];
   }
 }
@@ -53,6 +54,7 @@ function parseStringMap(json: string): Record<string, string> {
     }
     return out;
   } catch {
+    // malformed JSON in DB column → empty
     return {};
   }
 }

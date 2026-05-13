@@ -12,6 +12,7 @@ async function ghInstalled(): Promise<boolean> {
     await execFile("gh", ["--version"]);
     return true;
   } catch {
+    // gh not on PATH
     return false;
   }
 }
@@ -83,6 +84,7 @@ export async function listRepos(opts: {
       updatedAt: r.updatedAt,
     }));
   } catch {
+    // gh auth or network failure → empty list
     return [];
   }
 }
@@ -101,6 +103,7 @@ export async function listOrgs(): Promise<GitOrg[]> {
     const lines = stdout.trim().split("\n").filter(Boolean);
     return lines.map((login) => ({ login: login.trim(), description: null }));
   } catch {
+    // gh CLI failure or not authenticated
     return [];
   }
 }
@@ -135,6 +138,7 @@ export async function searchRepos(query: string, limit = 20): Promise<GitRepo[]>
       updatedAt: r.updatedAt,
     }));
   } catch {
+    // gh CLI failure or not authenticated
     return [];
   }
 }

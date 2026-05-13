@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { isResponse, parseBody } from "./helpers.js";
 import {
   buildGeminiSnippet,
   getGeminiSyncStatus,
@@ -30,15 +31,12 @@ const settingsSchema = z.object({
 });
 
 geminiSyncRoute.patch("/settings", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = settingsSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  setGeminiSyncEnabled(parsed.data.enabled);
+  const data = await parseBody(c, settingsSchema);
+  if (isResponse(data)) return data;
+  setGeminiSyncEnabled(data.enabled);
   // enable로 토글한 경우엔 곧장 한 번 머지 — 사용자 입장에서 "켰는데 아직 동기화 X"는
   // 직관에 안 맞음.
-  if (parsed.data.enabled) {
+  if (data.enabled) {
     runGeminiSync();
   }
   return c.json({ status: getGeminiSyncStatus() });

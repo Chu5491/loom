@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { parseBody, isResponse } from "./helpers.js";
 import {
   createMcpServer,
   deleteMcpServer,
@@ -120,13 +121,10 @@ mcpServersRoute.get("/marketplace", async (c) => {
 });
 
 mcpServersRoute.post("/", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
+  const data = await parseBody(c, createSchema);
+  if (isResponse(data)) return data;
   try {
-    const server = createMcpServer(parsed.data);
+    const server = createMcpServer(data);
     autoSyncGemini(`create:${server.name}`);
     return c.json({ server }, 201);
   } catch (err) {
@@ -145,12 +143,9 @@ mcpServersRoute.get("/:id", (c) => {
 });
 
 mcpServersRoute.patch("/:id", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = updateSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const server = updateMcpServer(c.req.param("id"), parsed.data);
+  const data = await parseBody(c, updateSchema);
+  if (isResponse(data)) return data;
+  const server = updateMcpServer(c.req.param("id"), data);
   if (!server) return c.json({ error: "not_found" }, 404);
   autoSyncGemini(`update:${server.name}`);
   return c.json({ server });

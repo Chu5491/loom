@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { isResponse, parseBody } from "./helpers.js";
 import {
   createAgent,
   deleteAgent,
@@ -47,15 +48,12 @@ agentsRoute.get("/", (c) => {
 });
 
 agentsRoute.post("/", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  if (!getProject(parsed.data.projectId)) {
+  const data = await parseBody(c, createSchema);
+  if (isResponse(data)) return data;
+  if (!getProject(data.projectId)) {
     return c.json({ error: "project_not_found" }, 404);
   }
-  const agent = createAgent(parsed.data);
+  const agent = createAgent(data);
   return c.json({ agent }, 201);
 });
 
@@ -67,17 +65,14 @@ agentsRoute.get("/:id", (c) => {
 
 agentsRoute.patch("/:id", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json().catch(() => null);
-  const parsed = updateSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
+  const data = await parseBody(c, updateSchema);
+  if (isResponse(data)) return data;
   const existing = getAgent(id);
   if (!existing) return c.json({ error: "not_found" }, 404);
-  if (parsed.data.projectId && !getProject(parsed.data.projectId)) {
+  if (data.projectId && !getProject(data.projectId)) {
     return c.json({ error: "project_not_found" }, 404);
   }
-  const agent = updateAgent(id, parsed.data);
+  const agent = updateAgent(id, data);
   if (!agent) return c.json({ error: "not_found" }, 404);
   return c.json({ agent });
 });

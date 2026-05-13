@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import { isResponse, parseBody } from "./helpers.js";
 import { getRun, listRuns } from "../db/runs.js";
 import { listChangesForRun } from "../db/run-changes.js";
 import { cancelRun, startRun } from "../services/run-service.js";
@@ -63,12 +64,9 @@ runsRoute.get("/", (c) => {
 });
 
 runsRoute.post("/", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const result = await startRun(parsed.data);
+  const data = await parseBody(c, createSchema);
+  if (isResponse(data)) return data;
+  const result = await startRun(data);
   if (!result.ok) return c.json({ error: result.error }, result.status);
   return c.json({ run: result.run }, 201);
 });

@@ -41,6 +41,7 @@ export const geminiManifest: AdapterManifest = {
       kind: "select",
       key: "outputFormat",
       label: "Output format",
+      help: "stream-json enables structured event parsing. text is plain terminal output.",
       group: "basic",
       options: [
         { value: "stream-json", label: "stream-json (recommended)" },
@@ -66,6 +67,7 @@ export const geminiManifest: AdapterManifest = {
       kind: "string",
       key: "command",
       label: "Command override",
+      help: "Absolute path or alternative binary name. Defaults to `gemini` on PATH.",
       placeholder: "gemini",
       group: "advanced",
     },
@@ -73,6 +75,7 @@ export const geminiManifest: AdapterManifest = {
       kind: "stringList",
       key: "extraArgs",
       label: "Extra args",
+      help: "Appended to the CLI command verbatim.",
       itemPlaceholder: "--debug",
       group: "advanced",
     },

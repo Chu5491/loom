@@ -1,8 +1,9 @@
 import { execFile as execFileCb } from "node:child_process";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { paths } from "../config.js";
+import { logger } from "../logger.js";
 
 const execFile = promisify(execFileCb);
 
@@ -147,4 +148,42 @@ export async function removeWorktreeForThread(
     }
   }
   await rm(path, { recursive: true, force: true }).catch(() => undefined);
+}
+
+/**
+ * Remove worktree directories that no longer have a matching thread in
+ * the database. Called once at server startup to reclaim disk space
+ * leaked by crashes, interrupted deletions, or bugs.
+ *
+ * `knownThreadIds` should be the set of all thread IDs that currently
+ * exist in the DB. Any directory under `paths.worktrees` whose name
+ * isn't in this set gets deleted.
+ */
+export async function pruneOrphanedWorktrees(
+  knownThreadIds: Set<string>,
+): Promise<number> {
+  const root = worktreesRoot();
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    // worktrees dir doesn't exist yet → nothing to prune
+    return 0;
+  }
+  let pruned = 0;
+  for (const name of entries) {
+    if (knownThreadIds.has(name)) continue;
+    const orphanPath = join(root, name);
+    try {
+      await rm(orphanPath, { recursive: true, force: true });
+      pruned++;
+    } catch {
+      // best-effort — log and move on
+      logger.warn({ path: orphanPath }, "failed to prune orphaned worktree");
+    }
+  }
+  if (pruned > 0) {
+    logger.info({ pruned }, "pruned orphaned worktrees");
+  }
+  return pruned;
 }

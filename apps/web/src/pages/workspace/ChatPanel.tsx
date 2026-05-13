@@ -148,7 +148,7 @@ export function ChatPanel({
         ref={bodyRef}
         className="@container/chat relative flex-1 overflow-y-auto overflow-x-hidden bg-card subtle-scrollbar"
       >
-        <div className="mx-auto w-full max-w-3xl py-2">
+        <div className="mx-auto w-full max-w-5xl py-2">
           {agentList.length === 0 ? (
             <Empty
               icon={<Users className="size-10 text-muted-foreground" />}

@@ -18,7 +18,7 @@ import { cn } from "../../lib/utils.js";
 import { basename } from "../../lib/path.js";
 
 const MonacoDiff = lazy(() =>
-  import("../../components/git/MonacoDiff.js").then((m) => ({
+  import("../../components/MonacoDiff.js").then((m) => ({
     default: m.MonacoDiff,
   })),
 );
@@ -475,9 +475,10 @@ function FileDiffView({
               }
             >
               <MonacoDiff
-                original={sides.data?.before ?? ""}
-                modified={sides.data?.after ?? ""}
+                before={sides.data?.before ?? ""}
+                after={sides.data?.after ?? ""}
                 path={selection.path}
+                wrap={false}
               />
             </Suspense>
           )

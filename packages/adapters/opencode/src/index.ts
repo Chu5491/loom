@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { defineCliAdapter } from "@loom/adapter-utils";
-import type { AdapterConfig, BuiltCommand, McpServer } from "@loom/core";
+import type { AdapterConfig, BuiltCommand, McpServer, ToolUse, TouchedEdit } from "@loom/core";
 
 export { opencodeManifest } from "./manifest.js";
 export { opencodeProbe } from "./probe.js";
@@ -23,7 +23,7 @@ export interface OpencodeConfig extends AdapterConfig {
 
 export function buildOpencodeCommand(config: OpencodeConfig = {}): BuiltCommand {
   const command = config.command ?? "opencode";
-  const args: string[] = ["run"];
+  const args: string[] = ["run", "--format", "json"];
   if (config.continueSession) args.push("--continue");
   if (config.sessionId) args.push("--session", config.sessionId);
   if (config.model) args.push("--model", config.model);
@@ -72,12 +72,123 @@ function readUserOpencodeConfig(): Record<string, unknown> {
   }
 }
 
+// ── --format json extraction ───────────────────────────────────────────
+// `opencode run --format json` emits NDJSON:
+//   { type: "tool_use",    timestamp, sessionID, part: { tool, state: { status, input, output } } }
+//   { type: "step_start",  timestamp, sessionID, part: { snapshot } }
+//   { type: "step_finish", timestamp, sessionID, part: { ... } }
+//   { type: "text",        timestamp, sessionID, part: { text } }
+//   { type: "error",       timestamp, sessionID, error }
+//
+// Tool names: edit, write, bash, read, grep, glob, list, webfetch, websearch,
+//   question, skill, task, todowrite, apply_patch, codesearch.
+// Input params: filePath (for edit/write/read), oldString/newString (for edit),
+//   command (for bash), path (for glob/list).
+
+interface OpencodeEvent {
+  type?: string;
+  sessionID?: string;
+  part?: {
+    tool?: string;
+    state?: {
+      status?: string;
+      input?: Record<string, unknown>;
+      output?: string;
+    };
+  };
+}
+
+function* parseOpencodeLines(chunk: string): Generator<OpencodeEvent> {
+  for (const raw of chunk.split("\n")) {
+    const line = raw.trim();
+    if (!line || line[0] !== "{") continue;
+    try {
+      yield JSON.parse(line) as OpencodeEvent;
+    } catch {
+      // partial / malformed line
+    }
+  }
+}
+
+export function extractOpencodeSessionId(chunk: string): string | null {
+  for (const ev of parseOpencodeLines(chunk)) {
+    if (typeof ev.sessionID === "string" && ev.sessionID) {
+      return ev.sessionID;
+    }
+  }
+  return null;
+}
+
+const FILE_EDIT_TOOLS: Record<string, true> = { edit: true, write: true };
+
+export function extractOpencodeTouchedEdits(chunk: string): TouchedEdit[] {
+  const out: TouchedEdit[] = [];
+  for (const ev of parseOpencodeLines(chunk)) {
+    if (ev.type !== "tool_use" || !ev.part?.tool) continue;
+    if (!FILE_EDIT_TOOLS[ev.part.tool]) continue;
+    const input = ev.part.state?.input;
+    const filePath = input?.["filePath"];
+    if (typeof filePath !== "string" || !filePath) continue;
+    const target = input?.["oldString"];
+    out.push({ path: filePath, target: typeof target === "string" ? target : undefined });
+  }
+  return out;
+}
+
+export function extractOpencodeTouchedPaths(chunk: string): string[] {
+  return extractOpencodeTouchedEdits(chunk).map((e) => e.path);
+}
+
+export function extractOpencodeToolUses(chunk: string): ToolUse[] {
+  const out: ToolUse[] = [];
+  for (const ev of parseOpencodeLines(chunk)) {
+    if (ev.type !== "tool_use" || !ev.part?.tool) continue;
+    out.push({
+      name: ev.part.tool,
+      target: summariseOpencodeInput(ev.part.tool, ev.part.state?.input),
+    });
+  }
+  return out;
+}
+
+function summariseOpencodeInput(
+  name: string,
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!input) return undefined;
+  const filePath = input["filePath"];
+  if (typeof filePath === "string" && filePath) return filePath;
+  const pathVal = input["path"];
+  if (typeof pathVal === "string" && pathVal) return pathVal;
+  if (name === "bash") {
+    const cmd = input["command"];
+    if (typeof cmd === "string") return cmd.slice(0, 80);
+  }
+  if (name === "grep" || name === "codesearch") {
+    const pat = input["pattern"] ?? input["query"];
+    if (typeof pat === "string") return pat;
+  }
+  if (name === "webfetch") {
+    const url = input["url"];
+    if (typeof url === "string") return url.slice(0, 80);
+  }
+  if (name === "websearch") {
+    const q = input["query"];
+    if (typeof q === "string") return q.slice(0, 80);
+  }
+  return undefined;
+}
+
 // `opencode run` takes the prompt as a trailing positional argument.
 export const opencodeAdapter = defineCliAdapter<OpencodeConfig>({
   kind: "opencode",
   buildCommand: buildOpencodeCommand,
   prompt: { via: "arg" },
   resolveEnv: (cfg) => cfg.env ?? {},
+  extractSessionId: extractOpencodeSessionId,
+  extractTouchedPaths: extractOpencodeTouchedPaths,
+  extractTouchedEdits: extractOpencodeTouchedEdits,
+  extractToolUses: extractOpencodeToolUses,
   // `opencode run --session <id>` resumes that conversation. Splice it
   // in front of the existing args so the runtime session beats any
   // static `config.sessionId` the user may have set.

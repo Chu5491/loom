@@ -1,5 +1,5 @@
 import { defineCliAdapter } from "@loom/adapter-utils";
-import type { AdapterConfig, BuiltCommand, McpServer } from "@loom/core";
+import type { AdapterConfig, BuiltCommand, McpServer, ToolUse, TouchedEdit } from "@loom/core";
 
 export { codexManifest } from "./manifest.js";
 export { codexProbe } from "./probe.js";
@@ -71,11 +71,107 @@ export function toCodexMcpOverrides(server: McpServer): string[] {
   return out;
 }
 
+// ── --json NDJSON extraction ───────────────────────────────────────────
+// `codex exec --json` emits NDJSON with event types:
+//   thread.started  → { type: "thread.started", thread_id }
+//   item.started    → { type: "item.started", item: { id, type, ... } }
+//   item.completed  → { type: "item.completed", item: { id, type, ... } }
+//   item.updated    → { type: "item.updated", item: { id, type, ... } }
+//   turn.completed  → { type: "turn.completed", usage: { ... } }
+//
+// Item types: file_change, command_execution, agent_message, mcp_tool_call,
+//   web_search, reasoning, plan_update.
+//
+// file_change items carry `changes: [{ path, kind }]`.
+// command_execution items carry `command` (string).
+
+interface CodexEvent {
+  type?: string;
+  thread_id?: string;
+  item?: {
+    id?: string;
+    type?: string;
+    command?: string;
+    changes?: Array<{ path?: string; kind?: string }>;
+    text?: string;
+  };
+}
+
+function* parseCodexLines(chunk: string): Generator<CodexEvent> {
+  for (const raw of chunk.split("\n")) {
+    const line = raw.trim();
+    if (!line || line[0] !== "{") continue;
+    try {
+      yield JSON.parse(line) as CodexEvent;
+    } catch {
+      // partial / malformed line
+    }
+  }
+}
+
+export function extractCodexSessionId(chunk: string): string | null {
+  for (const ev of parseCodexLines(chunk)) {
+    if (ev.type === "thread.started" && typeof ev.thread_id === "string" && ev.thread_id) {
+      return ev.thread_id;
+    }
+  }
+  return null;
+}
+
+export function extractCodexTouchedEdits(chunk: string): TouchedEdit[] {
+  const out: TouchedEdit[] = [];
+  for (const ev of parseCodexLines(chunk)) {
+    if (!ev.item || ev.item.type !== "file_change") continue;
+    if (!Array.isArray(ev.item.changes)) continue;
+    for (const change of ev.item.changes) {
+      if (typeof change.path === "string" && change.path) {
+        out.push({ path: change.path });
+      }
+    }
+  }
+  return out;
+}
+
+export function extractCodexTouchedPaths(chunk: string): string[] {
+  return extractCodexTouchedEdits(chunk).map((e) => e.path);
+}
+
+export function extractCodexToolUses(chunk: string): ToolUse[] {
+  const out: ToolUse[] = [];
+  for (const ev of parseCodexLines(chunk)) {
+    if (!ev.item?.type) continue;
+    // item.started / item.completed / item.updated 모두 처리
+    const t = ev.item.type;
+    if (t === "command_execution") {
+      const cmd = ev.item.command;
+      out.push({ name: "bash", target: typeof cmd === "string" ? cmd.slice(0, 80) : undefined });
+    } else if (t === "file_change") {
+      const changes = ev.item.changes;
+      if (Array.isArray(changes)) {
+        for (const c of changes) {
+          if (typeof c.path === "string") {
+            out.push({ name: "apply_patch", target: c.path });
+          }
+        }
+      }
+    } else if (t === "mcp_tool_call") {
+      out.push({ name: "mcp_tool_call", target: undefined });
+    } else if (t === "web_search") {
+      out.push({ name: "web_search", target: undefined });
+    }
+  }
+  return out;
+}
+
 export const codexAdapter = defineCliAdapter<CodexConfig>({
   kind: "codex",
   buildCommand: buildCodexCommand,
   prompt: { via: "stdin" },
   resolveEnv: (cfg) => cfg.env ?? {},
+  extractSessionId: extractCodexSessionId,
+  extractTouchedPaths: extractCodexTouchedPaths,
+  extractTouchedEdits: extractCodexTouchedEdits,
+  extractToolUses: extractCodexToolUses,
   // codex는 `-c key=value`로 TOML 한 줄씩 덮어쓰기. 서버마다 command/args/env를
   // dot-path로 풀어 인자에 넣음. 트레일링 `-` (stdin marker) 앞에 splice.
   applyMcpServers: ({ args, servers }) => {

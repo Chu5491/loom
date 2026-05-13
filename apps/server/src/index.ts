@@ -3,7 +3,9 @@ import { Hono } from "hono";
 import { config } from "./config.js";
 import { getDb, closeDb } from "./db/client.js";
 import { markOrphanedRunsFailed } from "./db/runs.js";
+import { listAllThreadIds } from "./db/threads.js";
 import { logger } from "./logger.js";
+import { pruneOrphanedWorktrees } from "./services/worktree.js";
 import { adaptersRoute } from "./routes/adapters.js";
 import { agentsRoute } from "./routes/agents.js";
 import { healthRoute } from "./routes/health.js";
@@ -24,6 +26,9 @@ const orphans = markOrphanedRunsFailed();
 if (orphans > 0) {
   logger.warn({ orphans }, "marked orphaned runs as failed");
 }
+
+// fire-and-forget — disk cleanup shouldn't block server startup
+pruneOrphanedWorktrees(listAllThreadIds()).catch(() => undefined);
 
 const app = new Hono();
 

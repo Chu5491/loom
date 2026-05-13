@@ -18,7 +18,7 @@ function rowToSpec(row: SpecRow): Spec {
     const parsed = JSON.parse(row.tags);
     if (Array.isArray(parsed)) tags = parsed.filter((t): t is string => typeof t === "string");
   } catch {
-    // ignore
+    // legacy rows or malformed JSON → empty
   }
   return {
     id: row.id,

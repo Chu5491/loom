@@ -1,28 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { TouchedEdit } from "@loom/core";
+import type { ActiveTouch, TouchedEdit } from "@loom/core";
 
-/**
- * In-memory tracker for "an agent is editing this file right now."
- * Populated as run-service taps tool_use events out of the CLI's
- * stdout, drained when the run finishes (run_changes takes over for
- * post-mortem reads).
- *
- * Lives in process memory only — restart wipes it, which is fine: any
- * still-active runs are themselves transient and will repopulate on
- * their next tool_use, and finished runs already moved to run_changes.
- */
-export interface ActiveTouch {
-  runId: string;
-  agentId: string;
-  projectId: string;
-  /** Project-relative paths the agent has touched in this run. */
-  paths: string[];
-  /** Most recent edit locations (path + line). Only populated when the
-   *  adapter surfaces a target string we can grep for. Capped per-run
-   *  so a long edit storm doesn't balloon the payload. */
-  locations: { path: string; line: number }[];
-}
+export type { ActiveTouch };
 
 interface RunEntry {
   agentId: string;

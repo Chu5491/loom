@@ -228,7 +228,7 @@ async function executeRun(
   });
   log.info({ cwd, resumeSessionId }, "run starting");
   try {
-    const beforeRef = await snapshotWorkTree(cwd).catch(() => null);
+    const beforeRef = await snapshotWorkTree(cwd);
     if (beforeRef) setRunBeforeRef(runId, beforeRef);
 
     const tapCost = makeCostTapper(runId);
@@ -318,7 +318,7 @@ async function executeRun(
   } finally {
     // after-snapshot은 모든 종료 경로 커버 — success/failure/cancel/throw —
     // diff baseline이 일관되게 유지됨.
-    const afterRef = await snapshotWorkTree(cwd).catch(() => null);
+    const afterRef = await snapshotWorkTree(cwd);
     if (afterRef) setRunAfterRef(runId, afterRef);
 
     // run_changes 영속화. file-history 쿼리가 SQL join으로 답할 수 있게.

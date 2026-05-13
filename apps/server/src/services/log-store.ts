@@ -76,7 +76,7 @@ export function finishLog(runId: string, done: DoneEvent): void {
     try {
       listener({ kind: "done", done });
     } catch {
-      // ignore
+      // listener errors must not break log finalization
     }
   }
   // keep entry briefly so subscribers attached during finalization can drain;

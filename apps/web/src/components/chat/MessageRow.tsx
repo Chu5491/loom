@@ -56,7 +56,7 @@ export function MessageRow({
         </div>
       ) : null}
 
-      <div className={cn("min-w-0", isUser ? "max-w-[90%] @[480px]:max-w-[85%]" : "max-w-[95%] @[480px]:max-w-[90%] flex-1")}>
+      <div className={cn("min-w-0", isUser ? "max-w-[90%] @[480px]:max-w-[85%]" : "flex-1")}>
         {/* 이름 + 시간 헤더 */}
         {!isContinuation ? (
           <div className={cn(
@@ -76,7 +76,7 @@ export function MessageRow({
         {/* 말풍선 */}
         <div
           className={cn(
-            "relative rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+            "relative rounded-2xl px-4 py-3 @[480px]:px-5 @[480px]:py-3.5 text-sm leading-relaxed break-words",
             isUser
               ? "bg-primary text-primary-foreground rounded-tr-md"
               : "bg-muted/60 dark:bg-muted/40 text-foreground rounded-tl-md",

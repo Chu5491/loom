@@ -10,15 +10,19 @@ import {
 import {
   DICTIONARIES,
   SUPPORTED_LANGS,
+  type DictKey,
   type Lang,
 } from "../i18n/dictionaries.js";
 
 const STORAGE_KEY = "loom.lang";
 
+/** Autocomplete for known keys while still accepting dynamic strings. */
+type TranslateKey = DictKey | (string & Record<never, never>);
+
 interface I18nContextValue {
   lang: Lang;
   setLang: (l: Lang) => void;
-  t: (key: string, vars?: Record<string, string | number>) => string;
+  t: (key: TranslateKey, vars?: Record<string, string | number>) => string;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -63,7 +67,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const t = useCallback(
-    (key: string, vars?: Record<string, string | number>) => {
+    (key: TranslateKey, vars?: Record<string, string | number>) => {
       const dict = DICTIONARIES[lang];
       const value = dict[key] ?? DICTIONARIES.en[key] ?? key;
       return interpolate(value, vars);

@@ -4,6 +4,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import { isResponse, parseBody } from "./helpers.js";
 import {
   getApiKeyStatuses,
   getSettings,
@@ -29,12 +30,9 @@ const putGlobalRuleSchema = z.object({
 });
 
 settingsRoute.put("/global-rule", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = putGlobalRuleSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const updated = setGlobalRule(parsed.data.content);
+  const data = await parseBody(c, putGlobalRuleSchema);
+  if (isResponse(data)) return data;
+  const updated = setGlobalRule(data.content);
   return c.json({ settings: updated });
 });
 
@@ -57,17 +55,14 @@ const putApiKeysSchema = z
   );
 
 settingsRoute.put("/api-keys", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = putApiKeysSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  if (parsed.data.smithery !== undefined) {
-    setSmitheryApiKey(parsed.data.smithery);
+  const data = await parseBody(c, putApiKeysSchema);
+  if (isResponse(data)) return data;
+  if (data.smithery !== undefined) {
+    setSmitheryApiKey(data.smithery);
     clearSmitheryCache();
   }
-  if (parsed.data.skillsSh !== undefined) {
-    setSkillsShApiKey(parsed.data.skillsSh);
+  if (data.skillsSh !== undefined) {
+    setSkillsShApiKey(data.skillsSh);
     clearSkillsShCache();
   }
   return c.json(getApiKeyStatuses());

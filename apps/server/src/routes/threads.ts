@@ -16,6 +16,7 @@ import {
   createWorktreeForThread,
   removeWorktreeForThread,
 } from "../services/worktree.js";
+import { isResponse, parseBody } from "./helpers.js";
 
 /**
  * Threads API.
@@ -59,21 +60,19 @@ threadsRoute.get("/", (c) => {
 });
 
 threadsRoute.post("/", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const project = getProject(parsed.data.projectId);
+  const data = await parseBody(c, createSchema);
+  if (isResponse(data)) return data;
+
+  const project = getProject(data.projectId);
   if (!project) {
     return c.json({ error: "project_not_found" }, 404);
   }
-  const thread = createThread(parsed.data);
+  const thread = createThread(data);
 
   // git-first: 모든 thread 에 worktree + branch 를 기본 생성.
   // isolate=false 명시 시에만 건너뜀 (레거시 호환 / non-git 프로젝트 fallback).
   // 실패해도 thread 자체는 살아남고 프로젝트 path 를 공유.
-  const shouldIsolate = parsed.data.isolate !== false;
+  const shouldIsolate = data.isolate !== false;
   let worktreeError: string | undefined;
   if (shouldIsolate) {
     const result = await createWorktreeForThread(thread.id, project.path);
@@ -100,14 +99,12 @@ threadsRoute.get("/:id", (c) => {
 });
 
 threadsRoute.patch("/:id", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = updateSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
+  const data = await parseBody(c, updateSchema);
+  if (isResponse(data)) return data;
+
   const thread = updateThread(
     c.req.param("id"),
-    parsed.data as UpdateThreadInput,
+    data as UpdateThreadInput,
   );
   if (!thread) return c.json({ error: "not_found" }, 404);
   return c.json({ thread });

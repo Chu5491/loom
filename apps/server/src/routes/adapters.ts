@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { isResponse, parseBody } from "./helpers.js";
 import {
   getManifest,
   listManifests,
@@ -33,12 +34,9 @@ const testBodySchema = z.object({
 });
 
 adaptersRoute.post("/:kind/test", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = testBodySchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const result = await testAdapter(c.req.param("kind"), parsed.data);
+  const data = await parseBody(c, testBodySchema);
+  if (isResponse(data)) return data;
+  const result = await testAdapter(c.req.param("kind"), data);
   if (!result) return c.json({ error: "not_found" }, 404);
   return c.json({ test: result });
 });

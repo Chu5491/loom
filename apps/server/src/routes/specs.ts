@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { isResponse, parseBody } from "./helpers.js";
 import {
   createSpec,
   deleteSpec,
@@ -95,12 +96,9 @@ specsRoute.get("/marketplace/content", async (c) => {
 });
 
 specsRoute.post("/", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const spec = createSpec(parsed.data);
+  const data = await parseBody(c, createSchema);
+  if (isResponse(data)) return data;
+  const spec = createSpec(data);
   return c.json({ spec }, 201);
 });
 
@@ -111,12 +109,9 @@ specsRoute.get("/:id", (c) => {
 });
 
 specsRoute.patch("/:id", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = updateSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  }
-  const spec = updateSpec(c.req.param("id"), parsed.data);
+  const data = await parseBody(c, updateSchema);
+  if (isResponse(data)) return data;
+  const spec = updateSpec(c.req.param("id"), data);
   if (!spec) return c.json({ error: "not_found" }, 404);
   return c.json({ spec });
 });
