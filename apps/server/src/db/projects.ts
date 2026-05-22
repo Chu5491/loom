@@ -7,6 +7,7 @@ interface ProjectRow {
   name: string;
   path: string;
   description: string | null;
+  rule: string;
   preferred_editor: string | null;
   clone_url: string | null;
   created_at: string;
@@ -34,6 +35,7 @@ function rowToProject(row: ProjectRow): Project {
     name: row.name,
     path: row.path,
     description: row.description,
+    rule: row.rule ?? "",
     preferredEditor: normalizeEditor(row.preferred_editor),
     cloneUrl: row.clone_url,
     createdAt: row.created_at,
@@ -53,6 +55,7 @@ export interface UpdateProjectInput {
   name?: string;
   path?: string;
   description?: string | null;
+  rule?: string;
   preferredEditor?: PreferredEditor | null;
 }
 
@@ -111,6 +114,7 @@ export function updateProject(
     ...(input.name !== undefined && { name: input.name }),
     ...(input.path !== undefined && { path: input.path }),
     ...(input.description !== undefined && { description: input.description }),
+    ...(input.rule !== undefined && { rule: input.rule }),
     ...(input.preferredEditor !== undefined && {
       preferredEditor: input.preferredEditor,
     }),
@@ -119,18 +123,34 @@ export function updateProject(
   getDb()
     .prepare(
       `UPDATE projects
-         SET name = ?, path = ?, description = ?, preferred_editor = ?, updated_at = ?
+         SET name = ?, path = ?, description = ?, rule = ?, preferred_editor = ?, updated_at = ?
        WHERE id = ?`,
     )
     .run(
       merged.name,
       merged.path,
       merged.description,
+      merged.rule,
       merged.preferredEditor,
       merged.updatedAt,
       id,
     );
   return merged;
+}
+
+export function getProjectRule(id: string): string | null {
+  const row = getDb()
+    .prepare<[string], { rule: string }>("SELECT rule FROM projects WHERE id = ?")
+    .get(id);
+  return row ? row.rule : null;
+}
+
+export function setProjectRule(id: string, rule: string): boolean {
+  const now = new Date().toISOString();
+  const result = getDb()
+    .prepare("UPDATE projects SET rule = ?, updated_at = ? WHERE id = ?")
+    .run(rule, now, id);
+  return result.changes > 0;
 }
 
 export function deleteProject(id: string): boolean {

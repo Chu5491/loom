@@ -4,89 +4,28 @@
 // 모든 시간 필터는 `created_at >= now - <windowDays> days` 기준. 정확히 sliding
 // window — 캘린더 day 기준이 아니라 호출 시점 기준 24h * N.
 
+import type {
+  InsightsAgent,
+  InsightsDaily,
+  InsightsFile,
+  InsightsProject,
+  InsightsSummary,
+  InsightsWorkspaceAgent,
+  ProjectInsights,
+  WorkspaceInsights,
+} from "@loom/core";
 import { getDb } from "./client.js";
 
-export interface InsightsSummary {
-  /** 윈도우 안의 모든 run 개수. */
-  totalRuns: number;
-  /** 윈도우 안의 cost_usd 합. cost 가 NULL 인 run 은 합산에서 제외. */
-  totalCostUsd: number;
-  /** 윈도우 안에서 succeeded 비율 (0~1). 분모는 종료된 run 만 — 진행 중 제외. */
-  successRate: number;
-  /** 지금 진행 중(queued + running) 인 run 개수. 윈도우 무관. */
-  activeRuns: number;
-  /** 윈도우 안에서 한 번이라도 실행된 agent 의 수. */
-  activeAgents: number;
-}
-
-export interface InsightsDaily {
-  /** ISO 날짜 (YYYY-MM-DD). 윈도우의 모든 일자가 포함됨 (run 0 인 날도). */
-  day: string;
-  runs: number;
-  succeeded: number;
-  failed: number;
-  cancelled: number;
-  costUsd: number;
-}
-
-export interface InsightsAgent {
-  agentId: string;
-  agentName: string;
-  adapterKind: string;
-  runs: number;
-  succeeded: number;
-  failed: number;
-  cancelled: number;
-  costUsd: number;
-  /** started_at ~ ended_at 평균(초). 둘 다 채워진 run 만 집계. */
-  avgDurationSecs: number | null;
-}
-
-export interface InsightsFile {
-  path: string;
-  /** 윈도우 안에서 이 path 를 건드린 run_changes row 개수. */
-  touches: number;
-  additions: number;
-  deletions: number;
-  /** 마지막으로 건드린 run 의 created_at. */
-  lastTouchedAt: string;
-}
-
-export interface ProjectInsights {
-  windowDays: number;
-  summary: InsightsSummary;
-  daily: InsightsDaily[];
-  agents: InsightsAgent[];
-  files: InsightsFile[];
-}
-
-/** 워크스페이스 전체(=모든 프로젝트 합) 통계. files 섹션은 cross-project 라
- *  noisy 해서 빼고, 대신 프로젝트별 집계를 얹음. */
-export interface WorkspaceInsights {
-  windowDays: number;
-  summary: InsightsSummary & { activeProjects: number };
-  daily: InsightsDaily[];
-  projects: InsightsProject[];
-  agents: InsightsWorkspaceAgent[];
-}
-
-export interface InsightsProject {
-  projectId: string;
-  projectName: string;
-  runs: number;
-  succeeded: number;
-  failed: number;
-  cancelled: number;
-  costUsd: number;
-  /** 윈도우 안의 마지막 run 시각. 한 번도 없으면 null. */
-  lastRunAt: string | null;
-}
-
-/** 프로젝트 정보까지 같이 — 같은 이름 agent 가 여러 프로젝트에 있으면 분리되게. */
-export interface InsightsWorkspaceAgent extends InsightsAgent {
-  projectId: string;
-  projectName: string;
-}
+export type {
+  InsightsAgent,
+  InsightsDaily,
+  InsightsFile,
+  InsightsProject,
+  InsightsSummary,
+  InsightsWorkspaceAgent,
+  ProjectInsights,
+  WorkspaceInsights,
+};
 
 /** sliding window 의 ISO datetime cutoff. SQLite `datetime('now', '-N days')`
  *  와 동일 의미지만 JS 에서 계산해서 한 query 에 박는 게 plan 안정. */

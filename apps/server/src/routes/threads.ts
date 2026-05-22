@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { ThreadStatus } from "@loom/core";
+import { computeOverall, listCiChecks } from "../db/ci-checks.js";
 import { getProject } from "../db/projects.js";
 import { clearThreadSessionIds } from "../db/runs.js";
 import type { UpdateThreadInput } from "../db/threads.js";
@@ -122,6 +123,17 @@ threadsRoute.post("/:id/reset-session", (c) => {
   if (!thread) return c.json({ error: "not_found" }, 404);
   const cleared = clearThreadSessionIds(id);
   return c.json({ cleared });
+});
+
+/**
+ * GET /api/threads/:id/ci-status — 이 스레드에 수신된 CI check 목록 + 전체 상태.
+ */
+threadsRoute.get("/:id/ci-status", (c) => {
+  const id = c.req.param("id");
+  const thread = getThread(id);
+  if (!thread) return c.json({ error: "not_found" }, 404);
+  const checks = listCiChecks(id);
+  return c.json({ checks, overall: computeOverall(checks) });
 });
 
 threadsRoute.delete("/:id", async (c) => {

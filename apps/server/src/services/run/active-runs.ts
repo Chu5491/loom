@@ -5,6 +5,13 @@ import { getRun } from "../../db/runs.js";
 
 const activeRuns = new Map<string, { abort: AbortController }>();
 
+// Synchronous counter incremented *before* any await in startRun,
+// so concurrent requests cannot all pass the limit check.
+let pendingCount = 0;
+
+export function reserveRunSlot(): void { pendingCount++; }
+export function releaseRunSlot(): void { pendingCount = Math.max(0, pendingCount - 1); }
+
 export function trackActiveRun(runId: string, abort: AbortController): void {
   activeRuns.set(runId, { abort });
 }
@@ -30,6 +37,10 @@ export function cancelRun(runId: string): CancelResult {
 
 export function isRunActive(runId: string): boolean {
   return activeRuns.has(runId);
+}
+
+export function activeRunCount(): number {
+  return activeRuns.size + pendingCount;
 }
 
 export function _activeRunIds(): string[] {

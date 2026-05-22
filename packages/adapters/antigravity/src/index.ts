@@ -1,66 +1,59 @@
 import { defineCliAdapter } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, ToolUse, TouchedEdit } from "@loom/core";
 
-export { geminiManifest } from "./manifest.js";
-export { geminiProbe } from "./probe.js";
-export { geminiListModels } from "./models.js";
+export { antigravityManifest } from "./manifest.js";
+export { antigravityProbe } from "./probe.js";
+export { antigravityListModels } from "./models.js";
+export { ANTIGRAVITY_PRESET_MODELS } from "./preset-models.js";
 
-export interface GeminiConfig extends AdapterConfig {
-  command?: string;
+export interface AntigravityConfig extends AdapterConfig {
   model?: string;
+  command?: string;
   extraArgs?: string[];
   env?: Record<string, string>;
-  outputFormat?: "text" | "stream-json";
-  /** Auto-approve all tool calls. Same as the CLI's --yolo / --approval-mode yolo. */
-  yolo?: boolean;
+  /** Auto-approve all tool permission requests without prompting. */
+  dangerouslySkipPermissions?: boolean;
   sandbox?: boolean;
 }
 
-export function buildGeminiCommand(config: GeminiConfig = {}): BuiltCommand {
-  const command = config.command ?? "gemini";
+export function buildAntigravityCommand(config: AntigravityConfig = {}): BuiltCommand {
+  const command = config.command ?? "agy";
   const args: string[] = [];
-  const outputFormat = config.outputFormat ?? "stream-json";
-  args.push("--output-format", outputFormat);
-  if (config.model) args.push("--model", config.model);
-  if (config.yolo) args.push("--approval-mode", "yolo");
-  if (config.sandbox === true) args.push("--sandbox");
-  else if (config.sandbox === false) args.push("--sandbox=none");
+  if (config.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
+  if (config.sandbox) args.push("--sandbox");
   if (config.extraArgs?.length) args.push(...config.extraArgs);
   return { command, args };
 }
 
 // ── stream-json extraction ─────────────────────────────────────────────
-// gemini's `--output-format stream-json` emits NDJSON with event types:
+// Antigravity CLI (Google's successor to Gemini CLI, 2026-06-18) uses
+// the same stream-json NDJSON format:
 //   init        → { type: "init", session_id, model }
 //   tool_use    → { type: "tool_use", tool_name, tool_id, parameters }
 //   tool_result → { type: "tool_result", tool_id, status, output }
 //   message     → { type: "message", role, content }
 //   result      → { type: "result", status, stats }
-//
-// Tool names: replace (edit), write_file, read_file, run_shell_command,
-//   grep_search, glob, google_web_search, web_fetch, invoke_agent, list_directory.
-// File-path parameter is always `file_path`.
 
-interface GeminiStreamEvent {
+interface StreamEvent {
   type?: string;
   session_id?: string;
   tool_name?: string;
   parameters?: Record<string, unknown>;
 }
 
-function* parseLines(chunk: string): Generator<GeminiStreamEvent> {
-  for (const raw of chunk.split("\n")) {
+function* parseLines(chunk: string): Generator<StreamEvent> {
+  for (const raw of chunk.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line[0] !== "{") continue;
     try {
-      yield JSON.parse(line) as GeminiStreamEvent;
+      yield JSON.parse(line) as StreamEvent;
     } catch {
       // partial / malformed line
     }
   }
 }
 
-export function extractGeminiSessionId(chunk: string): string | null {
+export function extractAntigravitySessionId(chunk: string): string | null {
   for (const ev of parseLines(chunk)) {
     if (ev.type === "init" && typeof ev.session_id === "string" && ev.session_id) {
       return ev.session_id;
@@ -71,7 +64,7 @@ export function extractGeminiSessionId(chunk: string): string | null {
 
 const FILE_EDIT_TOOLS: Record<string, true> = { replace: true, write_file: true };
 
-export function extractGeminiTouchedEdits(chunk: string): TouchedEdit[] {
+export function extractAntigravityTouchedEdits(chunk: string): TouchedEdit[] {
   const out: TouchedEdit[] = [];
   for (const ev of parseLines(chunk)) {
     if (ev.type !== "tool_use" || !ev.tool_name) continue;
@@ -84,20 +77,20 @@ export function extractGeminiTouchedEdits(chunk: string): TouchedEdit[] {
   return out;
 }
 
-export function extractGeminiTouchedPaths(chunk: string): string[] {
-  return extractGeminiTouchedEdits(chunk).map((e) => e.path);
+export function extractAntigravityTouchedPaths(chunk: string): string[] {
+  return extractAntigravityTouchedEdits(chunk).map((e) => e.path);
 }
 
-export function extractGeminiToolUses(chunk: string): ToolUse[] {
+export function extractAntigravityToolUses(chunk: string): ToolUse[] {
   const out: ToolUse[] = [];
   for (const ev of parseLines(chunk)) {
     if (ev.type !== "tool_use" || !ev.tool_name) continue;
-    out.push({ name: ev.tool_name, target: summariseGeminiInput(ev.tool_name, ev.parameters) });
+    out.push({ name: ev.tool_name, target: summariseInput(ev.tool_name, ev.parameters) });
   }
   return out;
 }
 
-function summariseGeminiInput(
+function summariseInput(
   name: string,
   params: Record<string, unknown> | undefined,
 ): string | undefined {
@@ -127,28 +120,23 @@ function summariseGeminiInput(
   return undefined;
 }
 
-// gemini reads non-interactive prompts via --prompt <text> rather than stdin.
-export const geminiAdapter = defineCliAdapter<GeminiConfig>({
-  kind: "gemini",
-  buildCommand: buildGeminiCommand,
-  prompt: { via: "arg", flag: "--prompt" },
-  resolveEnv: (cfg) => cfg.env ?? {},
-  extractSessionId: extractGeminiSessionId,
-  extractTouchedPaths: extractGeminiTouchedPaths,
-  extractTouchedEdits: extractGeminiTouchedEdits,
-  extractToolUses: extractGeminiToolUses,
-  // gemini는 런타임에 새 MCP 서버를 등록할 수 없음 — 사용자가 자기
-  // ~/.gemini/settings.json에 등록해둔 서버 중에서 화이트리스트로 제한만 가능.
-  // 따라서 loom의 권한 모델은 "gemini가 이미 알고 있는 서버 중 이 에이전트에
-  // 허용된 이름들로 추렴"으로 동작. 설정에 없는 이름은 그냥 묻혀버림.
-  applyMcpServers: ({ args, servers }) => {
-    if (servers.length === 0) return { args };
-    return {
-      args: [
-        ...args,
-        "--allowed-mcp-server-names",
-        ...servers.map((s) => s.name),
-      ],
-    };
+export const antigravityAdapter = defineCliAdapter<AntigravityConfig>({
+  kind: "antigravity",
+  buildCommand: buildAntigravityCommand,
+  prompt: { via: "arg", flag: "--print" },
+  resolveEnv: (cfg) => {
+    const env: Record<string, string> = { ...(cfg.env ?? {}) };
+    if (cfg.model) env["ANTIGRAVITY_MODEL"] = cfg.model;
+    return env;
+  },
+  applyResume: (args, sessionId) => [...args, "--conversation", sessionId],
+  extractSessionId: extractAntigravitySessionId,
+  extractTouchedPaths: extractAntigravityTouchedPaths,
+  extractTouchedEdits: extractAntigravityTouchedEdits,
+  extractToolUses: extractAntigravityToolUses,
+  applyMcpServers: ({ args, loadoutDir }) => {
+    let next = args;
+    if (loadoutDir) next = [...next, "--add-dir", loadoutDir];
+    return { args: next };
   },
 });

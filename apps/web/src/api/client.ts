@@ -4,72 +4,80 @@ import type {
   AdapterManifest,
   AdapterProbeResult,
   Agent,
+  ApiKeyStatus,
+  ApiKeyStatuses,
   Delegation,
   FileContent,
   FileHistoryEntry,
+  GeminiSyncReport,
+  GeminiSyncStatus,
+  GhProbe,
   GitAuthStatus,
+  GitBranchInfo,
+  GitCollaborator,
+  GitCommitInfo,
+  GitCreatePrResult,
+  GitLogEntry,
   GitOrg,
   GitRepo,
+  GitStashEntry,
+  GitStatus,
+  GitWorkingChange,
+  InsightsAgent,
+  InsightsDaily,
+  InsightsFile,
+  InsightsProject,
+  InsightsSummary,
+  InsightsWorkspaceAgent,
+  LoomSettings,
   McpServer,
   ModelListResult,
   PreferredEditor,
   Project,
+  ProjectInsights,
+  Review,
+  ReviewStatus,
   Run,
   RunChange,
   RunStatus,
+  SearchResult,
   Spec,
   TestAdapterResult,
   Thread,
   ThreadStatus,
   TouchedPath,
   TreeEntry,
+  WorkspaceInsights,
 } from "@loom/core";
 
-// 서버의 services/git.ts 와 1:1 대응. 변경 시 양쪽 동시 수정.
-export interface GitWorkingChange {
-  path: string;
-  fromPath?: string;
-  status: string;
-}
-export interface GitStatus {
-  branch: string | null;
-  head: string | null;
-  ahead: number | null;
-  behind: number | null;
-  staged: GitWorkingChange[];
-  unstaged: GitWorkingChange[];
-  untracked: string[];
-  conflicted: string[];
-  clean: boolean;
-}
-export interface GitLogEntry {
-  sha: string;
-  shortSha: string;
-  parents: string[];
-  authorName: string;
-  authorEmail: string;
-  authoredAt: string;
-  subject: string;
-  refs: string[];
-}
-export interface GitBranchInfo {
-  name: string;
-  current: boolean;
-  upstream: string | null;
-  head: string;
-  kind: "local" | "remote";
-}
-export interface GitCommitInfo {
-  sha: string;
-  shortSha: string;
-  parents: string[];
-  authorName: string;
-  authorEmail: string;
-  authoredAt: string;
-  subject: string;
-  body: string;
-  files: GitWorkingChange[];
-}
+// @loom/core 에서 re-export — 기존 `import { GitStatus } from "../api/client"` 를 깨지 않도록.
+export type {
+  ApiKeyStatus,
+  ApiKeyStatuses,
+  GeminiSyncReport,
+  GeminiSyncStatus,
+  GhProbe,
+  GitBranchInfo,
+  GitCollaborator,
+  GitCommitInfo,
+  GitCreatePrResult,
+  GitLogEntry,
+  GitStashEntry,
+  GitStatus,
+  GitWorkingChange,
+  InsightsAgent,
+  InsightsDaily,
+  InsightsFile,
+  InsightsProject,
+  InsightsSummary,
+  InsightsWorkspaceAgent,
+  LoomSettings,
+  ProjectInsights,
+  WorkspaceInsights,
+};
+
+// ── Marketplace (서버가 inline으로 응답 — core에 타입 없음) ──
+
 export interface SkillMarketplaceEntry {
   id: string;
   name: string;
@@ -104,29 +112,6 @@ export interface McpMarketplaceEntry {
     label: string;
     hint?: string;
   }>;
-}
-
-export interface GitCollaborator {
-  name: string;
-  email: string;
-  avatarUrl: string;
-  commitCount: number;
-  lastCommitAt: string;
-}
-export interface GitStashEntry {
-  index: number;
-  message: string;
-  branch: string | null;
-  createdAt: string;
-}
-export interface GhProbe {
-  installed: boolean;
-  version: string;
-}
-export interface CreatePrResult {
-  ok: true;
-  url: string;
-  output: string;
 }
 
 async function request<T>(
@@ -164,25 +149,6 @@ export type UpdateProjectBody = Partial<
   Omit<CreateProjectBody, "path" | "cloneUrl">
 > & { path?: string };
 
-export interface GeminiSyncStatus {
-  enabled: boolean;
-  lastSyncedAt: string | null;
-  lastError: string | null;
-  loomManagedNames: string[];
-  userManagedNames: string[];
-  conflicts: string[];
-  settingsPath: string;
-}
-
-export interface GeminiSyncReport {
-  ok: boolean;
-  error?: string;
-  skipped?: "disabled";
-  removedFromSettings: string[];
-  addedToSettings: string[];
-  conflicts: string[];
-  backupPath: string | null;
-}
 
 export interface OpenInEditorBody {
   /** project-relative path. Missing/empty = project root. */
@@ -260,84 +226,6 @@ export interface UpdateSpecBody {
   tags?: string[];
 }
 
-export interface LoomSettings {
-  globalRule: string;
-  updatedAt: string;
-}
-
-export interface ApiKeyStatus {
-  configured: boolean;
-  source: "db" | "env" | "none";
-}
-export interface ApiKeyStatuses {
-  smithery: ApiKeyStatus;
-  skillsSh: ApiKeyStatus;
-}
-
-export interface InsightsSummary {
-  totalRuns: number;
-  totalCostUsd: number;
-  successRate: number;
-  activeRuns: number;
-  activeAgents: number;
-}
-export interface InsightsDaily {
-  day: string;
-  runs: number;
-  succeeded: number;
-  failed: number;
-  cancelled: number;
-  costUsd: number;
-}
-export interface InsightsAgent {
-  agentId: string;
-  agentName: string;
-  adapterKind: string;
-  runs: number;
-  succeeded: number;
-  failed: number;
-  cancelled: number;
-  costUsd: number;
-  avgDurationSecs: number | null;
-}
-export interface InsightsFile {
-  path: string;
-  touches: number;
-  additions: number;
-  deletions: number;
-  lastTouchedAt: string;
-}
-export interface ProjectInsights {
-  windowDays: number;
-  summary: InsightsSummary;
-  daily: InsightsDaily[];
-  agents: InsightsAgent[];
-  files: InsightsFile[];
-}
-
-export interface InsightsProject {
-  projectId: string;
-  projectName: string;
-  runs: number;
-  succeeded: number;
-  failed: number;
-  cancelled: number;
-  costUsd: number;
-  lastRunAt: string | null;
-}
-
-export interface InsightsWorkspaceAgent extends InsightsAgent {
-  projectId: string;
-  projectName: string;
-}
-
-export interface WorkspaceInsights {
-  windowDays: number;
-  summary: InsightsSummary & { activeProjects: number };
-  daily: InsightsDaily[];
-  projects: InsightsProject[];
-  agents: InsightsWorkspaceAgent[];
-}
 
 export const api = {
   health: () => request<{ status: string; name: string; version: string }>("/api/health"),
@@ -599,7 +487,7 @@ export const api = {
     id: string,
     body: { title: string; body: string; base?: string; draft?: boolean },
   ) =>
-    request<CreatePrResult>(`/api/projects/${id}/git/pr`, {
+    request<GitCreatePrResult>(`/api/projects/${id}/git/pr`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -801,6 +689,19 @@ export const api = {
     request<{ cleared: number }>(`/api/threads/${id}/reset-session`, {
       method: "POST",
     }),
+  getThreadCiStatus: (id: string) =>
+    request<{
+      checks: import("@loom/core").CiCheck[];
+      overall: import("@loom/core").CiOverall;
+    }>(`/api/threads/${id}/ci-status`),
+
+  // ── Webhooks
+  getWebhookSecret: () =>
+    request<{ secret: string }>("/api/webhooks/secret"),
+  rotateWebhookSecret: () =>
+    request<{ secret: string }>("/api/webhooks/secret/rotate", {
+      method: "POST",
+    }),
 
   // ── Git Account
   getGitAuthStatus: () =>
@@ -819,4 +720,30 @@ export const api = {
     request<{ repos: GitRepo[] }>(
       `/api/git-account/search?q=${encodeURIComponent(q)}&limit=${limit}`,
     ),
+
+  // ── Search
+  search: (q: string, opts?: { projectId?: string; limit?: number }) => {
+    const params = new URLSearchParams({ q });
+    if (opts?.projectId) params.set("projectId", opts.projectId);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    return request<{ results: SearchResult[] }>(`/api/search?${params}`);
+  },
+
+  // ── Reviews ────────────────────────────────────────────────────────────
+  listReviews: (threadId: string) =>
+    request<{ reviews: Review[] }>(`/api/reviews?threadId=${threadId}`),
+
+  createReview: (input: { threadId: string; reviewerAgentId: string }) =>
+    request<{ review: Review }>("/api/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
+  updateReviewStatus: (id: string, status: ReviewStatus) =>
+    request<{ review: Review }>(`/api/reviews/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }),
 };

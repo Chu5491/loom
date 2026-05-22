@@ -330,6 +330,213 @@ function applyMigrations(db: DB): void {
       `CREATE INDEX IF NOT EXISTS idx_delegations_child_run ON delegations(child_run_id)`,
     );
   });
+
+  migration(db, 20, "gemini → antigravity adapter kind rename", () => {
+    db.prepare(
+      `UPDATE agents SET adapter_kind = 'antigravity' WHERE adapter_kind = 'gemini'`,
+    ).run();
+  });
+
+  migration(db, 21, "projects.rule", () => {
+    if (!columnExists(db, "projects", "rule")) {
+      db.exec(`ALTER TABLE projects ADD COLUMN rule TEXT NOT NULL DEFAULT ''`);
+    }
+  });
+
+  migration(db, 22, "ci_checks table + webhook_secret", () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ci_checks (
+        id          TEXT PRIMARY KEY,
+        thread_id   TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        provider    TEXT NOT NULL DEFAULT 'custom',
+        name        TEXT NOT NULL,
+        status      TEXT NOT NULL DEFAULT 'pending',
+        detail_url  TEXT,
+        sha         TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      )
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_ci_checks_thread ON ci_checks(thread_id)`,
+    );
+    // Upsert을 위한 유니크 제약 — 같은 thread의 같은 check name은 하나.
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_checks_thread_name ON ci_checks(thread_id, name)`,
+    );
+    if (!columnExists(db, "loom_settings", "webhook_secret")) {
+      db.exec(
+        `ALTER TABLE loom_settings ADD COLUMN webhook_secret TEXT`,
+      );
+    }
+  });
+
+  migration(db, 23, "FTS5 search index", () => {
+    db.exec(`CREATE TABLE IF NOT EXISTS search_map (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      project_id TEXT,
+      UNIQUE(kind, entity_id)
+    )`);
+
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
+      title, body,
+      tokenize='unicode61 remove_diacritics 2'
+    )`);
+
+    // ── runs: index prompt text
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_search_runs_ai AFTER INSERT ON runs
+    BEGIN
+      INSERT INTO search_map (kind, entity_id, project_id)
+      VALUES ('run', NEW.id, (SELECT project_id FROM agents WHERE id = NEW.agent_id));
+      INSERT INTO search_fts (rowid, title, body)
+      VALUES (last_insert_rowid(),
+              substr(replace(NEW.prompt, char(10), ' '), 1, 200),
+              NEW.prompt);
+    END`);
+
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_search_runs_ad AFTER DELETE ON runs
+    BEGIN
+      DELETE FROM search_fts WHERE rowid = (SELECT id FROM search_map WHERE kind = 'run' AND entity_id = OLD.id);
+      DELETE FROM search_map WHERE kind = 'run' AND entity_id = OLD.id;
+    END`);
+
+    // ── threads: index name
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_search_threads_ai AFTER INSERT ON threads
+    BEGIN
+      INSERT INTO search_map (kind, entity_id, project_id)
+      VALUES ('thread', NEW.id, NEW.project_id);
+      INSERT INTO search_fts (rowid, title, body)
+      VALUES (last_insert_rowid(), NEW.name, NEW.name);
+    END`);
+
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_search_threads_au AFTER UPDATE OF name ON threads
+    BEGIN
+      DELETE FROM search_fts WHERE rowid = (SELECT id FROM search_map WHERE kind = 'thread' AND entity_id = OLD.id);
+      DELETE FROM search_map WHERE kind = 'thread' AND entity_id = OLD.id;
+      INSERT INTO search_map (kind, entity_id, project_id)
+      VALUES ('thread', NEW.id, NEW.project_id);
+      INSERT INTO search_fts (rowid, title, body)
+      VALUES (last_insert_rowid(), NEW.name, NEW.name);
+    END`);
+
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_search_threads_ad AFTER DELETE ON threads
+    BEGIN
+      DELETE FROM search_fts WHERE rowid = (SELECT id FROM search_map WHERE kind = 'thread' AND entity_id = OLD.id);
+      DELETE FROM search_map WHERE kind = 'thread' AND entity_id = OLD.id;
+    END`);
+
+    // ── agents: index name + prompt
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_search_agents_ai AFTER INSERT ON agents
+    BEGIN
+      INSERT INTO search_map (kind, entity_id, project_id)
+      VALUES ('agent', NEW.id, NEW.project_id);
+      INSERT INTO search_fts (rowid, title, body)
+      VALUES (last_insert_rowid(), NEW.name, COALESCE(NEW.prompt, ''));
+    END`);
+
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_search_agents_au AFTER UPDATE OF name, prompt ON agents
+    BEGIN
+      DELETE FROM search_fts WHERE rowid = (SELECT id FROM search_map WHERE kind = 'agent' AND entity_id = OLD.id);
+      DELETE FROM search_map WHERE kind = 'agent' AND entity_id = OLD.id;
+      INSERT INTO search_map (kind, entity_id, project_id)
+      VALUES ('agent', NEW.id, NEW.project_id);
+      INSERT INTO search_fts (rowid, title, body)
+      VALUES (last_insert_rowid(), NEW.name, COALESCE(NEW.prompt, ''));
+    END`);
+
+    db.exec(`CREATE TRIGGER IF NOT EXISTS trg_search_agents_ad AFTER DELETE ON agents
+    BEGIN
+      DELETE FROM search_fts WHERE rowid = (SELECT id FROM search_map WHERE kind = 'agent' AND entity_id = OLD.id);
+      DELETE FROM search_map WHERE kind = 'agent' AND entity_id = OLD.id;
+    END`);
+
+    // ── backfill existing data
+    const insertMap = db.prepare(
+      `INSERT OR IGNORE INTO search_map (kind, entity_id, project_id) VALUES (?, ?, ?)`,
+    );
+    const insertFts = db.prepare(
+      `INSERT INTO search_fts (rowid, title, body) VALUES (?, ?, ?)`,
+    );
+
+    const runs = db
+      .prepare<[], { id: string; prompt: string; project_id: string | null }>(
+        `SELECT r.id, r.prompt, a.project_id FROM runs r LEFT JOIN agents a ON r.agent_id = a.id`,
+      )
+      .all();
+    for (const r of runs) {
+      const info = insertMap.run("run", r.id, r.project_id);
+      if (info.changes > 0) {
+        const title = (r.prompt || "").replace(/\n/g, " ").slice(0, 200);
+        insertFts.run(info.lastInsertRowid, title, r.prompt || "");
+      }
+    }
+
+    const threads = db
+      .prepare<[], { id: string; project_id: string; name: string }>(
+        `SELECT id, project_id, name FROM threads`,
+      )
+      .all();
+    for (const t of threads) {
+      const info = insertMap.run("thread", t.id, t.project_id);
+      if (info.changes > 0) {
+        insertFts.run(info.lastInsertRowid, t.name, t.name);
+      }
+    }
+
+    const agents = db
+      .prepare<[], { id: string; project_id: string; name: string; prompt: string }>(
+        `SELECT id, project_id, name, prompt FROM agents`,
+      )
+      .all();
+    for (const a of agents) {
+      const info = insertMap.run("agent", a.id, a.project_id);
+      if (info.changes > 0) {
+        insertFts.run(info.lastInsertRowid, a.name, a.prompt || "");
+      }
+    }
+  });
+
+  migration(db, 24, "runs token usage columns", () => {
+    if (!columnExists(db, "runs", "input_tokens")) {
+      db.exec(`ALTER TABLE runs ADD COLUMN input_tokens INTEGER`);
+      db.exec(`ALTER TABLE runs ADD COLUMN output_tokens INTEGER`);
+      db.exec(`ALTER TABLE runs ADD COLUMN cache_read_tokens INTEGER`);
+      db.exec(`ALTER TABLE runs ADD COLUMN cache_write_tokens INTEGER`);
+      db.exec(`ALTER TABLE runs ADD COLUMN model TEXT`);
+    }
+  });
+
+  migration(db, 25, "reviews table", () => {
+    db.exec(`CREATE TABLE IF NOT EXISTS reviews (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+      reviewer_agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_reviews_thread ON reviews(thread_id)`);
+  });
+
+  migration(db, 26, "@mention routing: agents.mention_name + thread_agents", () => {
+    if (!columnExists(db, "agents", "mention_name")) {
+      db.exec(`ALTER TABLE agents ADD COLUMN mention_name TEXT`);
+    }
+    // Thread에 참여 가능한 Agent 목록 — @mention 라우팅 시 이 목록에
+    // 있는 에이전트만 대상이 됨.
+    db.exec(`CREATE TABLE IF NOT EXISTS thread_agents (
+      thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+      agent_id  TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      joined_at TEXT NOT NULL,
+      PRIMARY KEY (thread_id, agent_id)
+    )`);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_thread_agents_thread ON thread_agents(thread_id)`,
+    );
+  });
 }
 
 interface OrphanRunRow {

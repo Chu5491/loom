@@ -2,7 +2,7 @@ export type AgentRole = "engineer" | "researcher" | "reviewer" | "writer" | "oth
 
 export type ThreadStatus = "active" | "done" | "archived";
 
-export type AdapterKind = "claude-code" | "gemini" | "codex" | "opencode" | string;
+export type AdapterKind = "claude-code" | "antigravity" | "codex" | "opencode";
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -21,6 +21,9 @@ export interface Project {
   /** Absolute path on disk. Becomes the default `cwd` for runs of agents in this project. */
   path: string;
   description: string | null;
+  /** Project-level rule prepended to all agent prompts in this project.
+   *  Sits between global rule and agent prompt in the hierarchy. */
+  rule: string;
   /** 사용자가 "Open in IDE"로 호출하는 외부 에디터. NULL이면 vscode. */
   preferredEditor: PreferredEditor | null;
   /** git URL — 이 프로젝트가 git clone 으로 만들어졌으면 origin. NULL 이면
@@ -43,6 +46,9 @@ export interface Agent {
   /** Project this agent belongs to. Runs default to the project's path. */
   projectId: string;
   name: string;
+  /** Short handle for @mention routing. e.g. "claude", "gemini".
+   *  NULL means the agent can only be addressed by selecting it in the UI. */
+  mentionName: string | null;
   /** System / instruction prompt prepended to every run before user input. */
   prompt: string;
   /** IDs of skills (specs) assigned to this agent — mirrored to disk per run. */
@@ -151,6 +157,14 @@ export interface Run {
    * — UIs hide cost displays in that case rather than show $0.
    */
   costUsd: number | null;
+  /** Token usage breakdown from the CLI's result event. NULL when the
+   *  adapter doesn't surface usage — UI hides token displays in that case. */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  /** Primary model used for this run, derived from `modelUsage` keys. */
+  model: string | null;
   /**
    * CLI-side session id captured from this run's output (claude-code's
    * `session_id` in stream-json events, opencode's `--session`, etc.).
@@ -325,4 +339,51 @@ export interface GitRepo {
 export interface GitOrg {
   login: string;
   description: string | null;
+}
+
+// ─── CI/CD Webhook ───────────────────────────────────────────────────────
+
+export type CiCheckStatus = "pending" | "running" | "success" | "failure" | "error";
+
+export type CiProvider = "github" | "gitlab" | "custom";
+
+export interface CiCheck {
+  id: string;
+  threadId: string;
+  provider: CiProvider;
+  name: string;
+  status: CiCheckStatus;
+  detailUrl: string | null;
+  sha: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CiOverall = "success" | "failure" | "pending" | "none";
+
+// ─── Code Review ────────────────────────────────────────────────────────
+
+export type ReviewStatus = "pending" | "reviewing" | "approved" | "changes_requested";
+
+export interface Review {
+  id: string;
+  threadId: string;
+  reviewerAgentId: string;
+  /** The run spawned for this review. NULL while the run hasn't started. */
+  runId: string | null;
+  status: ReviewStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Search ─────────────────────────────────────────────────────────────
+
+export interface SearchResult {
+  kind: "run" | "thread" | "agent";
+  entityId: string;
+  projectId: string | null;
+  title: string;
+  snippet: string;
+  /** For kind=run: the thread the run belongs to. For navigation. */
+  threadId: string | null;
 }

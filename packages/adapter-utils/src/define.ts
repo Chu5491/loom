@@ -1,7 +1,9 @@
 import type {
   AdapterConfig,
+  AdapterKind,
   BuiltCommand,
   CliAdapter,
+  DelegationEvent,
   McpServer,
   RunHandle,
   SpawnArgs,
@@ -16,7 +18,7 @@ export type PromptMode =
   | { via: "arg"; flag: string };
 
 export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig> {
-  kind: string;
+  kind: AdapterKind;
   buildCommand(config: TConfig): BuiltCommand;
   /** Where the user prompt is injected. Default: stdin. */
   prompt?: PromptMode;
@@ -40,6 +42,8 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
    *  file edits) so the Office view can show what each agent is reaching
    *  for in real time — Read / Bash / Grep / mcp__server__method, etc. */
   extractToolUses?(chunk: string): ToolUse[];
+  /** Optional: detect sub-agent delegation events (Task/Agent tool calls). */
+  extractDelegations?(chunk: string): DelegationEvent[];
   /** Optional: splice CLI flags / write files / set env vars needed to
    *  expose the agent's loadout (skills + MCP servers) to this run. Called
    *  on every spawn when there's anything to expose (servers OR a loadout
@@ -79,6 +83,7 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
     extractTouchedPaths: def.extractTouchedPaths,
     extractTouchedEdits: def.extractTouchedEdits,
     extractToolUses: def.extractToolUses,
+    extractDelegations: def.extractDelegations,
     async spawn(spawnArgs: SpawnArgs, config: AdapterConfig): Promise<RunHandle> {
       const built = def.buildCommand(config as TConfig);
       const cfgEnv = def.resolveEnv?.(config as TConfig) ?? {};

@@ -98,7 +98,7 @@ interface CodexEvent {
 }
 
 function* parseCodexLines(chunk: string): Generator<CodexEvent> {
-  for (const raw of chunk.split("\n")) {
+  for (const raw of chunk.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line[0] !== "{") continue;
     try {

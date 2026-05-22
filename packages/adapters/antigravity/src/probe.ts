@@ -27,12 +27,12 @@ function checkAuth(): AuthStatus {
   }
   return {
     state: "unauthenticated",
-    hint: "Run `gemini auth login` or set GEMINI_API_KEY / GOOGLE_API_KEY.",
+    hint: "Set GEMINI_API_KEY / GOOGLE_API_KEY or configure gcloud credentials.",
   };
 }
 
-export const geminiProbe: ProbeFn = async (input) => {
-  const command = input.command ?? "gemini";
+export const antigravityProbe: ProbeFn = async (input) => {
+  const command = input.command ?? "agy";
   const binary = await probeBinary(command);
   const auth = binary.available ? checkAuth() : { state: "unknown" as const };
   return { binary, auth, checkedAt: new Date().toISOString() };

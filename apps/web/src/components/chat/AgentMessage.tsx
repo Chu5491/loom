@@ -39,7 +39,7 @@ import {
   MessageRow,
 } from "./MessageRow.js";
 import { useRunTail } from "./useRunTail.js";
-import { formatCost, formatElapsed, type TailEvent } from "./utils.js";
+import { formatCost, formatTokens, formatElapsed, type TailEvent } from "./utils.js";
 
 export function AgentMessage({
   run,
@@ -146,9 +146,14 @@ export function AgentMessage({
           {run.costUsd !== null && run.costUsd !== undefined ? (
             <span
               className="text-[10px] text-muted-foreground/70 mono"
-              title={`$${run.costUsd.toFixed(4)}`}
+              title={buildUsageTooltip(run)}
             >
               {formatCost(run.costUsd)}
+            </span>
+          ) : null}
+          {run.model ? (
+            <span className="text-[9px] text-muted-foreground/50 mono">
+              {run.model}
             </span>
           ) : null}
         </span>
@@ -232,6 +237,17 @@ export function AgentMessage({
       <ChangedFiles runId={run.id} enabled={!isActive} />
     </MessageRow>
   );
+}
+
+function buildUsageTooltip(run: Run): string {
+  const lines: string[] = [];
+  if (typeof run.costUsd === "number") lines.push(`$${run.costUsd.toFixed(4)}`);
+  if (typeof run.inputTokens === "number") lines.push(`in: ${formatTokens(run.inputTokens)}`);
+  if (typeof run.outputTokens === "number") lines.push(`out: ${formatTokens(run.outputTokens)}`);
+  if (typeof run.cacheReadTokens === "number" && run.cacheReadTokens > 0) lines.push(`cache read: ${formatTokens(run.cacheReadTokens)}`);
+  if (typeof run.cacheWriteTokens === "number" && run.cacheWriteTokens > 0) lines.push(`cache write: ${formatTokens(run.cacheWriteTokens)}`);
+  if (run.model) lines.push(run.model);
+  return lines.join("\n");
 }
 
 // ────────────────────────────────────────────────────────────────────────

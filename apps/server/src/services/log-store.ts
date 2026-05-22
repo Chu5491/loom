@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { paths } from "../config.js";
+import { config, paths } from "../config.js";
 
 export type StreamKind = "stdout" | "stderr";
 
@@ -56,6 +56,12 @@ export function appendChunk(runId: string, stream: StreamKind, data: string): vo
   if (!log) return;
   const chunk: ChunkEvent = { ts: new Date().toISOString(), stream, data };
   log.chunks.push(chunk);
+  // 디스크에는 전량 기록, 인메모리 버퍼만 캡 적용 — OOM 방지.
+  // 10% 초과 시에만 splice하여 O(n) shift를 amortize.
+  const cap = config.maxLogChunksPerRun;
+  if (log.chunks.length > cap + Math.ceil(cap * 0.1)) {
+    log.chunks.splice(0, log.chunks.length - cap);
+  }
   fs.writeSync(log.fd, JSON.stringify({ kind: "chunk", chunk }) + "\n");
   for (const listener of log.listeners) {
     try {

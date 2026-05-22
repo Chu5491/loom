@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { cn } from "../lib/utils.js";
 
 /**
@@ -15,17 +16,17 @@ export function PageScroll({
 }) {
   return (
     <div className="h-full overflow-y-auto">
-      {/* GitHub-y density — 좁은 화면에서도 컨텐츠가 압박되지 않게 padding 을
-          반응형으로. 좌우 6 → 4 → 3, 상하 6 → 4. max-w-6xl 로 와이드 모니터에서도
-          한쪽으로 안 쏠리게. */}
-      <div
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         className={cn(
           "max-w-6xl mx-auto px-3 sm:px-4 lg:px-6 py-4 lg:py-6",
           className,
         )}
       >
         {children}
-      </div>
+      </motion.div>
     </div>
   );
 }

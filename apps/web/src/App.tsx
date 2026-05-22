@@ -52,6 +52,9 @@ const DashboardPage = lazy(() =>
     default: m.DashboardPage,
   })),
 );
+const FilesPage = lazy(() =>
+  import("./pages/FilesPage.js").then((m) => ({ default: m.FilesPage })),
+);
 const WorkspaceInsightsPage = lazy(() =>
   import("./pages/WorkspaceInsightsPage.js").then((m) => ({
     default: m.WorkspaceInsightsPage,
@@ -143,6 +146,14 @@ export function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <DashboardPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="files"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <FilesPage />
               </Suspense>
             }
           />

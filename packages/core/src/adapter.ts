@@ -1,4 +1,4 @@
-import type { AdapterConfig, McpServer } from "./types.js";
+import type { AdapterConfig, AdapterKind, McpServer } from "./types.js";
 
 export interface SpawnArgs {
   prompt: string;
@@ -40,7 +40,7 @@ export interface BuiltCommand {
 }
 
 export interface CliAdapter {
-  kind: string;
+  kind: AdapterKind;
   buildCommand(config: AdapterConfig): BuiltCommand;
   spawn(args: SpawnArgs, config: AdapterConfig): Promise<RunHandle>;
   /** Pluck a session id out of a stdout chunk. Run-service feeds every
@@ -65,6 +65,10 @@ export interface CliAdapter {
    *  Returns one entry per tool call in chunk order; adapters that
    *  can't surface tool names leave this undefined. */
   extractToolUses?(chunk: string): ToolUse[];
+  /** Detect sub-agent delegation events (Task/Agent tool calls) and
+   *  their completions. Returns initiation events when the CLI starts
+   *  a sub-task, and completion events when tool_result arrives. */
+  extractDelegations?(chunk: string): DelegationEvent[];
 }
 
 export interface TouchedEdit {
@@ -73,6 +77,23 @@ export interface TouchedEdit {
    *  to locate the edit's line. Absent for write-from-scratch tools. */
   target?: string;
 }
+
+/** Sub-agent delegation event detected from the CLI's tool stream.
+ *  "initiate" fires when a Task/Agent tool_use is parsed;
+ *  "complete" fires when the corresponding tool_result arrives. */
+export type DelegationEvent =
+  | {
+      phase: "initiate";
+      toolCallId: string;
+      agentName?: string;
+      description: string;
+    }
+  | {
+      phase: "complete";
+      toolCallId: string;
+      status: "succeeded" | "failed";
+      summary?: string;
+    };
 
 /** A single tool invocation surfaced from the adapter's stdout stream.
  *  `name` is the raw CLI tool name (e.g. "Read", "Bash", "mcp__github__create_issue").

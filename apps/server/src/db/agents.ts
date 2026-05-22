@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Agent, AdapterConfig, AdapterKind, AgentRole } from "@loom/core";
+import { encryptSecret, isEncrypted, tryDecryptSecret } from "../crypto.js";
 import { listSkillIdsForAgent, setSkillIdsForAgent } from "./agent-skills.js";
 import { getDb } from "./client.js";
 import {
@@ -11,6 +12,7 @@ interface AgentRow {
   id: string;
   project_id: string;
   name: string;
+  mention_name: string | null;
   prompt: string;
   role: string | null;
   adapter_kind: string;
@@ -20,17 +22,54 @@ interface AgentRow {
   updated_at: string;
 }
 
+function encryptConfigEnv(cfg: AdapterConfig): AdapterConfig {
+  const env = cfg.env as Record<string, string> | undefined;
+  if (!env || typeof env !== "object") return cfg;
+  const encrypted: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    encrypted[k] = typeof v === "string" ? encryptSecret(v) : v;
+  }
+  return { ...cfg, env: encrypted };
+}
+
+function decryptConfigEnv(cfg: AdapterConfig, rowId?: string): AdapterConfig {
+  const env = cfg.env as Record<string, string> | undefined;
+  if (!env || typeof env !== "object") return cfg;
+  const decrypted: Record<string, string> = {};
+  let needsRewrite = false;
+  for (const [k, v] of Object.entries(env)) {
+    if (typeof v !== "string") { decrypted[k] = v; continue; }
+    if (isEncrypted(v)) {
+      const plain = tryDecryptSecret(v);
+      if (plain !== null) decrypted[k] = plain;
+    } else {
+      decrypted[k] = v;
+      needsRewrite = true;
+    }
+  }
+  // Auto-encrypt plaintext env values found in DB.
+  if (needsRewrite && rowId) {
+    const rewrite = encryptConfigEnv({ ...cfg, env: decrypted });
+    getDb()
+      .prepare(`UPDATE agents SET adapter_config = ? WHERE id = ?`)
+      .run(JSON.stringify(rewrite), rowId);
+  }
+  return { ...cfg, env: decrypted };
+}
+
 function rowToAgent(row: AgentRow): Agent {
+  const rawConfig = JSON.parse(row.adapter_config) as AdapterConfig;
   return {
     id: row.id,
     projectId: row.project_id,
     name: row.name,
+    mentionName: row.mention_name ?? null,
     prompt: row.prompt ?? "",
     skillIds: listSkillIdsForAgent(row.id),
     mcpServerIds: listMcpServerIdsForAgent(row.id),
     role: (row.role as AgentRole | null) ?? null,
     adapterKind: row.adapter_kind as AdapterKind,
-    adapterConfig: JSON.parse(row.adapter_config) as AdapterConfig,
+    adapterConfig: decryptConfigEnv(rawConfig, row.id),
     defaultCwd: row.default_cwd,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -40,6 +79,7 @@ function rowToAgent(row: AgentRow): Agent {
 export interface CreateAgentInput {
   projectId: string;
   name: string;
+  mentionName?: string | null;
   prompt?: string;
   skillIds?: string[];
   mcpServerIds?: string[];
@@ -52,6 +92,7 @@ export interface CreateAgentInput {
 export interface UpdateAgentInput {
   projectId?: string;
   name?: string;
+  mentionName?: string | null;
   prompt?: string;
   skillIds?: string[];
   mcpServerIds?: string[];
@@ -87,18 +128,19 @@ export function createAgent(input: CreateAgentInput): Agent {
   const id = randomUUID();
   getDb()
     .prepare(
-      `INSERT INTO agents (id, project_id, name, prompt, role, adapter_kind,
+      `INSERT INTO agents (id, project_id, name, mention_name, prompt, role, adapter_kind,
                            adapter_config, default_cwd, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
       input.projectId,
       input.name,
+      input.mentionName ?? null,
       input.prompt ?? "",
       input.role ?? null,
       input.adapterKind,
-      JSON.stringify(input.adapterConfig ?? {}),
+      JSON.stringify(encryptConfigEnv(input.adapterConfig ?? {})),
       input.defaultCwd ?? null,
       now,
       now,
@@ -120,6 +162,7 @@ export function updateAgent(id: string, input: UpdateAgentInput): Agent | null {
     ...existing,
     ...(input.projectId !== undefined && { projectId: input.projectId }),
     ...(input.name !== undefined && { name: input.name }),
+    ...(input.mentionName !== undefined && { mentionName: input.mentionName }),
     ...(input.prompt !== undefined && { prompt: input.prompt }),
     ...(input.role !== undefined && { role: input.role }),
     ...(input.adapterKind !== undefined && { adapterKind: input.adapterKind }),
@@ -131,17 +174,18 @@ export function updateAgent(id: string, input: UpdateAgentInput): Agent | null {
   getDb()
     .prepare(
       `UPDATE agents
-         SET project_id = ?, name = ?, prompt = ?, role = ?,
+         SET project_id = ?, name = ?, mention_name = ?, prompt = ?, role = ?,
              adapter_kind = ?, adapter_config = ?, default_cwd = ?, updated_at = ?
        WHERE id = ?`,
     )
     .run(
       merged.projectId,
       merged.name,
+      merged.mentionName,
       merged.prompt,
       merged.role,
       merged.adapterKind,
-      JSON.stringify(merged.adapterConfig),
+      JSON.stringify(encryptConfigEnv(merged.adapterConfig)),
       merged.defaultCwd,
       merged.updatedAt,
       id,

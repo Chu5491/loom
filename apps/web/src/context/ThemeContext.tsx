@@ -49,15 +49,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const next = detectEffective(mode);
       setEffective(next);
       const root = document.documentElement;
+      root.classList.add("theme-transitioning");
       root.classList.toggle("dark", next === "dark");
+      const tid = setTimeout(() => root.classList.remove("theme-transitioning"), 400);
+      return tid;
     };
-    apply();
+    const tid = apply();
 
-    if (mode !== "system") return;
+    if (mode !== "system") return () => clearTimeout(tid);
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => apply();
     mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
+    return () => {
+      clearTimeout(tid);
+      mq.removeEventListener("change", onChange);
+    };
   }, [mode]);
 
   const setMode = useCallback((m: ThemeMode) => {

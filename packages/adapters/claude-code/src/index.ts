@@ -1,5 +1,5 @@
 import { defineCliAdapter } from "@loom/adapter-utils";
-import type { AdapterConfig, BuiltCommand, ToolUse, TouchedEdit } from "@loom/core";
+import type { AdapterConfig, BuiltCommand, DelegationEvent, ToolUse, TouchedEdit } from "@loom/core";
 
 export { claudeCodeManifest } from "./manifest.js";
 export { claudeCodeProbe } from "./probe.js";
@@ -52,7 +52,7 @@ const FILE_TOUCH_TOOLS: Record<string, "file_path" | "notebook_path"> = {
  *  Write has no target — it overwrites the whole file. */
 export function extractClaudeTouchedEdits(chunk: string): TouchedEdit[] {
   const out: TouchedEdit[] = [];
-  for (const raw of chunk.split("\n")) {
+  for (const raw of chunk.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line[0] !== "{") continue;
     try {
@@ -117,7 +117,7 @@ export function extractClaudeTouchedPaths(chunk: string): string[] {
  *  the pattern for Grep, the URL for WebFetch, etc. */
 export function extractClaudeToolUses(chunk: string): ToolUse[] {
   const out: ToolUse[] = [];
-  for (const raw of chunk.split("\n")) {
+  for (const raw of chunk.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line[0] !== "{") continue;
     try {
@@ -177,7 +177,7 @@ function summariseToolInput(
  *  per-line because chunks can split mid-event; the run-service buffers
  *  partial chunks so a complete JSON line eventually lands here. */
 export function extractClaudeSessionId(chunk: string): string | null {
-  for (const raw of chunk.split("\n")) {
+  for (const raw of chunk.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line[0] !== "{") continue;
     try {
@@ -192,6 +192,66 @@ export function extractClaudeSessionId(chunk: string): string | null {
   return null;
 }
 
+const DELEGATION_TOOLS = new Set(["Task", "Agent"]);
+
+export function extractClaudeDelegations(chunk: string): DelegationEvent[] {
+  const out: DelegationEvent[] = [];
+  for (const raw of chunk.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line[0] !== "{") continue;
+    try {
+      const j = JSON.parse(line) as {
+        type?: string;
+        message?: {
+          content?: Array<{
+            type?: string;
+            id?: string;
+            name?: string;
+            input?: Record<string, unknown>;
+            tool_use_id?: string;
+            content?: unknown;
+            is_error?: boolean;
+          }>;
+        };
+      };
+      if (!j.message?.content) continue;
+      for (const c of j.message.content) {
+        if (c.type === "tool_use" && c.name && DELEGATION_TOOLS.has(c.name) && c.id) {
+          const desc =
+            (typeof c.input?.["description"] === "string" ? c.input["description"] : null) ??
+            (typeof c.input?.["prompt"] === "string" ? c.input["prompt"] : null) ??
+            "sub-agent task";
+          const agent =
+            typeof c.input?.["agent_name"] === "string" ? c.input["agent_name"] :
+            typeof c.input?.["subagent_type"] === "string" ? c.input["subagent_type"] :
+            undefined;
+          out.push({
+            phase: "initiate",
+            toolCallId: c.id,
+            agentName: agent,
+            description: desc.length > 200 ? desc.slice(0, 200) + "…" : desc,
+          });
+        }
+        if (c.type === "tool_result" && c.tool_use_id) {
+          const isError = c.is_error === true;
+          const summary = typeof c.content === "string"
+            ? c.content.slice(0, 500)
+            : undefined;
+          out.push({
+            phase: "complete",
+            toolCallId: c.tool_use_id,
+            status: isError ? "failed" : "succeeded",
+            summary,
+          });
+        }
+      }
+    } catch {
+      // partial / malformed line
+    }
+  }
+  return out;
+}
+
 export const claudeCodeAdapter = defineCliAdapter<ClaudeCodeConfig>({
   kind: "claude-code",
   buildCommand: buildClaudeCommand,
@@ -202,6 +262,7 @@ export const claudeCodeAdapter = defineCliAdapter<ClaudeCodeConfig>({
   extractTouchedPaths: extractClaudeTouchedPaths,
   extractTouchedEdits: extractClaudeTouchedEdits,
   extractToolUses: extractClaudeToolUses,
+  extractDelegations: extractClaudeDelegations,
   // 로드아웃/MCP 적용:
   //   1) `--add-dir <loadoutDir>` — loadout 디렉터리는 cwd 밖이라 claude-code의
   //      Read 도구가 기본적으로 거부함. 권한을 명시적으로 줘야 에이전트가 자기

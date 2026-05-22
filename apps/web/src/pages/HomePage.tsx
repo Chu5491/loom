@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { motion } from "motion/react";
 import NumberFlow from "@number-flow/react";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight, Bot, FolderKanban, Play, Plus, Zap } from "lucide-react";
 import type { Run } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "../components/AdapterIcon.js";
@@ -134,12 +134,13 @@ function Stats({
   const { t } = useI18n();
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <StatCard label={t("home.stat.projects")} value={projects} />
-      <StatCard label={t("home.stat.agents")} value={agents} />
-      <StatCard label={t("home.stat.runsToday")} value={runsToday} />
+      <StatCard label={t("home.stat.projects")} value={projects} icon={FolderKanban} />
+      <StatCard label={t("home.stat.agents")} value={agents} icon={Bot} />
+      <StatCard label={t("home.stat.runsToday")} value={runsToday} icon={Play} />
       <StatCard
         label={t("home.stat.working")}
         value={working}
+        icon={Zap}
         accent={working > 0}
       />
     </div>
@@ -149,23 +150,25 @@ function Stats({
 function StatCard({
   label,
   value,
+  icon: Icon,
   accent,
 }: {
   label: string;
   value: number;
+  icon: React.ComponentType<{ className?: string }>;
   accent?: boolean;
 }) {
   return (
     <motion.div
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.12 }}
+      whileHover={{ y: -2, boxShadow: "0 4px 6px -1px rgba(0,0,0,.07), 0 2px 4px -2px rgba(0,0,0,.07)" }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
       className={cn(
-        "relative rounded-md border bg-card px-4 py-3 overflow-hidden",
-        accent &&
-          "ring-1 ring-sky-300/60 dark:ring-sky-700/60 shadow-[0_0_24px_-12px_rgb(14_165_233/0.6)]",
+        "relative rounded-lg border bg-card px-4 py-3.5 overflow-hidden",
+        accent
+          ? "ring-1 ring-sky-300/60 dark:ring-sky-700/60 shadow-[0_0_24px_-12px_rgb(14_165_233/0.6)]"
+          : "shadow-xs",
       )}
     >
-      {/* accent 카드 — 우상단 컬러 글로우. 다른 정적 카드들과 시각적 위계 분리. */}
       {accent ? (
         <motion.span
           aria-hidden
@@ -174,12 +177,18 @@ function StatCard({
           transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
         />
       ) : null}
-      <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          {label}
+        </div>
+        <Icon className={cn(
+          "size-4",
+          accent ? "text-sky-500 dark:text-sky-400" : "text-muted-foreground/60",
+        )} />
       </div>
       <div
         className={cn(
-          "mt-1 text-2xl font-semibold tabular-nums inline-flex items-baseline",
+          "mt-1.5 text-2xl font-semibold tabular-nums inline-flex items-baseline",
           accent && "text-sky-600 dark:text-sky-400",
         )}
       >
@@ -223,7 +232,7 @@ function RecentActivity({
           {t("home.recent.empty")}
         </div>
       ) : (
-        <ul className="rounded-md border bg-card divide-y">
+        <ul className="rounded-lg border bg-card divide-y shadow-xs">
           {runs.map((r) => {
             const agent = agents.find((a) => a.id === r.agentId);
             const project = agent
@@ -240,7 +249,7 @@ function RecentActivity({
                       ? `/projects/${project.id}/runs/${r.id}`
                       : `#`
                   }
-                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
                 >
                   {manifest ? (
                     <AdapterIcon manifest={manifest as never} size={20} />
@@ -324,7 +333,7 @@ function ProjectsGrid({
             <Link
               key={p.id}
               to={`/projects/${p.id}`}
-              className="group rounded-md border bg-card hover:border-foreground/40 transition-colors p-4"
+              className="group rounded-lg border bg-card shadow-xs hover:shadow-md hover:border-foreground/30 transition-all duration-200 p-4"
             >
               <div className="flex items-start gap-3">
                 <span className="flex size-9 items-center justify-center rounded-md bg-foreground text-background text-sm font-bold shrink-0">
@@ -346,7 +355,7 @@ function ProjectsGrid({
         })}
         <Link
           to="/projects"
-          className="rounded-md border border-dashed bg-card/30 hover:bg-card hover:border-foreground/40 transition-colors p-4 flex flex-col items-center justify-center text-center min-h-[110px]"
+          className="rounded-lg border border-dashed bg-card/30 hover:bg-card hover:border-foreground/30 transition-all duration-200 p-4 flex flex-col items-center justify-center text-center min-h-[110px]"
         >
           <Plus className="size-5 text-muted-foreground" />
           <span className="mt-1.5 text-xs font-medium text-muted-foreground">

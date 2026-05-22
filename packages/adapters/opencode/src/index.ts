@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { defineCliAdapter } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, McpServer, ToolUse, TouchedEdit } from "@loom/core";
@@ -61,7 +62,11 @@ export function toOpencodeMcpEntry(server: McpServer): Record<string, unknown> {
 /** 사용자의 기존 ~/.config/opencode/opencode.json을 읽어 우리 mcp만 합침.
  *  실패하거나 파일이 없으면 빈 객체로 시작 (모델/auth 같은 사용자 설정은 그대로 유지). */
 function readUserOpencodeConfig(): Record<string, unknown> {
-  const xdgRoot = process.env.XDG_CONFIG_HOME ?? path.join(process.env.HOME ?? "", ".config");
+  // Windows: %APPDATA% is the standard config root. Unix: ~/.config (XDG default).
+  const xdgRoot = process.env.XDG_CONFIG_HOME
+    ?? (process.platform === "win32"
+      ? process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming")
+      : path.join(os.homedir(), ".config"));
   const userPath = path.join(xdgRoot, "opencode", "opencode.json");
   try {
     const raw = fs.readFileSync(userPath, "utf8");
@@ -99,7 +104,7 @@ interface OpencodeEvent {
 }
 
 function* parseOpencodeLines(chunk: string): Generator<OpencodeEvent> {
-  for (const raw of chunk.split("\n")) {
+  for (const raw of chunk.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line[0] !== "{") continue;
     try {

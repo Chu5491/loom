@@ -17,6 +17,11 @@ interface RunRow {
   before_ref: string | null;
   after_ref: string | null;
   cost_usd: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  model: string | null;
   session_id: string | null;
   resumed_session_id: string | null;
   started_at: string | null;
@@ -47,6 +52,11 @@ function rowToRun(row: RunRow): Run {
     beforeRef: row.before_ref,
     afterRef: row.after_ref,
     costUsd: row.cost_usd,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheWriteTokens: row.cache_write_tokens,
+    model: row.model,
     sessionId: row.session_id,
     resumedSessionId: row.resumed_session_id,
     startedAt: row.started_at,
@@ -166,6 +176,34 @@ export function setRunCostUsd(id: string, cost: number): void {
   getDb().prepare("UPDATE runs SET cost_usd = ? WHERE id = ?").run(cost, id);
 }
 
+export function setRunUsage(
+  id: string,
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    model: string | null;
+  },
+): void {
+  getDb()
+    .prepare(
+      `UPDATE runs
+       SET input_tokens = ?, output_tokens = ?,
+           cache_read_tokens = ?, cache_write_tokens = ?,
+           model = ?
+       WHERE id = ?`,
+    )
+    .run(
+      usage.inputTokens,
+      usage.outputTokens,
+      usage.cacheReadTokens,
+      usage.cacheWriteTokens,
+      usage.model,
+      id,
+    );
+}
+
 export function setRunSessionId(id: string, sessionId: string): void {
   getDb()
     .prepare("UPDATE runs SET session_id = ? WHERE id = ?")
@@ -276,5 +314,22 @@ export function markOrphanedRunsFailed(): number {
        WHERE status IN ('queued', 'running')`,
     )
     .run(new Date().toISOString());
+  return result.changes;
+}
+
+/** resumed run이 성공했으면 session_id는 resumed_session_id와 같아야 함.
+ *  이전 코드가 CLI 출력에서 turn-level ID를 추출·저장해 다음 run이 잘못된
+ *  세션으로 resume → 반복 실패하는 버그가 있었음. 시작 시 일괄 보정. */
+export function fixStaleSessionIds(): number {
+  const result = getDb()
+    .prepare(
+      `UPDATE runs
+       SET session_id = resumed_session_id
+       WHERE status = 'succeeded'
+         AND resumed_session_id IS NOT NULL
+         AND session_id IS NOT NULL
+         AND session_id != resumed_session_id`,
+    )
+    .run();
   return result.changes;
 }

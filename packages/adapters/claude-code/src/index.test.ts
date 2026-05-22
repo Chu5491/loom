@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildClaudeCommand,
   claudeCodeAdapter,
+  extractClaudeDelegations,
   extractClaudeSessionId,
   extractClaudeTouchedEdits,
   extractClaudeTouchedPaths,
@@ -240,5 +241,130 @@ describe("extractClaudeTouchedEdits", () => {
       { path: "/a.ts", target: "foo" },
       { path: "/a.ts", target: "bar" },
     ]);
+  });
+});
+
+describe("extractClaudeDelegations", () => {
+  it("detects Task tool_use as initiation", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "tu_01",
+            name: "Task",
+            input: {
+              description: "Research the codebase",
+              subagent_type: "Explore",
+            },
+          },
+        ],
+      },
+    });
+    const events = extractClaudeDelegations(ev);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      phase: "initiate",
+      toolCallId: "tu_01",
+      agentName: "Explore",
+      description: "Research the codebase",
+    });
+  });
+
+  it("detects Agent tool_use with prompt as description", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "tu_02",
+            name: "Agent",
+            input: {
+              prompt: "Fix the build error in src/app.ts",
+              agent_name: "build-fixer",
+            },
+          },
+        ],
+      },
+    });
+    const events = extractClaudeDelegations(ev);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.phase).toBe("initiate");
+    expect((events[0] as { description: string }).description).toBe(
+      "Fix the build error in src/app.ts",
+    );
+    expect((events[0] as { agentName: string }).agentName).toBe("build-fixer");
+  });
+
+  it("detects tool_result as completion", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu_01",
+            content: "Done. Found 3 relevant files.",
+          },
+        ],
+      },
+    });
+    const events = extractClaudeDelegations(ev);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      phase: "complete",
+      toolCallId: "tu_01",
+      status: "succeeded",
+      summary: "Done. Found 3 relevant files.",
+    });
+  });
+
+  it("marks error tool_result as failed", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu_03",
+            content: "Agent crashed",
+            is_error: true,
+          },
+        ],
+      },
+    });
+    const events = extractClaudeDelegations(ev);
+    expect(events[0]).toMatchObject({
+      phase: "complete",
+      status: "failed",
+    });
+  });
+
+  it("ignores non-delegation tools", () => {
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "tu_99", name: "Read", input: { file_path: "/a.ts" } },
+        ],
+      },
+    });
+    expect(extractClaudeDelegations(ev)).toHaveLength(0);
+  });
+
+  it("truncates long descriptions to 200 chars", () => {
+    const long = "x".repeat(300);
+    const ev = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "tu_04", name: "Task", input: { description: long } },
+        ],
+      },
+    });
+    const events = extractClaudeDelegations(ev);
+    expect((events[0] as { description: string }).description.length).toBeLessThanOrEqual(201);
   });
 });

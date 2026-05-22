@@ -1,4 +1,6 @@
-import { spawn } from "node:child_process";
+import { exec as execCb, spawn } from "node:child_process";
+
+const IS_WIN = process.platform === "win32";
 
 export interface SpawnCaptureResult {
   exitCode: number;
@@ -19,9 +21,14 @@ export async function spawnCapture(
   options: { timeoutMs?: number; cwd?: string } = {},
 ): Promise<SpawnCaptureResult> {
   return new Promise((resolve) => {
+    // Windows: .cmd shim resolution (same pattern as spawn.ts / probe.ts).
+    const resolvedCmd = IS_WIN && !command.includes("\\") && !command.includes("/")
+      ? `${command}.cmd`
+      : command;
+
     let proc;
     try {
-      proc = spawn(command, args, {
+      proc = spawn(resolvedCmd, args, {
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
         cwd: options.cwd,
@@ -43,7 +50,11 @@ export async function spawnCapture(
     const killTimer = setTimeout(() => {
       timedOut = true;
       try {
-        proc.kill("SIGKILL");
+        if (process.platform === "win32" && proc.pid) {
+          execCb(`taskkill /PID ${proc.pid} /T /F`).unref();
+        } else {
+          proc.kill("SIGKILL");
+        }
       } catch {
         // process may already have exited
       }

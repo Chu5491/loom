@@ -8,7 +8,7 @@ import type { AdapterManifest } from "@loom/core";
 /**
  * Renders a brand mark for a CLI adapter.
  *
- * Built-in CLIs (claude-code / gemini / codex / opencode) get the
+ * Built-in CLIs (claude-code / antigravity / codex / opencode) get the
  * official-looking lobehub icons. Anything else falls back to the
  * adapter's own `iconSvg` (server-controlled), and finally to the
  * one-letter `icon` glyph if no SVG was supplied.
@@ -23,7 +23,7 @@ type LobeIcon = React.ComponentType<{ size?: number | string }>;
 
 const KIND_TO_LOBE: Record<string, LobeIcon> = {
   "claude-code": ClaudeCodeColor as LobeIcon,
-  gemini: GeminiColor as LobeIcon,
+  antigravity: GeminiColor as LobeIcon,
   codex: CodexColor as LobeIcon,
   opencode: OpenCodeMono as LobeIcon,
 };

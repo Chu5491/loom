@@ -7,7 +7,9 @@ import {
   createProjectWithId,
   deleteProject,
   getProject,
+  getProjectRule,
   listProjects,
+  setProjectRule,
   updateProject,
 } from "../db/projects.js";
 import {
@@ -56,6 +58,7 @@ const updateSchema = z.object({
   name: z.string().min(1).optional(),
   path: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
+  rule: z.string().max(8192).optional(),
   preferredEditor: editorSchema.nullable().optional(),
 });
 
@@ -132,6 +135,28 @@ projectsRoute.patch("/:id", async (c) => {
   const project = updateProject(c.req.param("id"), upd);
   if (!project) return c.json({ error: "not_found" }, 404);
   return c.json({ project });
+});
+
+// ─── Project rule ──────────────────────────────────────────────────────
+// Global rule > **Project rule** > Agent prompt. Same 8 KB cap as global rule.
+
+projectsRoute.get("/:id/rule", (c) => {
+  const rule = getProjectRule(c.req.param("id"));
+  if (rule === null) return c.json({ error: "not_found" }, 404);
+  return c.json({ content: rule });
+});
+
+const putProjectRuleSchema = z.object({
+  content: z.string().max(8192),
+});
+
+projectsRoute.put("/:id/rule", async (c) => {
+  const id = c.req.param("id");
+  if (!getProject(id)) return c.json({ error: "not_found" }, 404);
+  const data = await parseBody(c, putProjectRuleSchema);
+  if (isResponse(data)) return data;
+  setProjectRule(id, data.content);
+  return c.json({ content: data.content });
 });
 
 projectsRoute.delete("/:id", (c) => {

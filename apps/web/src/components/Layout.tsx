@@ -3,6 +3,7 @@ import { Outlet, useLocation, useMatch } from "react-router-dom";
 import { ActivityBar, type ActivityKind } from "./ActivityBar.js";
 import { ActivityPanel } from "./ActivityPanel.js";
 import { MainSidebar } from "./MainSidebar.js";
+import { SearchDialog } from "./SearchDialog.js";
 import { TooltipProvider } from "./ui/tooltip.js";
 
 const ACTIVITY_KEY = "loom:layout:activity";
@@ -77,12 +78,27 @@ export function Layout() {
     }
   }, [panelWidth]);
 
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest?.(".monaco-editor")) return;
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const location = useLocation();
   useEffect(() => {
     if (!inProject) return;
     const tail = projectMatch?.params["*"] ?? "";
     const kind: ActivityKind =
       tail.startsWith("dashboard") ? "dashboard"
+      : tail.startsWith("files") ? "files"
       : tail.startsWith("git") ? "git"
       : tail.startsWith("runs") ? "history"
       : tail.startsWith("agents") ? "agents"
@@ -128,6 +144,7 @@ export function Layout() {
         <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
           <Outlet context={{} satisfies LayoutOutletContext} />
         </main>
+        <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
       </div>
     </TooltipProvider>
   );

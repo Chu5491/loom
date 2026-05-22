@@ -4,17 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useOutletContext, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft } from "lucide-react";
-import type { AdapterManifest } from "@loom/core";
 import type { LayoutOutletContext } from "../components/Layout.js";
 import { api } from "../api/client.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
 import { useRoomDerived } from "../components/chat/index.js";
 import { ContextDrawer } from "../components/ContextDrawer.js";
-import { FileTab } from "../components/FileTab.js";
-import type { AgentPresence } from "../components/MonacoView.js";
 import { TeamRibbon } from "../components/TeamRibbon.js";
-import { agentColorOf } from "../components/agentColor.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useLoomEvent } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
@@ -74,12 +69,9 @@ export function WorkspacePage() {
     enabled: !!projectId,
     refetchInterval: 1500,
   });
-
   const touchingIds = useMemo(() => {
     const s = new Set<string>();
-    for (const tch of activeTouchesQuery.data?.touches ?? []) {
-      s.add(tch.agentId);
-    }
+    for (const tch of activeTouchesQuery.data?.touches ?? []) s.add(tch.agentId);
     return s;
   }, [activeTouchesQuery.data]);
 
@@ -157,6 +149,18 @@ export function WorkspacePage() {
     return any ? total : null;
   }, [filteredRuns]);
 
+  const threadTokens = useMemo(() => {
+    let input = 0, output = 0, cacheRead = 0, cacheWrite = 0;
+    let any = false;
+    for (const r of filteredRuns) {
+      if (typeof r.inputTokens === "number") { input += r.inputTokens; any = true; }
+      if (typeof r.outputTokens === "number") output += r.outputTokens;
+      if (typeof r.cacheReadTokens === "number") cacheRead += r.cacheReadTokens;
+      if (typeof r.cacheWriteTokens === "number") cacheWrite += r.cacheWriteTokens;
+    }
+    return any ? { input, output, cacheRead, cacheWrite } : null;
+  }, [filteredRuns]);
+
   const openFileExternal = useCallback(
     async (path: string) => {
       if (!projectId) return;
@@ -195,36 +199,6 @@ export function WorkspacePage() {
     [projectRuns, activeThreadId],
   );
 
-  const [viewingFile, setViewingFile] = useState<string | null>(null);
-
-  const adapterByKind = useMemo(() => {
-    const m: Record<string, AdapterManifest> = {};
-    for (const a of manifests) m[a.kind] = a;
-    return m;
-  }, [manifests]);
-
-  const filePresences = useMemo<AgentPresence[]>(() => {
-    if (!viewingFile) return [];
-    const touches = activeTouchesQuery.data?.touches ?? [];
-    const out: AgentPresence[] = [];
-    for (const tch of touches) {
-      if (!tch.paths.includes(viewingFile)) continue;
-      const agent = agentList.find((a) => a.id === tch.agentId);
-      if (!agent) continue;
-      const loc = tch.locations.find((l) => l.path === viewingFile);
-      out.push({
-        agentId: agent.id,
-        agentName: agent.name,
-        color: agentColorOf(agent),
-        line: loc?.line ?? 1,
-        primary: out.length === 0,
-      });
-    }
-    return out;
-  }, [viewingFile, activeTouchesQuery.data, agentList]);
-
-  useLoomEvent("openFile", ({ path }) => setViewingFile(path));
-  useLoomEvent("viewFile", ({ path }) => setViewingFile(path));
   useLoomEvent("pickThread", ({ id }) => setActiveThreadId(id));
   useLoomEvent("newThread", () => setActiveThreadId(null));
   useLoomEvent("pickAgent", ({ id }) => setAgentIds([id]));
@@ -275,60 +249,35 @@ export function WorkspacePage() {
           onPick={openFileExternal}
         />
 
-        {viewingFile ? (
-          <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20 shrink-0">
-              <button
-                type="button"
-                onClick={() => setViewingFile(null)}
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <ArrowLeft className="size-3" />
-                <span>{t("workspace.tab.chat")}</span>
-              </button>
-              <span className="text-[10px] text-muted-foreground/50 mono truncate">
-                {viewingFile}
-              </span>
-            </div>
-            <FileTab
-              projectId={projectId!}
-              path={viewingFile}
-              presences={filePresences}
-              agents={agentList}
-              onJumpToRun={handleJumpToRun}
-              adapterByKind={adapterByKind}
-            />
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-            <ThreadBar
-              activeThread={activeThread}
-              activeThreadCost={threadCost}
-              participants={participantsForThread}
-              workingIds={workingIds}
-              touchingIds={touchingIds}
-              onOpenContext={() => setContextOpen(true)}
-            />
-            <ChatPanel
-              project={p}
-              agentList={agentList}
-              manifests={manifests}
-              threads={threads}
-              working={working}
-              activeThreadId={activeThreadId}
-              threadHasContext={!!activeThread?.contextBundle}
-              onAdoptThreadId={setActiveThreadId}
-              agentIds={agentIds}
-              setAgentIds={setAgentIds}
-              draft={draft}
-              setDraft={setDraft}
-              draftKey={draftKey}
-              setDraftKey={setDraftKey}
-              pendingJumpRunId={pendingJumpRunId}
-              onConsumedJump={() => setPendingJumpRunId(null)}
-            />
-          </div>
-        )}
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+          <ThreadBar
+            activeThread={activeThread}
+            activeThreadCost={threadCost}
+            activeThreadTokens={threadTokens}
+            participants={participantsForThread}
+            workingIds={workingIds}
+            touchingIds={touchingIds}
+            onOpenContext={() => setContextOpen(true)}
+          />
+          <ChatPanel
+            project={p}
+            agentList={agentList}
+            manifests={manifests}
+            threads={threads}
+            working={working}
+            activeThreadId={activeThreadId}
+            threadHasContext={!!activeThread?.contextBundle}
+            onAdoptThreadId={setActiveThreadId}
+            agentIds={agentIds}
+            setAgentIds={setAgentIds}
+            draft={draft}
+            setDraft={setDraft}
+            draftKey={draftKey}
+            setDraftKey={setDraftKey}
+            pendingJumpRunId={pendingJumpRunId}
+            onConsumedJump={() => setPendingJumpRunId(null)}
+          />
+        </div>
       </div>
 
       <ContextDrawer

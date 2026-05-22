@@ -147,3 +147,31 @@ export function deleteThread(id: string): boolean {
   const r = getDb().prepare("DELETE FROM threads WHERE id = ?").run(id);
   return r.changes > 0;
 }
+
+// ── Thread ↔ Agent membership ─────────────────────────────────────
+
+/** List agent IDs that have been added to a thread for @mention routing. */
+export function listThreadAgentIds(threadId: string): string[] {
+  return getDb()
+    .prepare<[string], { agent_id: string }>(
+      `SELECT agent_id FROM thread_agents WHERE thread_id = ? ORDER BY joined_at ASC`,
+    )
+    .all(threadId)
+    .map((r) => r.agent_id);
+}
+
+/** Add an agent to a thread (idempotent — duplicate is silently ignored). */
+export function addAgentToThread(threadId: string, agentId: string): void {
+  getDb()
+    .prepare(
+      `INSERT OR IGNORE INTO thread_agents (thread_id, agent_id, joined_at) VALUES (?, ?, ?)`,
+    )
+    .run(threadId, agentId, new Date().toISOString());
+}
+
+/** Remove an agent from a thread. */
+export function removeAgentFromThread(threadId: string, agentId: string): void {
+  getDb()
+    .prepare(`DELETE FROM thread_agents WHERE thread_id = ? AND agent_id = ?`)
+    .run(threadId, agentId);
+}

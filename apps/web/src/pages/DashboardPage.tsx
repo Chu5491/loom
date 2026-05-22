@@ -1,22 +1,18 @@
 // 프로젝트 대시보드 — 에이전트 현황, 활동 스트림, Git 요약, 실행 기록.
 // 채팅은 WorkspacePage(index)에서 전담.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useOutletContext, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft } from "lucide-react";
 import type { AdapterManifest } from "@loom/core";
 import type { LayoutOutletContext } from "../components/Layout.js";
 import { api } from "../api/client.js";
 import { useConfirm } from "../components/ConfirmDialog.js";
 import { useRoomDerived } from "../components/chat/index.js";
-import { FileTab } from "../components/FileTab.js";
-import type { AgentPresence } from "../components/MonacoView.js";
 import { TeamRibbon } from "../components/TeamRibbon.js";
-import { agentColorOf } from "../components/agentColor.js";
 import { useI18n } from "../context/I18nContext.js";
-import { useLoomEvent } from "../lib/loomEvents.js";
+import { emit } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
 import { LiveView } from "./workspace/LiveView.js";
 
@@ -150,30 +146,6 @@ export function DashboardPage() {
     [projectId, confirm, t],
   );
 
-  const [viewingFile, setViewingFile] = useState<string | null>(null);
-
-  const filePresences = useMemo<AgentPresence[]>(() => {
-    if (!viewingFile) return [];
-    const touches = activeTouchesQuery.data?.touches ?? [];
-    const out: AgentPresence[] = [];
-    for (const tch of touches) {
-      if (!tch.paths.includes(viewingFile)) continue;
-      const agent = agentList.find((a) => a.id === tch.agentId);
-      if (!agent) continue;
-      const loc = tch.locations.find((l) => l.path === viewingFile);
-      out.push({
-        agentId: agent.id,
-        agentName: agent.name,
-        color: agentColorOf(agent),
-        line: loc?.line ?? 1,
-        primary: out.length === 0,
-      });
-    }
-    return out;
-  }, [viewingFile, activeTouchesQuery.data, agentList]);
-
-  useLoomEvent("openFile", ({ path }) => setViewingFile(path));
-  useLoomEvent("viewFile", ({ path }) => setViewingFile(path));
 
   // ── Early returns
   if (project.isLoading || agents.isLoading) {
@@ -209,61 +181,35 @@ export function DashboardPage() {
         onPick={openFileExternal}
       />
 
-      {viewingFile ? (
-        <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20 shrink-0">
-            <button
-              type="button"
-              onClick={() => setViewingFile(null)}
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="size-3" />
-              <span>{t("activity.dashboard")}</span>
-            </button>
-            <span className="text-[10px] text-muted-foreground/50 mono truncate">
-              {viewingFile}
-            </span>
-          </div>
-          <FileTab
-            projectId={projectId!}
-            path={viewingFile}
-            presences={filePresences}
-            agents={agentList}
-            onJumpToRun={() => {}}
-            adapterByKind={adapterByKind}
-          />
-        </div>
-      ) : (
-        <section className="flex-1 min-w-0 min-h-0 flex flex-col">
-          <LiveView
-            agents={agentList}
-            runs={projectRuns}
-            workingIds={workingIds}
-            touchingIds={touchingIds}
-            activeTouches={activeTouchesQuery.data?.touches ?? []}
-            activeTools={activeToolsQuery.data?.tools ?? []}
-            delegations={activeDelegationsQuery.data?.delegations ?? []}
-            threadList={threadList}
-            workingThreadIds={workingThreadIds}
-            activeThreadId={null}
-            threadByAgent={threadByAgent}
-            adapterByKind={adapterByKind}
-            onPickFile={(path) => setViewingFile(path)}
-            onPickAgent={() => {}}
-            onPickThread={() => {}}
-            onRefresh={() => {
-              void runsQuery.refetch();
-              void threadsQuery.refetch();
-              void activeTouchesQuery.refetch();
-            }}
-            refreshing={
-              runsQuery.isFetching ||
-              threadsQuery.isFetching ||
-              activeTouchesQuery.isFetching
-            }
-          />
-        </section>
-      )}
+      <section className="flex-1 min-w-0 min-h-0 flex flex-col">
+        <LiveView
+          agents={agentList}
+          runs={projectRuns}
+          workingIds={workingIds}
+          touchingIds={touchingIds}
+          activeTouches={activeTouchesQuery.data?.touches ?? []}
+          activeTools={activeToolsQuery.data?.tools ?? []}
+          delegations={activeDelegationsQuery.data?.delegations ?? []}
+          threadList={threadList}
+          workingThreadIds={workingThreadIds}
+          activeThreadId={null}
+          threadByAgent={threadByAgent}
+          adapterByKind={adapterByKind}
+          onPickFile={(path) => emit("viewFile", { path })}
+          onPickAgent={() => {}}
+          onPickThread={() => {}}
+          onRefresh={() => {
+            void runsQuery.refetch();
+            void threadsQuery.refetch();
+            void activeTouchesQuery.refetch();
+          }}
+          refreshing={
+            runsQuery.isFetching ||
+            threadsQuery.isFetching ||
+            activeTouchesQuery.isFetching
+          }
+        />
+      </section>
     </div>
   );
 }

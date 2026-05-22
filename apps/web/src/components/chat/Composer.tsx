@@ -1,10 +1,9 @@
-// 메시지 작성 영역 — 텍스트박스 + @ 파일 / 스킬·MCP 자동완성 + 타깃 에이전트
-// 선택 + 컨텍스트 토글 + 전송.
+// 메시지 작성 영역 — 텍스트박스 + 자동완성 + 타깃 에이전트 선택 + 전송.
 //
 // 자동완성 규칙:
-//   `@` → 현재 프로젝트의 파일들. token: `@<path>` (CLI 가 파일 ref 로 인식)
+//   `@` → 에이전트(상단) + 파일(하단). 에이전트 선택 → 타깃 변경,
+//          파일 선택 → `@<path>` 토큰 삽입 (CLI 가 file ref 로 인식)
 //   `/` → 현재 에이전트가 가진 skill / MCP. token: `[skill: name]` / `[mcp: name]`
-//          — 본문은 매 run loadout 디렉터리에 펼쳐지므로 이름 언급만으로 충분.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -103,9 +102,20 @@ export function Composer({
     const q = trigger.query.toLowerCase();
 
     if (trigger.trigger === "@") {
+      // 에이전트 (상단) — 이름 퍼지 매칭.
+      const agentItems = agents
+        .filter((a) => a.name.toLowerCase().includes(q))
+        .map<PickItem>((a) => ({
+          kind: "agent",
+          token: a.id,
+          label: a.name,
+          meta: a.adapterKind,
+        }));
+
+      // 파일 (하단).
       const paths = filesQuery.data?.paths ?? [];
       const filtered = paths.filter((p) => p.toLowerCase().includes(q));
-      return filtered.slice(0, MAX_FILES_SHOWN).map<PickItem>((p) => {
+      const fileItems = filtered.slice(0, MAX_FILES_SHOWN).map<PickItem>((p) => {
         const slash = p.lastIndexOf("/");
         const dir = slash >= 0 ? p.slice(0, slash) : "";
         return {
@@ -115,6 +125,7 @@ export function Composer({
           meta: dir || undefined,
         };
       });
+      return [...agentItems, ...fileItems];
     }
 
     // `/` — 현재 에이전트의 skill + MCP. 에이전트 없으면 빈 배열.
@@ -139,7 +150,7 @@ export function Composer({
         meta: m.kind,
       }));
     return [...skills, ...mcps];
-  }, [trigger, filesQuery.data, specsQuery.data, mcpQuery.data, target]);
+  }, [trigger, agents, filesQuery.data, specsQuery.data, mcpQuery.data, target]);
 
   const [pickerIndex, setPickerIndex] = useState(0);
   useEffect(() => {
@@ -152,6 +163,25 @@ export function Composer({
 
   const commitPick = (item: PickItem) => {
     if (!trigger) return;
+
+    if (item.kind === "agent") {
+      // 에이전트 선택 → 타깃 변경 + 트리거 텍스트(@query) 제거.
+      setTarget(item.token);
+      const before = text.slice(0, trigger.triggerPos);
+      const after = text.slice(trigger.triggerPos + 1 + trigger.query.length);
+      const cleaned = before + after;
+      setText(cleaned);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(before.length, before.length);
+          setCaret(before.length);
+        }
+      });
+      return;
+    }
+
     const next = applyPick(text, trigger, item.token);
     setText(next.text);
     requestAnimationFrame(() => {
@@ -284,7 +314,7 @@ export function Composer({
                 onPick={commitPick}
                 emptyHint={
                   trigger?.trigger === "@"
-                    ? t("chat.mention.fileEmpty")
+                    ? t("chat.mention.atEmpty")
                     : t("chat.mention.slashEmpty")
                 }
               />

@@ -58,6 +58,19 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  /* ── Elevation (shadow) ─────────────────────────────────── */
+  --shadow-xs: 0 1px 2px 0 var(--shadow-color, rgba(0,0,0,.04));
+  --shadow-sm: 0 1px 3px 0 var(--shadow-color, rgba(0,0,0,.06)), 0 1px 2px -1px var(--shadow-color, rgba(0,0,0,.06));
+  --shadow-md: 0 4px 6px -1px var(--shadow-color, rgba(0,0,0,.07)), 0 2px 4px -2px var(--shadow-color, rgba(0,0,0,.07));
+  --shadow-lg: 0 10px 15px -3px var(--shadow-color, rgba(0,0,0,.08)), 0 4px 6px -4px var(--shadow-color, rgba(0,0,0,.08));
+
+  /* ── Transition presets ─────────────────────────────────── */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 350ms;
+
   /* 단일 폰트 정책: CommitMonoChu가 UI(sans), 헤딩(serif), 코드(mono) 모두
    * 담당. fallback은 시스템 mono로 — CommitMonoChu가 mono 베이스 글꼴이라
    * 한글/시스템 글리프와의 메트릭 차이를 줄이는 데 효과적. */
@@ -225,6 +238,15 @@ body,
   height: 100%;
 }
 
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition: background-color 350ms ease, color 350ms ease,
+              border-color 350ms ease, box-shadow 350ms ease,
+              fill 350ms ease, stroke 350ms ease !important;
+}
+
 body {
   font-family: var(--font-sans);
   background: var(--background);
@@ -233,6 +255,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  line-height: 1.6;
 }
 
 * {

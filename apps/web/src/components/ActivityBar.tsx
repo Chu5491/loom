@@ -136,6 +136,8 @@ export function ActivityBar({
         return `/projects/${projectId}`;
       case "dashboard":
         return `/projects/${projectId}/dashboard`;
+      case "files":
+        return `/projects/${projectId}/files`;
       case "agents":
         return `/projects/${projectId}/agents`;
       case "history":
@@ -397,10 +399,10 @@ function ActivityButton({
           aria-label={label}
           aria-pressed={active}
           className={cn(
-            "relative flex items-center justify-center h-9 rounded-md transition-colors",
+            "relative flex items-center justify-center h-9 rounded-md transition-all duration-150",
             active
               ? "bg-foreground/[0.10] text-foreground"
-              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground active:scale-95",
           )}
         >
           {active ? (

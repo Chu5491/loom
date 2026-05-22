@@ -1,5 +1,6 @@
 import type {
   AdapterConfig,
+  AdapterKind,
   AdapterManifest,
   AdapterProbeResult,
   CliAdapter,
@@ -21,11 +22,11 @@ import {
   codexProbe,
 } from "@loom/adapter-codex";
 import {
-  geminiAdapter,
-  geminiListModels,
-  geminiManifest,
-  geminiProbe,
-} from "@loom/adapter-gemini";
+  antigravityAdapter,
+  antigravityListModels,
+  antigravityManifest,
+  antigravityProbe,
+} from "@loom/adapter-antigravity";
 import {
   opencodeAdapter,
   opencodeListModels,
@@ -40,7 +41,7 @@ interface RegistryEntry {
   listModels?: ListModelsFn;
 }
 
-const entries = new Map<string, RegistryEntry>();
+const entries = new Map<AdapterKind, RegistryEntry>();
 
 export interface AdapterRegistration {
   manifest?: AdapterManifest;
@@ -60,11 +61,11 @@ export function registerAdapter(
   });
 }
 
-export function getAdapter(kind: string): CliAdapter | null {
+export function getAdapter(kind: AdapterKind): CliAdapter | null {
   return entries.get(kind)?.adapter ?? null;
 }
 
-export function getManifest(kind: string): AdapterManifest | null {
+export function getManifest(kind: AdapterKind): AdapterManifest | null {
   return entries.get(kind)?.manifest ?? null;
 }
 
@@ -72,7 +73,7 @@ export function listManifests(): AdapterManifest[] {
   return [...entries.values()].map((e) => e.manifest);
 }
 
-export function listAdapterKinds(): string[] {
+export function listAdapterKinds(): AdapterKind[] {
   return [...entries.keys()];
 }
 
@@ -122,7 +123,7 @@ export interface ProbeOptions {
 }
 
 export async function probeAdapter(
-  kind: string,
+  kind: AdapterKind,
   options: ProbeOptions = {},
 ): Promise<AdapterProbeResult | null> {
   const entry = entries.get(kind);
@@ -154,7 +155,7 @@ export interface ListModelsOptions {
 }
 
 export async function listModelsForAdapter(
-  kind: string,
+  kind: AdapterKind,
   options: ListModelsOptions = {},
 ): Promise<ModelListResult | null> {
   const entry = entries.get(kind);
@@ -192,7 +193,7 @@ export interface TestAdapterOptions {
 }
 
 export async function testAdapter(
-  kind: string,
+  kind: AdapterKind,
   opts: TestAdapterOptions,
 ): Promise<TestAdapterResult | null> {
   const entry = entries.get(kind);
@@ -305,11 +306,11 @@ const builtIns: Array<[CliAdapter, AdapterRegistration]> = [
     },
   ],
   [
-    geminiAdapter,
+    antigravityAdapter,
     {
-      manifest: geminiManifest,
-      probe: geminiProbe,
-      listModels: geminiListModels,
+      manifest: antigravityManifest,
+      probe: antigravityProbe,
+      listModels: antigravityListModels,
     },
   ],
   [

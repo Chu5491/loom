@@ -3,8 +3,21 @@
  * The web UI uses this to render the agent creation form without any hardcoded
  * adapter knowledge.
  */
+import type { AdapterKind } from "./types.js";
+
+export interface PolicyWarning {
+  /** "info" = neutral notice, "warn" = yellow, "danger" = red/blocking. */
+  level: "info" | "warn" | "danger";
+  /** Short title shown in the banner header. */
+  title: string;
+  /** Longer explanation. UI renders as markdown. */
+  body: string;
+  /** Optional link for the user to read more. */
+  url?: string;
+}
+
 export interface AdapterManifest {
-  kind: string;
+  kind: AdapterKind;
   /** Short human-friendly name shown in the picker (e.g. "Claude Code"). */
   displayName: string;
   /** One-line description shown in the picker. */
@@ -21,6 +34,8 @@ export interface AdapterManifest {
   defaultConfig: Record<string, unknown>;
   /** Form fields rendered in order. */
   fields: AdapterField[];
+  /** Policy/legal warnings shown in the agent creation form and run UI. */
+  policyWarnings?: PolicyWarning[];
 }
 
 export type AdapterField =

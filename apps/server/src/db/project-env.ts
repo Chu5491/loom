@@ -1,6 +1,7 @@
 // 프로젝트 단위 환경변수 — 모든 에이전트 run에 공통 주입되는 KV 페어.
 // 보통 API 키, BASE_URL 같은 공유 secret. 에이전트별 env가 우선순위가 높음.
 
+import { encryptSecret, isEncrypted, tryDecryptSecret } from "../crypto.js";
 import { getDb } from "./client.js";
 
 interface Row {
@@ -9,13 +10,28 @@ interface Row {
 }
 
 export function listProjectEnv(projectId: string): Record<string, string> {
-  const rows = getDb()
+  const db = getDb();
+  const rows = db
     .prepare<[string], Row>(
       `SELECT key, value FROM project_env WHERE project_id = ? ORDER BY key`,
     )
     .all(projectId);
   const out: Record<string, string> = {};
-  for (const r of rows) out[r.key] = r.value;
+  const update = db.prepare(
+    `UPDATE project_env SET value = ? WHERE project_id = ? AND key = ?`,
+  );
+  const migrate = db.transaction(() => {
+    for (const r of rows) {
+      if (isEncrypted(r.value)) {
+        const plain = tryDecryptSecret(r.value);
+        if (plain !== null) out[r.key] = plain;
+      } else {
+        out[r.key] = r.value;
+        update.run(encryptSecret(r.value), projectId, r.key);
+      }
+    }
+  });
+  migrate();
   return out;
 }
 
@@ -31,9 +47,8 @@ export function replaceProjectEnv(
       `INSERT INTO project_env (project_id, key, value) VALUES (?, ?, ?)`,
     );
     for (const [key, value] of Object.entries(env)) {
-      // 빈 문자열 key는 무시 — UI에서 새 row 추가 시 흔히 발생.
       if (!key.trim()) continue;
-      insert.run(projectId, key, value);
+      insert.run(projectId, key, encryptSecret(value));
     }
   });
   tx();

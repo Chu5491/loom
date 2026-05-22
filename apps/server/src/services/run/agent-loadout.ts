@@ -55,7 +55,7 @@ function safeFilename(raw: string, fallback: string): string {
 
 /** 첫 번째 헤딩(`# X`) 또는 첫 비공백 줄을 인덱스 blurb으로. */
 function extractBlurb(content: string): string {
-  for (const line of content.split("\n")) {
+  for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     return trimmed.replace(/^#+\s*/, "").slice(0, 80);

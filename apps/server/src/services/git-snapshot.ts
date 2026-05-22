@@ -1,5 +1,6 @@
 import { execFile as execFileCb } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -66,9 +67,9 @@ export async function snapshotWorkTree(cwd: string): Promise<string | null> {
     // Best-effort cleanup. The file may not exist if `git add` failed
     // before any write — that's fine, ignore.
     try {
-      await execFile("rm", ["-f", tmpIndex]);
+      fs.unlinkSync(tmpIndex);
     } catch {
-      // ignore
+      // file may not exist if git add failed before any write
     }
   }
 }

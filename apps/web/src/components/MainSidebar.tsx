@@ -98,10 +98,10 @@ export function MainSidebar({
             end={it.end}
             className={({ isActive }) =>
               cn(
-                "relative flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-colors",
+                "relative flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-all duration-150",
                 isActive
                   ? "bg-foreground/[0.08] text-foreground font-medium"
-                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground active:scale-[0.98]",
               )
             }
           >
@@ -129,10 +129,10 @@ export function MainSidebar({
           onClick={onSettingsClick}
           aria-pressed={settingsActive}
           className={cn(
-            "w-full flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-colors",
+            "w-full flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-all duration-150",
             settingsActive
               ? "bg-foreground/[0.08] text-foreground font-medium"
-              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground active:scale-[0.98]",
           )}
         >
           <SettingsIcon className="size-4" />

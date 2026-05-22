@@ -16,14 +16,17 @@ const roleSchema = z
   .enum(["engineer", "researcher", "reviewer", "writer", "other"])
   .nullable();
 
+const adapterKindSchema = z.enum(["claude-code", "antigravity", "codex", "opencode"]);
+
 const createSchema = z.object({
   projectId: z.string().min(1),
   name: z.string().min(1),
+  mentionName: z.string().min(1).max(30).regex(/^\w[\w-]*$/).nullable().optional(),
   prompt: z.string().optional(),
   skillIds: z.array(z.string()).optional(),
   mcpServerIds: z.array(z.string()).optional(),
   role: roleSchema.optional(),
-  adapterKind: z.string().min(1),
+  adapterKind: adapterKindSchema,
   adapterConfig: adapterConfigSchema.optional(),
   defaultCwd: z.string().nullable().optional(),
 });
@@ -31,11 +34,12 @@ const createSchema = z.object({
 const updateSchema = z.object({
   projectId: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
+  mentionName: z.string().min(1).max(30).regex(/^\w[\w-]*$/).nullable().optional(),
   prompt: z.string().optional(),
   skillIds: z.array(z.string()).optional(),
   mcpServerIds: z.array(z.string()).optional(),
   role: roleSchema.optional(),
-  adapterKind: z.string().min(1).optional(),
+  adapterKind: adapterKindSchema.optional(),
   adapterConfig: adapterConfigSchema.optional(),
   defaultCwd: z.string().nullable().optional(),
 });

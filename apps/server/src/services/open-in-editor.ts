@@ -10,6 +10,7 @@
 
 import { spawn } from "node:child_process";
 import { access, constants } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { PreferredEditor } from "@loom/core";
 
@@ -42,7 +43,7 @@ interface EditorSpec {
   buildArgs: (target: string, line?: number) => string[];
 }
 
-const HOME = process.env.HOME ?? "";
+const HOME = os.homedir();
 const expand = (p: string): string =>
   p.startsWith("~/") ? path.join(HOME, p.slice(2)) : p;
 

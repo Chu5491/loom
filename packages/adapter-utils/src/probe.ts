@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
+import { exec, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { BinaryStatus } from "@loom/core";
 
+const IS_WIN = process.platform === "win32";
 const PROBE_TIMEOUT_MS = 3000;
 
 /**
@@ -17,9 +18,15 @@ export async function probeBinary(
 ): Promise<BinaryStatus> {
   const versionArg = options.versionArg ?? "--version";
   return new Promise((resolve) => {
+    // Windows: Node's spawn doesn't search PATHEXT, so npm-installed .cmd
+    // shims are invisible. Append .cmd suffix as first attempt (same as spawn.ts).
+    const resolvedCmd = IS_WIN && !command.includes("\\") && !command.includes("/")
+      ? `${command}.cmd`
+      : command;
+
     let proc;
     try {
-      proc = spawn(command, [versionArg], {
+      proc = spawn(resolvedCmd, [versionArg], {
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
       });
@@ -36,9 +43,13 @@ export async function probeBinary(
     let stderr = "";
     const killTimer = setTimeout(() => {
       try {
-        proc.kill("SIGKILL");
+        if (process.platform === "win32" && proc.pid) {
+          exec(`taskkill /PID ${proc.pid} /T /F`).unref();
+        } else {
+          proc.kill("SIGKILL");
+        }
       } catch {
-        // ignore — process may already have exited
+        // process may already have exited
       }
     }, PROBE_TIMEOUT_MS);
 

@@ -5,7 +5,19 @@
 
 import { createHash } from "node:crypto";
 import { execFile as execFileCb, spawn } from "node:child_process";
+import { devNull } from "node:os";
 import { promisify } from "node:util";
+import type {
+  GhProbe,
+  GitBranchInfo,
+  GitCollaborator,
+  GitCommitInfo,
+  GitCreatePrResult,
+  GitLogEntry,
+  GitStashEntry,
+  GitStatus,
+  GitWorkingChange,
+} from "@loom/core";
 
 const execFile = promisify(execFileCb);
 
@@ -62,29 +74,10 @@ export async function isGitRepo(cwd: string): Promise<boolean> {
 // ────────────────────────────────────────────────────────────────────────────
 // status
 
-export type WorkingChange = {
-  /** workspace에서의 path. renamed면 to-path. */
-  path: string;
-  /** rename 시 원본 path. */
-  fromPath?: string;
-  /** porcelain v1의 1글자 코드 (M/A/D/R/C/U/?/!) */
-  status: string;
-};
-
-export interface GitStatus {
-  branch: string | null;
-  /** detached HEAD면 head sha. */
-  head: string | null;
-  /** upstream 대비 ahead/behind. upstream 없으면 null. */
-  ahead: number | null;
-  behind: number | null;
-  staged: WorkingChange[];
-  unstaged: WorkingChange[];
-  untracked: string[];
-  conflicted: string[];
-  /** 깔끔한 트리(diff 0개)면 true. */
-  clean: boolean;
-}
+// 공유 타입은 @loom/core에서 import. 기존 import 경로 호환 위해 re-export.
+export type { GitWorkingChange, GitStatus } from "@loom/core";
+/** @deprecated GitWorkingChange 를 사용하세요. 기존 코드 호환용 별칭. */
+export type WorkingChange = GitWorkingChange;
 
 /** porcelain=v1 -z 출력 파싱 — NUL 구분이라 경로에 줄바꿈/공백 있어도 안전. */
 export async function getStatus(cwd: string): Promise<GitStatus> {
@@ -222,7 +215,7 @@ export async function getUntrackedDiff(
     "--no-color",
     "--no-index",
     "--",
-    "/dev/null",
+    devNull,
     path,
   ]).catch((err) => {
     // git diff --no-index는 차이가 있을 때 exit 1을 내는데 그건 정상.
@@ -329,19 +322,9 @@ export async function autoCommitAll(
 // ────────────────────────────────────────────────────────────────────────────
 // log + branches (graph 용)
 
-export interface LogEntry {
-  sha: string;
-  /** 짧은 sha (그래프 표기용). */
-  shortSha: string;
-  parents: string[];
-  authorName: string;
-  authorEmail: string;
-  /** ISO 문자열. */
-  authoredAt: string;
-  subject: string;
-  /** 이 커밋을 가리키는 ref(들). 보통 branch/tag. HEAD는 별도 표기. */
-  refs: string[];
-}
+export type { GitLogEntry } from "@loom/core";
+/** @deprecated GitLogEntry 를 사용하세요. */
+export type LogEntry = GitLogEntry;
 
 const LOG_FORMAT =
   "%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s";
@@ -395,15 +378,9 @@ export async function getLog(
   return entries;
 }
 
-export interface BranchInfo {
-  name: string;
-  current: boolean;
-  /** 추적하는 upstream의 짧은 이름, 예: origin/main. local 만 의미. */
-  upstream: string | null;
-  head: string;
-  /** local: refs/heads, remote: refs/remotes. UI 가 그룹핑할 때 사용. */
-  kind: "local" | "remote";
-}
+export type { GitBranchInfo } from "@loom/core";
+/** @deprecated GitBranchInfo 를 사용하세요. */
+export type BranchInfo = GitBranchInfo;
 
 export async function listBranches(cwd: string): Promise<BranchInfo[]> {
   if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
@@ -477,16 +454,9 @@ export async function renameBranch(
 // ────────────────────────────────────────────────────────────────────────────
 // stash
 
-export interface StashEntry {
-  /** stash@{N} 의 N. */
-  index: number;
-  /** "WIP on main: ..." 같은 git 의 자체 메시지 (사용자 메시지가 들어 있는 그 본문). */
-  message: string;
-  /** 스태시할 때 있던 브랜치. parse 실패하면 null. */
-  branch: string | null;
-  /** ISO. */
-  createdAt: string;
-}
+export type { GitStashEntry } from "@loom/core";
+/** @deprecated GitStashEntry 를 사용하세요. */
+export type StashEntry = GitStashEntry;
 
 export async function listStash(cwd: string): Promise<StashEntry[]> {
   if (!(await isGitRepo(cwd))) throw new NotAGitRepoError();
@@ -599,11 +569,9 @@ export async function applyPatch(
 // ────────────────────────────────────────────────────────────────────────────
 // PR — wraps `gh pr create`. gh 자체의 auth / scope 를 그대로 신뢰.
 
-export interface PrProbe {
-  installed: boolean;
-  /** `gh --version` 의 첫 줄 — UI 에 짧게 표시하려고. installed=false 면 빈 문자열. */
-  version: string;
-}
+export type { GhProbe } from "@loom/core";
+/** @deprecated GhProbe 를 사용하세요. */
+export type PrProbe = GhProbe;
 
 export async function probeGh(): Promise<PrProbe> {
   try {
@@ -629,12 +597,9 @@ export interface CreatePrInput {
   draft?: boolean;
 }
 
-export interface CreatePrResult {
-  /** gh 가 출력하는 PR URL. */
-  url: string;
-  /** 추가로 보여줄 출력 — gh 가 가끔 경고 등을 같이 출력. */
-  output: string;
-}
+// GitCreatePrResult (core) 는 API 응답 형태 (ok + url + output).
+// 서버 내부에서는 url + output 만 — route 가 ok: true 를 덧씌움.
+export type CreatePrResult = { url: string; output: string };
 
 export async function createPullRequest(
   cwd: string,
@@ -670,19 +635,9 @@ export async function createPullRequest(
 // ────────────────────────────────────────────────────────────────────────────
 // commit detail (show)
 
-export interface CommitInfo {
-  sha: string;
-  shortSha: string;
-  parents: string[];
-  authorName: string;
-  authorEmail: string;
-  authoredAt: string;
-  subject: string;
-  /** subject 다음 줄들 — body 가 없으면 ""다. */
-  body: string;
-  /** 이 커밋이 건드린 파일들 (M / A / D / R / C 코드 + path). */
-  files: WorkingChange[];
-}
+export type { GitCommitInfo } from "@loom/core";
+/** @deprecated GitCommitInfo 를 사용하세요. */
+export type CommitInfo = GitCommitInfo;
 
 export async function getCommitInfo(
   cwd: string,
@@ -862,13 +817,7 @@ async function runRemote(cwd: string, args: string[]): Promise<RemoteResult> {
 // ────────────────────────────────────────────────────────────────────────────
 // collaborators — git log 에서 실제 사람 작성자 추출
 
-export interface GitCollaborator {
-  name: string;
-  email: string;
-  avatarUrl: string;
-  commitCount: number;
-  lastCommitAt: string;
-}
+export type { GitCollaborator } from "@loom/core";
 
 const BOT_PATTERNS = [
   /\[bot\]/i,

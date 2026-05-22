@@ -7,16 +7,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import NumberFlow from "@number-flow/react";
 import { Drawer } from "vaul";
 import {
+  CheckCircle2,
+  Circle,
   Copy,
+  FileSearch,
   GitBranch,
   MessagesSquare,
   Network,
   Paperclip,
   RefreshCw,
   X,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { AdapterManifest, Agent, Thread } from "@loom/core";
+import type { AdapterManifest, Agent, CiOverall, Thread } from "@loom/core";
 import { api } from "../../api/client.js";
 import { AgentInitialBadge } from "../../components/AgentInitialBadge.js";
 import { threadBranchName, shortenBranch, copyToClipboard } from "../../lib/git-utils.js";
@@ -29,11 +33,20 @@ const HandoffGraph = lazy(() =>
 import { useI18n } from "../../context/I18nContext.js";
 import { cn } from "../../lib/utils.js";
 import { emit } from "../../lib/loomEvents.js";
+import { formatTokens } from "../../components/chat/utils.js";
 import { compactBundleSize } from "./formatters.js";
+
+export interface ThreadTokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
 
 export function ThreadBar({
   activeThread,
   activeThreadCost,
+  activeThreadTokens,
   participants,
   workingIds,
   touchingIds,
@@ -42,6 +55,8 @@ export function ThreadBar({
   activeThread: Thread | null;
   /** 이 스레드의 run 비용 합계. 비용 보고가 하나도 없으면 null. */
   activeThreadCost: number | null;
+  /** 이 스레드의 run 토큰 합계. 토큰 보고가 하나도 없으면 null. */
+  activeThreadTokens: ThreadTokens | null;
   /** 이 스레드에서 한 번이라도 발화한 에이전트 — 참여자 stack용. */
   participants: Agent[];
   /** 응답을 만들고 있는 (running) 에이전트들. */
@@ -69,6 +84,13 @@ export function ThreadBar({
     },
     onError: (err) =>
       toast.error(err instanceof Error ? err.message : String(err)),
+  });
+
+  const ciQuery = useQuery({
+    queryKey: ["ciStatus", activeThread?.id],
+    queryFn: () => api.getThreadCiStatus(activeThread!.id),
+    enabled: !!activeThread,
+    refetchInterval: 30_000,
   });
 
   // ⌘⇧A 토글 아카이브. 입력 중에는 무시. (이름 편집 등은 ThreadList 안에 있음)
@@ -203,12 +225,14 @@ export function ThreadBar({
         </button>
       ) : null}
 
+      {ciQuery.data && ciQuery.data.overall !== "none" ? (
+        <CiBadge overall={ciQuery.data.overall} count={ciQuery.data.checks.length} />
+      ) : null}
+
       {activeThreadCost !== null ? (
         <span
-          className="text-[11px] text-muted-foreground/80 mono shrink-0 px-1 inline-flex items-baseline"
-          title={t("thread.bar.totalCost", {
-            value: `$${activeThreadCost.toFixed(4)}`,
-          })}
+          className="text-[11px] text-muted-foreground/80 mono shrink-0 px-1 inline-flex items-baseline gap-1.5"
+          title={buildThreadCostTooltip(activeThreadCost, activeThreadTokens, t)}
         >
           <NumberFlow
             value={activeThreadCost}
@@ -221,7 +245,16 @@ export function ThreadBar({
             }
             prefix="$"
           />
+          {activeThreadTokens ? (
+            <span className="text-[10px] text-muted-foreground/50">
+              {formatTokens(activeThreadTokens.input + activeThreadTokens.output)} tok
+            </span>
+          ) : null}
         </span>
+      ) : null}
+
+      {activeThread ? (
+        <ReviewButton threadId={activeThread.id} agents={participants} />
       ) : null}
 
       {activeThread ? <ThreadGraphButton thread={activeThread} /> : null}
@@ -348,4 +381,167 @@ function ThreadGraphButton({ thread }: { thread: Thread }) {
       </Drawer.Portal>
     </Drawer.Root>
   );
+}
+
+const CI_STYLES: Record<
+  Exclude<CiOverall, "none">,
+  { icon: typeof CheckCircle2; color: string; label: string }
+> = {
+  success: {
+    icon: CheckCircle2,
+    color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10",
+    label: "CI passed",
+  },
+  failure: {
+    icon: XCircle,
+    color: "text-red-600 dark:text-red-400 bg-red-500/10",
+    label: "CI failed",
+  },
+  pending: {
+    icon: Circle,
+    color: "text-amber-600 dark:text-amber-400 bg-amber-500/10",
+    label: "CI pending",
+  },
+};
+
+function CiBadge({ overall, count }: { overall: CiOverall; count: number }) {
+  if (overall === "none") return null;
+  const s = CI_STYLES[overall];
+  const Icon = s.icon;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-1.5 h-5 rounded text-[10px] mono shrink-0",
+        s.color,
+      )}
+      title={`${s.label} (${count})`}
+    >
+      <Icon className={cn("size-3", overall === "pending" && "animate-pulse")} />
+      {count}
+    </span>
+  );
+}
+
+function ReviewButton({ threadId, agents }: { threadId: string; agents: Agent[] }) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const reviewers = agents.filter((a) => a.role === "reviewer");
+  // 리뷰어가 없으면 전체 에이전트 목록 폴백
+  const candidates = reviewers.length > 0 ? reviewers : agents;
+
+  const reviewsQuery = useQuery({
+    queryKey: ["reviews", threadId],
+    queryFn: () => api.listReviews(threadId),
+  });
+
+  const create = useMutation({
+    mutationFn: (reviewerAgentId: string) =>
+      api.createReview({ threadId, reviewerAgentId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["reviews", threadId] });
+      qc.invalidateQueries({ queryKey: ["runs"] });
+      setOpen(false);
+      toast.success(t("review.request"));
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : String(err));
+    },
+  });
+
+  const activeReview = reviewsQuery.data?.reviews?.find(
+    (r) => r.status === "reviewing",
+  );
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title={t("review.request")}
+        aria-label={t("review.request")}
+        className={cn(
+          "inline-flex size-6 items-center justify-center rounded transition-colors shrink-0",
+          activeReview
+            ? "text-amber-500 hover:text-amber-400 hover:bg-muted"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted",
+        )}
+      >
+        <FileSearch className="size-3.5" />
+      </button>
+
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
+          onClick={() => setOpen(false)}
+        >
+          <div className="fixed inset-0 bg-foreground/20" />
+          <div
+            className="relative w-full max-w-sm bg-popover border border-border rounded-xl shadow-2xl p-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-medium">{t("review.request.title")}</h3>
+            <p className="text-xs text-muted-foreground">{t("review.request.desc")}</p>
+
+            {candidates.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{t("review.request.noReviewer")}</p>
+            ) : (
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {candidates.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setSelectedId(a.id)}
+                    data-selected={selectedId === a.id || undefined}
+                    className="w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 hover:bg-accent/50 data-[selected]:bg-accent transition-colors"
+                  >
+                    <AgentInitialBadge agent={a} size="xs" />
+                    <span className="truncate">{a.name}</span>
+                    {a.role === "reviewer" ? (
+                      <span className="ml-auto text-[10px] text-emerald-500 mono">reviewer</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="px-3 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedId || create.isPending}
+                onClick={() => selectedId && create.mutate(selectedId)}
+                className="px-3 py-1 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {create.isPending ? "…" : t("review.request.submit")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function buildThreadCostTooltip(
+  cost: number,
+  tokens: ThreadTokens | null,
+  t: (key: string, vars?: Record<string, string>) => string,
+): string {
+  const lines: string[] = [t("thread.bar.totalCost", { value: `$${cost.toFixed(4)}` })];
+  if (tokens) {
+    lines.push(`in: ${formatTokens(tokens.input)}  out: ${formatTokens(tokens.output)}`);
+    if (tokens.cacheRead > 0 || tokens.cacheWrite > 0) {
+      lines.push(`cache read: ${formatTokens(tokens.cacheRead)}  write: ${formatTokens(tokens.cacheWrite)}`);
+    }
+  }
+  return lines.join("\n");
 }

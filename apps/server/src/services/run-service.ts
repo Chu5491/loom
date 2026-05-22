@@ -20,6 +20,7 @@ import {
   setRunAfterRef,
   setRunBeforeRef,
   setRunLogPath,
+  setRunSessionId,
 } from "../db/runs.js";
 import { replaceRunChanges } from "../db/run-changes.js";
 import { getMcpServersByIds } from "../db/mcp-servers.js";
@@ -32,10 +33,11 @@ import {
   startToolTracking,
   stopToolTracking,
 } from "./active-tools.js";
+import { config } from "../config.js";
 import { autoCommitAll } from "./git.js";
 import { diffStat, snapshotWorkTree } from "./git-snapshot.js";
 import { appendChunk, finishLog, startLog } from "./log-store.js";
-import { trackActiveRun, untrackActiveRun } from "./run/active-runs.js";
+import { activeRunCount, trackActiveRun, untrackActiveRun, reserveRunSlot, releaseRunSlot } from "./run/active-runs.js";
 import {
   materializeAgentLoadout,
   type AgentLoadout,
@@ -43,6 +45,7 @@ import {
 import { composePrompt } from "./run/prompt-composer.js";
 import {
   makeCostTapper,
+  makeDelegationTapper,
   makeSessionIdTapper,
   makeToolsTapper,
   makeTouchesTapper,
@@ -52,9 +55,12 @@ import { resolveThreadForRun } from "./run/thread-resolver.js";
 // 백워드 호환 재내보내기 — 기존 import 경로를 깨지 않도록.
 export { composePrompt } from "./run/prompt-composer.js";
 export {
+  activeRunCount,
   cancelRun,
   isRunActive,
   _activeRunIds,
+  reserveRunSlot,
+  releaseRunSlot,
   type CancelResult,
 } from "./run/active-runs.js";
 
@@ -80,7 +86,7 @@ export interface StartRunInput {
 
 export type StartRunResult =
   | { ok: true; run: Run }
-  | { ok: false; status: 400 | 404; error: string };
+  | { ok: false; status: 400 | 404 | 429; error: string };
 
 export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const agent = getAgent(input.agentId);
@@ -95,6 +101,30 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     };
   }
 
+  if (activeRunCount() >= config.maxConcurrentRuns) {
+    return {
+      ok: false,
+      status: 429,
+      error: `concurrent_limit: max ${config.maxConcurrentRuns} runs`,
+    };
+  }
+
+  // Reserve slot synchronously before any await — closes the race window
+  // where N concurrent requests all read the same activeRunCount() snapshot.
+  reserveRunSlot();
+
+  try {
+    return await startRunInner(input, agent, adapter);
+  } finally {
+    releaseRunSlot();
+  }
+}
+
+async function startRunInner(
+  input: StartRunInput,
+  agent: NonNullable<ReturnType<typeof getAgent>>,
+  adapter: NonNullable<ReturnType<typeof getAdapter>>,
+): Promise<StartRunResult> {
   // run별 첨부 스킬은 반드시 존재해야 함. 에이전트 기본 스킬은 별도 로드 후 dedup 머지.
   const perRunSkillIds = input.attachedSpecIds ?? [];
   const perRunSkills = getSpecsByIds(perRunSkillIds);
@@ -162,6 +192,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const composedPrompt = composePrompt({
     userPrompt: input.prompt,
     globalRule: getGlobalRule(),
+    projectRule: project?.rule,
     agentPrompt: agent.prompt,
     threadContext,
     loadout,
@@ -231,10 +262,19 @@ async function executeRun(
     const beforeRef = await snapshotWorkTree(cwd);
     if (beforeRef) setRunBeforeRef(runId, beforeRef);
 
-    const tapCost = makeCostTapper(runId);
-    const tapSessionId = makeSessionIdTapper(runId, adapter);
-    const tapTouches = makeTouchesTapper(runId, adapter);
-    const tapTools = makeToolsTapper(runId, adapter);
+    const cost = makeCostTapper(runId);
+    // resumed run → session_id는 이미 확정된 값. CLI 출력에서 추출하면
+    // turn 단위 ID가 잡혀 다음 run이 잘못된 세션으로 resume → 반복 실패.
+    // 입력 값을 그대로 유지하고 tapper는 fresh run에서만 동작.
+    const sessionId = resumeSessionId
+      ? (() => {
+          setRunSessionId(runId, resumeSessionId);
+          return { tap: () => {}, flush: () => {} };
+        })()
+      : makeSessionIdTapper(runId, adapter);
+    const touches = makeTouchesTapper(runId, adapter);
+    const tools = makeToolsTapper(runId, adapter);
+    const delegations = makeDelegationTapper(runId, adapter);
 
     if (agent.projectId) {
       startTracking({
@@ -264,7 +304,7 @@ async function executeRun(
         // 로드아웃/MCP 주입 — 어댑터가 자기 CLI에 맞게 처리:
         //   claude-code → --add-dir <loadoutDir> (Read 권한) +
         //                  --mcp-config <path> --strict-mcp-config
-        //   gemini      → --allowed-mcp-server-names ...
+        //   antigravity → --allowed-mcp-server-names ...
         //   codex       → -c mcp_servers.X.{command|args|env|...}=...
         //   opencode    → write loadoutDir/xdg/opencode/opencode.json +
         //                  XDG_CONFIG_HOME / OPENCODE_DISABLE_PROJECT_CONFIG env
@@ -273,10 +313,11 @@ async function executeRun(
         mcpServers,
         onStdout: (chunk) => {
           appendChunk(runId, "stdout", chunk);
-          tapCost(chunk);
-          tapSessionId(chunk);
-          tapTouches(chunk);
-          tapTools(chunk);
+          cost.tap(chunk);
+          sessionId.tap(chunk);
+          touches.tap(chunk);
+          tools.tap(chunk);
+          delegations.tap(chunk);
         },
         onStderr: (chunk) => appendChunk(runId, "stderr", chunk),
       },
@@ -286,6 +327,13 @@ async function executeRun(
     markRunRunning(runId, handle.pid);
 
     const result = await handle.promise;
+
+    // 프로세스 종료 후 lineBuffer에 남은 잔여 라인 처리.
+    cost.flush();
+    sessionId.flush();
+    touches.flush();
+    tools.flush();
+    delegations.flush();
 
     const status = abort.signal.aborted
       ? "cancelled"

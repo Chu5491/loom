@@ -15,26 +15,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { McpServer } from "@loom/core";
+import type { GeminiSyncStatus, McpServer } from "@loom/core";
 import { getDb } from "../db/client.js";
 import { listMcpServers } from "../db/mcp-servers.js";
+
+export type { GeminiSyncStatus } from "@loom/core";
 
 const GEMINI_HOME = path.join(os.homedir(), ".gemini");
 const SETTINGS_PATH = path.join(GEMINI_HOME, "settings.json");
 const MAX_BACKUPS = 5;
-
-export interface GeminiSyncStatus {
-  enabled: boolean;
-  lastSyncedAt: string | null;
-  lastError: string | null;
-  /** Loom이 관리 중인(이 settings에 작성한 적 있는) 서버 이름들. */
-  loomManagedNames: string[];
-  /** 사용자가 직접 추가한 (=loom과 무관한) 서버 이름들. */
-  userManagedNames: string[];
-  /** Catalog와 settings에 같은 이름이 모두 있는데 loom이 관리하지 않는 충돌. */
-  conflicts: string[];
-  settingsPath: string;
-}
 
 interface GeminiSyncRow {
   enabled: number;
@@ -228,16 +217,10 @@ function atomicWriteSettings(content: string): void {
   fs.renameSync(tmp, SETTINGS_PATH);
 }
 
-export interface SyncReport {
-  ok: boolean;
-  error?: string;
-  /** Sync가 enable돼있지 않아 skip된 경우. */
-  skipped?: "disabled";
-  removedFromSettings: string[];
-  addedToSettings: string[];
-  conflicts: string[];
-  backupPath: string | null;
-}
+import type { GeminiSyncReport } from "@loom/core";
+export type { GeminiSyncReport } from "@loom/core";
+/** @deprecated GeminiSyncReport 를 사용하세요. */
+export type SyncReport = GeminiSyncReport;
 
 /** 현재 catalog와 settings.json을 안전 머지. enabled가 false면 skipped. */
 export function runGeminiSync(args: { force?: boolean } = {}): SyncReport {

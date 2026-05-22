@@ -1,23 +1,21 @@
 // `@` 와 `/` 픽커 — 텍스트박스 위에 떠 있는 자동완성 메뉴.
 //
-//   `@` → 현재 프로젝트의 파일들 (token: "@<path>")
+//   `@` → 에이전트(상단) + 현재 프로젝트의 파일(하단)
+//         에이전트 선택 → 타깃 변경, 파일 선택 → "@<path>" 토큰 삽입
 //   `/` → 현재 에이전트의 스킬 + MCP   (token: "[skill: name]" / "[mcp: name]")
-//
-// CLI 가 `@<path>` 를 inline file ref 로 처리하는 관습을 그대로 따르고,
-// 스킬/MCP 는 사용자 의도를 LLM 에 전달할 마커로 들어감 — 본문은 어차피 매 run
-// loadout 디렉터리에 펼쳐지므로 이름 언급만으로 충분.
 
-import { Files as FilesIcon, FileText, Plug } from "lucide-react";
+import { Bot, Files as FilesIcon, FileText, Plug } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 import { basename } from "../../lib/path.js";
 
 export interface PickItem {
-  kind: "file" | "skill" | "mcp";
-  /** 텍스트박스에 박힐 토큰 (trailing space 는 commit 시 별도 추가). */
+  kind: "agent" | "file" | "skill" | "mcp";
+  /** 텍스트박스에 박힐 토큰 (trailing space 는 commit 시 별도 추가).
+   *  agent kind 일 때는 에이전트 id — Composer 가 타깃 변경에 사용. */
   token: string;
   /** 메뉴에 보이는 1차 라벨. */
   label: string;
-  /** 2차 메타 (file dir, mcp kind 등). */
+  /** 2차 메타 (file dir, mcp kind, adapter kind 등). */
   meta?: string;
 }
 
@@ -95,12 +93,15 @@ export function MentionPicker({
 }
 
 const SECTION_LABEL: Record<PickItem["kind"], string> = {
+  agent: "Agents",
   file: "Files",
   skill: "Skills",
   mcp: "MCPs",
 };
 
 function KindIcon({ kind }: { kind: PickItem["kind"] }) {
+  if (kind === "agent")
+    return <Bot className="size-3 text-muted-foreground/70 shrink-0" />;
   if (kind === "file")
     return <FilesIcon className="size-3 text-muted-foreground/70 shrink-0" />;
   if (kind === "skill")

@@ -15,6 +15,8 @@ export interface ComposePromptInput {
   /** 워크스페이스 전역 룰 — 모든 에이전트가 공통으로 받음. 매 턴 prefix 가
    *  같으므로 provider 의 prompt cache 가 잘 먹힘. */
   globalRule?: string;
+  /** 프로젝트 단위 룰 — global 과 agent 사이. 프로젝트 안 모든 에이전트에 적용. */
+  projectRule?: string;
   agentPrompt?: string;
   threadContext?: string;
   /** 디스크에 펼쳐진 loadout. null이면 인덱스 블록 생략. */
@@ -29,6 +31,12 @@ export function composePrompt(input: ComposePromptInput): string {
   if (g) {
     sections.push(
       `=== Workspace Rules ===\n${g}\n=== End Workspace Rules ===`,
+    );
+  }
+  const p = input.projectRule?.trim();
+  if (p) {
+    sections.push(
+      `=== Project Rules ===\n${p}\n=== End Project Rules ===`,
     );
   }
   const a = input.agentPrompt?.trim();
