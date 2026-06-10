@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowUp, Bot } from "lucide-react";
 import type { AgentSpec, OfficeEvent } from "@loom/core";
 import { api } from "../api/client.js";
+import { Markdown } from "../components/Markdown.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
@@ -218,9 +219,9 @@ function AgentBubble({ agent, fromAgent, runId, onDone }: { agent?: AgentSpec; f
         ) : view.errors.length > 0 ? (
           view.errors.map((m, i) => <ErrorLine key={i} text={m} />)
         ) : view.body ? (
-          <div className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-card border border-border px-4 py-2.5 text-sm leading-relaxed">
-            {view.body}
-            {running ? <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-primary/70" /> : null}
+          <div className="rounded-2xl rounded-bl-md bg-card border border-border px-4 py-2.5 text-sm leading-relaxed">
+            <Markdown>{view.body}</Markdown>
+            {running ? <span className="mt-1 inline-block h-3 w-1.5 animate-pulse rounded-sm bg-primary/70" /> : null}
           </div>
         ) : running ? (
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">

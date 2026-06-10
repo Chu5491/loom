@@ -7,6 +7,7 @@ import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Workflow, C
 import type { AdapterKind, AgentSpec, HarnessEdge, HarnessTrigger, McpServer, McpServerKind, Office } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
+import { Markdown } from "../components/Markdown.js";
 import { Badge, Button } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
@@ -479,6 +480,49 @@ function Chips({ label, all, selected, onToggle }: { label: string; all: string[
 }
 
 // ── Rules ────────────────────────────────────────────────────────────────────
+// 마크다운 본문 편집기 — Edit/Preview 토글. textarea 는 항상 마운트(숨김)돼서
+// 기존 저장 로직(getElementById(id).value)이 그대로 동작한다.
+function MarkdownField({ id, defaultValue, placeholder, minH = "min-h-32" }: { id: string; defaultValue: string; placeholder?: string; minH?: string }) {
+  const { t } = useI18n();
+  const [val, setVal] = useState(defaultValue);
+  const [mode, setMode] = useState<"edit" | "preview">(defaultValue.trim() ? "preview" : "edit");
+  return (
+    <div>
+      <div className="mb-1.5 inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+        {(["preview", "edit"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={cn(
+              "rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors",
+              mode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t(`office.md.${m}`)}
+          </button>
+        ))}
+      </div>
+      <textarea
+        id={id}
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        placeholder={placeholder}
+        className={cn(areaCls, minH, mode === "preview" && "hidden")}
+      />
+      {mode === "preview" ? (
+        val.trim() ? (
+          <div className="rounded-lg border border-border bg-background px-3.5 py-2.5">
+            <Markdown>{val}</Markdown>
+          </div>
+        ) : (
+          <p className="py-2 text-xs text-muted-foreground">{t("office.md.empty")}</p>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 function firstLine(body: string): string {
   for (const l of body.split(/\r?\n/)) {
     const t = l.replace(/^#+\s*/, "").trim();
@@ -526,7 +570,7 @@ function RulesSection({ office }: { office: Office }) {
                 onChange={(e) => setDrafts((d) => d.map((x, j) => (j === di ? { ...x, name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") } : x)))}
               />
             ) : null}
-            <textarea className={cn(areaCls, "min-h-32")} defaultValue={r.body} id={`rule-${key}`} placeholder="# Markdown rule body" />
+            <MarkdownField id={`rule-${key}`} defaultValue={r.body} placeholder="# Markdown rule body" minH="min-h-32" />
             <SaveRow
               onSave={() => {
                 const name = r.name.trim();
@@ -586,8 +630,8 @@ function SkillsSection({ office }: { office: Office }) {
                 onChange={(e) => setDrafts((d) => d.map((x, j) => (j === di ? { name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") } : x)))}
               />
             ) : null}
-            <input className={inputCls} defaultValue={s.description} id={`skill-desc-${key}`} placeholder={t("office.skill.desc")} />
-            <textarea className={cn(areaCls, "mt-2 min-h-24")} defaultValue={s.body} id={`skill-body-${key}`} placeholder="# Markdown skill body" />
+            <input className={cn(inputCls, "mb-2")} defaultValue={s.description} id={`skill-desc-${key}`} placeholder={t("office.skill.desc")} />
+            <MarkdownField id={`skill-body-${key}`} defaultValue={s.body} placeholder="# Markdown skill body" minH="min-h-24" />
             <SaveRow
               onSave={() => {
                 const name = s.name.trim();
