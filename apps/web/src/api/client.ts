@@ -105,12 +105,16 @@ export const api = {
   deleteProject: (id: string) =>
     request<{ ok: boolean }>(`/api/projects/${id}`, { method: "DELETE" }),
 
+  /** Talk 컴포저 @file 멘션 — 프로젝트 디렉토리 파일 검색(상대경로 최대 20개). */
+  searchProjectFiles: (projectId: string, q: string) =>
+    request<{ files: string[] }>(`/api/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
+
   // ── runs (Talk) ────────────────────────────────────────────────────────
   // projectId 없으면 전체, "none" 이면 프로젝트 없는 run, id 면 그 프로젝트.
   listRuns: (projectId?: string | null) =>
     request<{ runs: RunInfo[] }>(`/api/runs${projectId === undefined ? "" : `?projectId=${projectId ?? "none"}`}`),
 
-  startRun: (body: { agent: string; prompt: string; cwd?: string; projectId?: string | null }) =>
+  startRun: (body: { agent: string; prompt: string; cwd?: string; projectId?: string | null; skills?: string[] }) =>
     request<{ run: RunInfo }>("/api/runs", {
       method: "POST",
       body: JSON.stringify(body),

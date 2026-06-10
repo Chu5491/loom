@@ -30,6 +30,9 @@ export interface StartRunInput {
   projectId?: string | null;
   /** 하네스 자동발화로 만든 자식이면 부모 run id. 사용자 시작이면 생략. */
   parentRunId?: string | null;
+  /** 이 run 에만 추가로 실을 스킬 이름들 — 사용자가 컴포저에서 명시적으로 첨부.
+   *  (자동주입 아님: 명시 첨부는 헌법이 허용하는 유일한 추가 경로.) */
+  skills?: string[];
 }
 export type StartRunResult =
   | { ok: true; run: RunInfo }
@@ -115,7 +118,9 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const allSkills = readSkills();
   const allMcp = readMcp();
   const rules = (agent.rules ?? []).map((n) => allRules.find((r) => r.name === n)).filter(Boolean).map((r) => r!.body);
-  const skills = (agent.skills ?? []).map((n) => allSkills.find((s) => s.name === n)).filter(Boolean).map((s) => s!);
+  // 에이전트 정의 스킬 + 이 run 에 사용자가 명시 첨부한 스킬(중복 제거).
+  const skillNames = [...new Set([...(agent.skills ?? []), ...(input.skills ?? [])])];
+  const skills = skillNames.map((n) => allSkills.find((s) => s.name === n)).filter(Boolean).map((s) => s!);
   const mcp = (agent.mcp ?? []).map((n) => allMcp.find((m) => m.name === n)).filter(Boolean).map((m) => resolveServer(m!));
 
   const loadout = materializeLoadout(agent, skills, mcp);

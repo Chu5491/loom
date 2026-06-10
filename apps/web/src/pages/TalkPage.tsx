@@ -1,30 +1,18 @@
 // Talk 화면 — office 에이전트와 대화. 한 턴 = 한 run.
 // 입력 → POST /api/runs → useRunStream 으로 SSE 이벤트를 버블에 흘린다.
-// @mention 으로 대상 에이전트를 바꾼다(자동주입 없음: 보낸 프롬프트는 적은 그대로).
+// @ 멘션 하나로 에이전트(라우팅)·스킬(이 run 에 첨부)·프로젝트 파일(경로 삽입)을 찾는다.
+// 자동주입 없음 — 스킬 첨부는 사용자의 명시적 선택, 파일은 텍스트로 경로만 들어간다.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, Bot } from "lucide-react";
-import type { AgentSpec, OfficeEvent } from "@loom/core";
+import { ArrowUp, Bot, FileText, Sparkles, Workflow, X } from "lucide-react";
+import type { AgentSpec, HarnessEdge, OfficeEvent, RunInfo, SkillSpec } from "@loom/core";
 import { api } from "../api/client.js";
+import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Markdown } from "../components/Markdown.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
-
-const AVATAR = [
-  "from-sky-500/80 to-indigo-500/80",
-  "from-emerald-500/80 to-teal-500/80",
-  "from-fuchsia-500/80 to-purple-500/80",
-  "from-amber-500/80 to-orange-500/80",
-  "from-rose-500/80 to-pink-500/80",
-  "from-cyan-500/80 to-blue-500/80",
-];
-function avatarFor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return AVATAR[h % AVATAR.length]!;
-}
 
 interface UserMsg { id: string; role: "user"; agent: string; text: string }
 interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string }
@@ -69,7 +57,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, pending]);
 
-  async function send(rawText: string) {
+  async function send(rawText: string, skills: string[]) {
     const text = rawText.trim();
     if (!text) return;
     // 선행 @mention 이 있으면 대상 에이전트 결정 + 토큰 제거(에이전트엔 안 보냄).
@@ -87,7 +75,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     setSendError(null);
     setPending({ agent, text: prompt });
     try {
-      await api.startRun({ agent, prompt, projectId });
+      await api.startRun({ agent, prompt, projectId, ...(skills.length ? { skills } : {}) });
       await runs.refetch();
       setPending(null);
     } catch (e) {
@@ -104,32 +92,51 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-3xl flex-col px-4 sm:px-6">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
-        {messages.length === 0 && !pending ? (
-          <Welcome activeAgent={agents.find((a) => a.name === active)} />
-        ) : (
-          <div className="space-y-5">
-            {messages.map((msg) =>
-              msg.role === "user" ? (
-                <UserBubble key={msg.id} text={msg.text} />
-              ) : (
-                <AgentBubble
-                  key={msg.id}
-                  agent={agents.find((a) => a.name === msg.agent)}
-                  fromAgent={msg.fromAgent}
-                  runId={msg.runId}
-                  onDone={() => void runs.refetch()}
-                />
-              ),
-            )}
-            {pending ? <UserBubble key="pending" text={pending.text} /> : null}
-            {sendError ? <ErrorLine text={sendError} /> : null}
-          </div>
-        )}
+    <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-6xl gap-6 px-4 sm:px-6">
+      {/* 채팅 컬럼 */}
+      <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
+          {messages.length === 0 && !pending ? (
+            <Welcome activeAgent={agents.find((a) => a.name === active)} />
+          ) : (
+            <div className="space-y-5">
+              {messages.map((msg) =>
+                msg.role === "user" ? (
+                  <UserBubble key={msg.id} text={msg.text} />
+                ) : (
+                  <AgentBubble
+                    key={msg.id}
+                    agent={agents.find((a) => a.name === msg.agent)}
+                    fromAgent={msg.fromAgent}
+                    runId={msg.runId}
+                    onDone={() => void runs.refetch()}
+                  />
+                ),
+              )}
+              {pending ? <UserBubble key="pending" text={pending.text} /> : null}
+              {sendError ? <ErrorLine text={sendError} /> : null}
+            </div>
+          )}
+        </div>
+
+        <Composer
+          agents={agents}
+          skills={office.data.office.skills}
+          projectId={projectId}
+          active={active}
+          onActive={setActive}
+          onSend={send}
+        />
       </div>
 
-      <Composer agents={agents} active={active} onActive={setActive} onSend={send} />
+      {/* 팀 패널 — 누가 일하고 있고, 누굴 부를 수 있는지 (xl+) */}
+      <TeamPanel
+        agents={agents}
+        edges={office.data.office.edges}
+        runs={runs.data.runs}
+        active={active}
+        onActive={setActive}
+      />
     </div>
   );
 }
@@ -142,10 +149,15 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Avatar({ name, size = "size-8" }: { name: string; size?: string }) {
+// 에이전트 아바타 = 그 CLI 의 브랜드 아이콘(Office 와 동일). 미상이면 글자 폴백.
+function Avatar({ agent, size = 32 }: { agent?: AgentSpec; size?: number }) {
+  if (agent) return <AgentAvatar adapter={agent.adapter} size={size} className="rounded-lg" />;
   return (
-    <span className={cn("flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br font-display font-semibold text-white shadow-sm", size, avatarFor(name))}>
-      {(name.charAt(0) || "?").toUpperCase()}
+    <span
+      className="inline-flex shrink-0 items-center justify-center rounded-lg border border-border bg-muted/60 font-mono text-xs text-muted-foreground"
+      style={{ width: size, height: size }}
+    >
+      ?
     </span>
   );
 }
@@ -162,6 +174,83 @@ function Welcome({ activeAgent }: { activeAgent?: AgentSpec }) {
         {activeAgent ? t("talk.welcomeWith", { name: activeAgent.label || activeAgent.name }) : t("talk.welcomeSub")}
       </p>
     </div>
+  );
+}
+
+// ── 팀 패널 — 가능/작업중 에이전트 + 핸드오프 규칙 한눈에 (xl 이상) ──────────────
+function TeamPanel({
+  agents,
+  edges,
+  runs,
+  active,
+  onActive,
+}: {
+  agents: AgentSpec[];
+  edges: HarnessEdge[];
+  runs: RunInfo[];
+  active: string;
+  onActive: (name: string) => void;
+}) {
+  const { t } = useI18n();
+  const workingAgents = useMemo(
+    () => new Set(runs.filter((r) => r.status === "running").map((r) => r.agent)),
+    [runs],
+  );
+
+  return (
+    <aside className="hidden w-60 shrink-0 overflow-y-auto py-6 xl:block">
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
+      <div className="space-y-1">
+        {agents.map((a) => {
+          const working = workingAgents.has(a.name);
+          const on = a.name === active;
+          return (
+            <button
+              key={a.name}
+              type="button"
+              onClick={() => onActive(a.name)}
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors",
+                on ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-muted/50",
+              )}
+            >
+              <Avatar agent={a} size={28} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{a.label || a.name}</span>
+                <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+              </span>
+              {working ? (
+                <span className="flex items-center gap-1 text-[10px] font-medium text-primary">
+                  <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                  {t("talk.team.working")}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {edges.length > 0 ? (
+        <>
+          <h3 className="mb-2 mt-5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <Workflow className="size-3.5" />
+            {t("talk.team.harness")}
+          </h3>
+          <div className="space-y-1">
+            {edges.map((e, i) => (
+              <div key={i} className="rounded-lg border border-border/60 px-2.5 py-1.5 text-xs">
+                <span className="font-medium">@{e.from}</span>
+                <span className="mx-1 text-muted-foreground">→</span>
+                <span className="font-medium">@{e.to}</span>
+                <span className="ml-1.5 rounded bg-muted/70 px-1 py-0.5 text-[10px] text-muted-foreground">
+                  {e.trigger.replace("on_", "")}{e.mode === "auto" ? " · auto" : " · ask"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </aside>
   );
 }
 
@@ -193,7 +282,7 @@ function AgentBubble({ agent, fromAgent, runId, onDone }: { agent?: AgentSpec; f
 
   return (
     <div className="flex gap-3">
-      <Avatar name={agent?.name || "?"} />
+      <Avatar agent={agent} />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
           <span className="font-display text-sm font-semibold">{name}</span>
@@ -277,78 +366,157 @@ function deriveView(events: OfficeEvent[]): DerivedView {
   return { trace, body, result, errors };
 }
 
-// ── Composer — 에이전트 칩 + @mention 자동완성 + 입력 ──────────────────────────
+// ── Composer — @ 하나로 에이전트(라우팅)·스킬(첨부)·파일(경로 삽입) 검색 ─────────
+type MenuItem =
+  | { kind: "agent"; agent: AgentSpec }
+  | { kind: "skill"; skill: SkillSpec }
+  | { kind: "file"; path: string };
+
 function Composer({
   agents,
+  skills,
+  projectId,
   active,
   onActive,
   onSend,
 }: {
   agents: AgentSpec[];
+  skills: SkillSpec[];
+  projectId: string | null;
   active: string;
   onActive: (name: string) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, skills: string[]) => void;
 }) {
   const { t } = useI18n();
   const [text, setText] = useState("");
+  const [attached, setAttached] = useState<string[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // 커서 앞 텍스트의 끝이 "@partial" 이면 멘션 후보를 띄운다.
-  const mention = useMemo(() => {
-    const m = text.match(/(?:^|\s)@([a-zA-Z0-9_-]*)$/);
-    if (!m) return null;
-    const q = m[1]!.toLowerCase();
-    const hits = agents.filter((a) => a.name.toLowerCase().startsWith(q));
-    return hits.length ? { hits, token: m[0].trimStart() } : null;
-  }, [text, agents]);
+  // 커서 앞 텍스트의 끝이 "@partial" 이면 멘션 메뉴를 띄운다. 파일은 / . 도 허용.
+  const token = useMemo(() => {
+    const m = text.match(/(?:^|\s)@([a-zA-Z0-9_\-./]*)$/);
+    return m ? m[1]! : null;
+  }, [text]);
+  const q = (token ?? "").toLowerCase();
 
-  function pickMention(name: string) {
-    setText((prev) => prev.replace(/@[a-zA-Z0-9_-]*$/, `@${name} `));
-    onActive(name);
+  // 파일 검색 — 프로젝트가 선택돼 있고 멘션 중일 때만 서버 질의.
+  const files = useQuery({
+    queryKey: ["files", projectId, q],
+    queryFn: () => api.searchProjectFiles(projectId!, q),
+    enabled: !!projectId && token !== null,
+    staleTime: 10_000,
+    placeholderData: (prev) => prev,
+  });
+
+  const menu = useMemo<MenuItem[]>(() => {
+    if (token === null) return [];
+    const agentHits = agents
+      .filter((a) => a.name.toLowerCase().startsWith(q))
+      .map((a): MenuItem => ({ kind: "agent", agent: a }));
+    const skillHits = skills
+      .filter((s) => !attached.includes(s.name) && s.name.toLowerCase().includes(q))
+      .slice(0, 5)
+      .map((s): MenuItem => ({ kind: "skill", skill: s }));
+    const fileHits = (files.data?.files ?? [])
+      .slice(0, 8)
+      .map((p): MenuItem => ({ kind: "file", path: p }));
+    return [...agentHits, ...skillHits, ...fileHits];
+  }, [token, q, agents, skills, attached, files.data]);
+
+  // 멘션 토큰을 replacement 로 치환(없애려면 ""). 끝에서만 동작 — token 검출과 동일 위치.
+  function consumeToken(replacement: string) {
+    setText((prev) => prev.replace(/@[a-zA-Z0-9_\-./]*$/, replacement));
     taRef.current?.focus();
+  }
+
+  function pick(item: MenuItem) {
+    if (item.kind === "agent") {
+      onActive(item.agent.name);
+      consumeToken("");
+    } else if (item.kind === "skill") {
+      setAttached((prev) => [...prev, item.skill.name]);
+      consumeToken("");
+    } else {
+      consumeToken(`${item.path} `);
+    }
   }
 
   function submit() {
     if (!text.trim()) return;
-    onSend(text);
+    onSend(text, attached);
     setText("");
+    setAttached([]);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // IME(한글/일본어/중국어) 조합 중 Enter 는 글자 확정용 — 전송하면 안 됨.
     // 안 막으면 조합 완료 Enter + 실제 Enter 가 둘 다 발화해 마지막 글자가 또 전송됨.
     if (e.nativeEvent.isComposing) return;
+    if (e.key === "Escape" && token !== null) {
+      e.preventDefault();
+      consumeToken("");
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (mention) {
-        pickMention(mention.hits[0]!.name);
+      if (menu.length > 0) {
+        pick(menu[0]!);
         return;
       }
       submit();
     }
   }
 
+  // 메뉴를 종류별 섹션으로.
+  const sections: { key: string; label: string; items: MenuItem[] }[] = [
+    { key: "agents", label: t("talk.menu.agents"), items: menu.filter((m) => m.kind === "agent") },
+    { key: "skills", label: t("talk.menu.skills"), items: menu.filter((m) => m.kind === "skill") },
+    { key: "files", label: t("talk.menu.files"), items: menu.filter((m) => m.kind === "file") },
+  ].filter((s) => s.items.length > 0);
+
   return (
     <div className="relative pb-5">
-      {/* 멘션 자동완성 */}
-      {mention ? (
-        <div className="absolute bottom-full left-0 z-10 mb-2 w-56 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-          {mention.hits.map((a) => (
-            <button
-              key={a.name}
-              type="button"
-              onClick={() => pickMention(a.name)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/60"
-            >
-              <Avatar name={a.name} size="size-6" />
-              <span className="font-medium">{a.label || a.name}</span>
-              <span className="ml-auto text-[11px] text-muted-foreground">{a.adapter}</span>
-            </button>
+      {/* 멘션 메뉴 — 에이전트/스킬/파일 섹션 */}
+      {sections.length > 0 ? (
+        <div className="absolute bottom-full left-0 z-10 mb-2 max-h-72 w-80 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+          {sections.map((sec) => (
+            <div key={sec.key}>
+              <div className="px-3 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{sec.label}</div>
+              {sec.items.map((item, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => pick(item)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/60"
+                >
+                  {item.kind === "agent" ? (
+                    <>
+                      <Avatar agent={item.agent} size={22} />
+                      <span className="font-medium">{item.agent.label || item.agent.name}</span>
+                      <span className="ml-auto text-[11px] text-muted-foreground">{item.agent.adapter}</span>
+                    </>
+                  ) : item.kind === "skill" ? (
+                    <>
+                      <Sparkles className="size-4 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{item.skill.name}</span>
+                        {item.skill.description ? <span className="block truncate text-[11px] text-muted-foreground">{item.skill.description}</span> : null}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate font-mono text-xs">{item.path}</span>
+                    </>
+                  )}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       ) : null}
 
-      {/* 대상 에이전트 칩 */}
+      {/* 대상 에이전트 칩 + 첨부 스킬 칩 */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <span className="text-[11px] text-muted-foreground">{t("talk.talkingTo")}</span>
         {agents.map((a) => {
@@ -363,11 +531,20 @@ function Composer({
                 on ? "border-primary/50 bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:bg-muted/60",
               )}
             >
-              <Avatar name={a.name} size="size-5" />
+              <Avatar agent={a} size={20} />
               {a.label || a.name}
             </button>
           );
         })}
+        {attached.map((s) => (
+          <span key={s} className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 text-xs font-medium text-primary">
+            <Sparkles className="size-3" />
+            {s}
+            <button type="button" aria-label={`detach ${s}`} onClick={() => setAttached((prev) => prev.filter((x) => x !== s))} className="rounded-full p-0.5 hover:bg-primary/20">
+              <X className="size-3" />
+            </button>
+          </span>
+        ))}
       </div>
 
       {/* 입력 */}

@@ -6,7 +6,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { Hono } from "hono";
 import { z } from "zod";
-import { deleteProjectDb, insertProject, listProjectsDb, projectPathExists } from "../db.js";
+import { deleteProjectDb, getProjectDb, insertProject, listProjectsDb, projectPathExists } from "../db.js";
+import { searchFiles } from "../files.js";
 import { isResponse, parseBody } from "./helpers.js";
 
 export const projectsRoute = new Hono();
@@ -40,4 +41,12 @@ projectsRoute.post("/", async (c) => {
 projectsRoute.delete("/:id", (c) => {
   deleteProjectDb(c.req.param("id"));
   return c.json({ ok: true });
+});
+
+// 파일 검색 — Talk 컴포저 @file 멘션. ?q= substring, 최대 20개 상대경로.
+projectsRoute.get("/:id/files", (c) => {
+  const project = getProjectDb(c.req.param("id"));
+  if (!project) return c.json({ error: "not_found" }, 404);
+  const q = c.req.query("q") ?? "";
+  return c.json({ files: searchFiles(project.path, q) });
 });

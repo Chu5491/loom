@@ -13,6 +13,7 @@ const startSchema = z.object({
   prompt: z.string().min(1),
   cwd: z.string().optional(),
   projectId: z.string().optional(),
+  skills: z.array(z.string()).optional(),
 });
 
 // ?projectId=<id> 로 스코프, ?projectId=none 으로 프로젝트 없는 run 만, 없으면 전체.
