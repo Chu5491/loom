@@ -16,11 +16,13 @@ import {
   subscribeActive,
   type LogEvent,
 } from "../services/log-store.js";
+import { extractRunResultText } from "../services/run/run-result.js";
 
 const createSchema = z.object({
   agentId: z.string().min(1),
   prompt: z.string().min(1),
   cwd: z.string().optional(),
+  projectId: z.string().nullable().optional(),
   threadId: z.string().nullable().optional(),
   parentRunId: z.string().nullable().optional(),
   attachedSpecIds: z.array(z.string()).optional(),
@@ -85,28 +87,7 @@ runsRoute.get("/:id", (c) => {
 runsRoute.get("/:id/result", async (c) => {
   const run = getRun(c.req.param("id"));
   if (!run) return c.json({ error: "not_found" }, 404);
-  if (!run.logPath) return c.json({ resultText: null });
-  const events = await readLogFile(run.logPath).catch(() => []);
-  let buffer = "";
-  let resultText: string | null = null;
-  for (const ev of events) {
-    if (ev.kind !== "chunk" || ev.chunk.stream !== "stdout") continue;
-    buffer += ev.chunk.data;
-    const parts = buffer.split("\n");
-    buffer = parts.pop() ?? "";
-    for (const line of parts) {
-      if (!line) continue;
-      try {
-        const j = JSON.parse(line) as { type?: string; result?: string };
-        if (j.type === "result" && typeof j.result === "string") {
-          resultText = j.result;
-        }
-      } catch {
-        // skip non-JSON lines
-      }
-    }
-  }
-  return c.json({ resultText });
+  return c.json({ resultText: await extractRunResultText(run) });
 });
 
 /**

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Agent, AdapterConfig, AdapterKind, AgentRole } from "@loom/core";
 import { encryptSecret, isEncrypted, tryDecryptSecret } from "../crypto.js";
 import { listSkillIdsForAgent, setSkillIdsForAgent } from "./agent-skills.js";
+import { addAgentToProject } from "./project-agents.js";
 import { getDb } from "./client.js";
 import {
   listMcpServerIdsForAgent,
@@ -102,17 +103,23 @@ export interface UpdateAgentInput {
   defaultCwd?: string | null;
 }
 
+// projectId 없으면 전역 전체. 있으면 그 프로젝트 *팀*(project_agents 멤버십).
+// 에이전트는 이제 전역 정의 — origin(agents.project_id)이 아니라 멤버십이 팀.
 export function listAgents(filter: { projectId?: string } = {}): Agent[] {
-  const where: string[] = [];
-  const params: unknown[] = [];
   if (filter.projectId) {
-    where.push("project_id = ?");
-    params.push(filter.projectId);
+    const rows = getDb()
+      .prepare<[string], AgentRow>(
+        `SELECT a.* FROM agents a
+         JOIN project_agents pa ON pa.agent_id = a.id
+         WHERE pa.project_id = ?
+         ORDER BY a.created_at DESC`,
+      )
+      .all(filter.projectId);
+    return rows.map(rowToAgent);
   }
-  const sql = `SELECT * FROM agents ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC`;
   const rows = getDb()
-    .prepare<unknown[], AgentRow>(sql)
-    .all(...params);
+    .prepare<[], AgentRow>(`SELECT * FROM agents ORDER BY created_at DESC`)
+    .all();
   return rows.map(rowToAgent);
 }
 
@@ -145,6 +152,8 @@ export function createAgent(input: CreateAgentInput): Agent {
       now,
       now,
     );
+  // origin 프로젝트 팀에 자동 가입 — 만든 곳에서 바로 보이도록.
+  if (input.projectId) addAgentToProject(input.projectId, id);
   if (input.skillIds && input.skillIds.length > 0) {
     setSkillIdsForAgent(id, input.skillIds);
   }

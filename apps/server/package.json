@@ -6,18 +6,21 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "cli": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "vitest run"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "@loom/adapter-antigravity": "workspace:*",
     "@loom/adapter-claude-code": "workspace:*",
     "@loom/adapter-codex": "workspace:*",
-    "@loom/adapter-antigravity": "workspace:*",
+    "@loom/adapter-devin": "workspace:*",
     "@loom/adapter-opencode": "workspace:*",
     "@loom/core": "workspace:*",
     "better-sqlite3": "^12.10.0",
+    "croner": "^10.0.1",
     "hono": "^4.6.13",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",

@@ -2,7 +2,12 @@ export type AgentRole = "engineer" | "researcher" | "reviewer" | "writer" | "oth
 
 export type ThreadStatus = "active" | "done" | "archived";
 
-export type AdapterKind = "claude-code" | "antigravity" | "codex" | "opencode";
+export type AdapterKind =
+  | "claude-code"
+  | "antigravity"
+  | "codex"
+  | "opencode"
+  | "devin";
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -184,6 +189,70 @@ export interface Run {
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
+}
+
+/**
+ * A recurring run. The scheduler arms a cron job per enabled row; when it
+ * fires, the engine starts a run for `agentId` with `prompt` — the same
+ * primitive a user kicks off by hand, just on a timer. No auto-injection:
+ * the scheduled prompt is exactly what the user authored.
+ */
+export interface ScheduledRun {
+  id: string;
+  agentId: string;
+  name: string;
+  prompt: string;
+  /** Cron expression (croner syntax: 5- or 6-field). */
+  cron: string;
+  /** IANA timezone (e.g. "Asia/Seoul"). NULL = server local time. */
+  timezone: string | null;
+  /** Optional cwd override; NULL falls back to the agent/project default. */
+  cwd: string | null;
+  enabled: boolean;
+  /** When the schedule last fired (whether or not the run started). */
+  lastFiredAt: string | null;
+  /** The run produced by the last firing; NULL if that firing failed to start. */
+  lastRunId: string | null;
+  /** Next fire time (ISO), recomputed on write/arm — for UI display only. */
+  nextFireAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** When a harness edge fires, relative to the source run's outcome. */
+export type HarnessTrigger = "on_success" | "on_fail" | "on_changes" | "manual";
+
+/** Whether a triggered edge runs by itself or waits for the user to confirm. */
+export type HarnessMode = "ask" | "auto";
+
+/**
+ * A directed handoff rule between two agents in a project's harness: "when
+ * `fromAgent`'s run ends in `trigger`, route to `toAgent`." This is the
+ * authored ("design mode") shape — the runtime engine reads these to decide
+ * what to fire. Project-scoped so the whole team graph serializes into the
+ * project's git config (portable office).
+ */
+export interface HarnessEdge {
+  id: string;
+  projectId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  trigger: HarnessTrigger;
+  /**
+   * Instruction sent to `toAgent` when the edge fires (e.g. "Review the
+   * changes"). NULL is allowed — `carryResult` alone can supply the child's
+   * content. The route rejects an edge that has neither.
+   */
+  prompt: string | null;
+  /**
+   * Opt-in: carry the source run's result into the target's prompt. Default
+   * off — "자동 주입은 죄". When on, the engine prepends a clearly-marked
+   * block, never silent context.
+   */
+  carryResult: boolean;
+  mode: HarnessMode;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**

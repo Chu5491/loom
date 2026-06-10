@@ -46,6 +46,8 @@ export function Layout() {
       raw === "history" ||
       raw === "insights" ||
       raw === "git" ||
+      raw === "harness" ||
+      raw === "schedules" ||
       raw === "settings"
     ) {
       return raw;
@@ -100,6 +102,8 @@ export function Layout() {
       tail.startsWith("dashboard") ? "dashboard"
       : tail.startsWith("files") ? "files"
       : tail.startsWith("git") ? "git"
+      : tail.startsWith("harness") ? "harness"
+      : tail.startsWith("schedules") ? "schedules"
       : tail.startsWith("runs") ? "history"
       : tail.startsWith("agents") ? "agents"
       : tail.startsWith("insights") ? "insights"

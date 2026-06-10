@@ -3,7 +3,7 @@ import type { AdapterConfig, BuiltCommand, DelegationEvent, ToolUse, TouchedEdit
 
 export { claudeCodeManifest } from "./manifest.js";
 export { claudeCodeProbe } from "./probe.js";
-export { claudeCodeListModels } from "./models.js";
+export { claudeCodeListModels, parseAnthropicModels } from "./models.js";
 
 export interface ClaudeCodeConfig extends AdapterConfig {
   command?: string;

@@ -3,12 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   BarChart3,
+  CalendarClock,
   ChevronDown,
   Files as FilesIcon,
   GitBranch,
   Home,
   LayoutDashboard,
   MessageSquare,
+  Users,
+  Workflow,
 } from "lucide-react";
 import { LoomLogo } from "./LoomLogo.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.js";
@@ -39,6 +42,8 @@ export type ActivityKind =
   | "history"
   | "insights"
   | "git"
+  | "harness"
+  | "schedules"
   | "settings"
   | null;
 
@@ -146,6 +151,10 @@ export function ActivityBar({
         return `/projects/${projectId}/insights`;
       case "git":
         return `/projects/${projectId}/git`;
+      case "harness":
+        return `/projects/${projectId}/harness`;
+      case "schedules":
+        return `/projects/${projectId}/schedules`;
       default:
         return null;
     }
@@ -162,25 +171,44 @@ export function ActivityBar({
     onSelect(active === kind ? null : kind);
   };
 
-  const loadoutItems: ReadonlyArray<NavItem> = [
+  // Talk — 소통이 중심. 채팅이 프로젝트의 기본 화면.
+  const talkItems: ReadonlyArray<NavItem> = [
+    {
+      kind: "chat",
+      icon: <MessageSquare className="size-5" />,
+      label: t("activity.chat"),
+    },
+  ];
+  // Build — 팀을 짜고(하네스) 자동화(스케줄)하는 곳.
+  const buildItems: ReadonlyArray<NavItem> = [
+    {
+      kind: "harness",
+      icon: <Workflow className="size-5" />,
+      label: t("activity.harness"),
+    },
+    {
+      kind: "schedules",
+      icon: <CalendarClock className="size-5" />,
+      label: t("activity.schedules"),
+    },
+    {
+      kind: "agents",
+      icon: <Users className="size-5" />,
+      label: t("activity.agents"),
+    },
+  ];
+  // More — 보조 화면(추적/탐색). 강등.
+  const moreItems: ReadonlyArray<NavItem> = [
     {
       kind: "dashboard",
       icon: <LayoutDashboard className="size-5" />,
       label: t("activity.dashboard"),
     },
     {
-      kind: "chat",
-      icon: <MessageSquare className="size-5" />,
-      label: t("activity.chat"),
-    },
-    {
       kind: "files",
       icon: <FilesIcon className="size-5" />,
       label: t("activity.files"),
     },
-  ];
-
-  const workItems: ReadonlyArray<NavItem> = [
     {
       kind: "git",
       icon: <GitBranch className="size-5" />,
@@ -201,7 +229,7 @@ export function ActivityBar({
   const projectAccent = project ? classesFor(agentColorFor(project.id)).dot : null;
 
   return (
-    <aside className="relative flex w-12 shrink-0 flex-col items-stretch border-r border-border bg-card">
+    <aside className="relative flex w-12 shrink-0 flex-col items-stretch border-r border-border bg-card/70 backdrop-blur-xl">
       {projectAccent ? (
         <span
           aria-hidden
@@ -237,7 +265,7 @@ export function ActivityBar({
           />
         ) : null}
 
-        {loadoutItems.map((it) => (
+        {talkItems.map((it) => (
           <ActivityButton
             key={it.kind}
             active={active === it.kind}
@@ -250,7 +278,7 @@ export function ActivityBar({
 
         <ZoneDivider />
 
-        {workItems.map((it) => (
+        {buildItems.map((it) => (
           <ActivityButton
             key={it.kind}
             active={active === it.kind}
@@ -261,7 +289,20 @@ export function ActivityBar({
           </ActivityButton>
         ))}
 
+        {/* More — 보조 화면은 아래로 밀어 시각적으로 강등. */}
         <div className="flex-1" />
+        <ZoneDivider />
+
+        {moreItems.map((it) => (
+          <ActivityButton
+            key={it.kind}
+            active={active === it.kind}
+            label={it.label}
+            onClick={() => handleClick(it.kind)}
+          >
+            {it.icon}
+          </ActivityButton>
+        ))}
       </nav>
     </aside>
   );
@@ -401,14 +442,14 @@ function ActivityButton({
           className={cn(
             "relative flex items-center justify-center h-9 rounded-md transition-all duration-150",
             active
-              ? "bg-foreground/[0.10] text-foreground"
+              ? "bg-primary/15 text-foreground shadow-[var(--shadow-glow-sm)]"
               : "text-muted-foreground hover:bg-muted/70 hover:text-foreground active:scale-95",
           )}
         >
           {active ? (
             <span
               aria-hidden
-              className="absolute -left-1.5 top-1 bottom-1 w-[2px] rounded-r-full bg-foreground"
+              className="absolute -left-1.5 top-1 bottom-1 w-[2px] rounded-r-full bg-gradient-accent"
             />
           ) : null}
           {children}

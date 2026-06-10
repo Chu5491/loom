@@ -3,7 +3,7 @@ import type { AdapterConfig, BuiltCommand, ToolUse, TouchedEdit } from "@loom/co
 
 export { antigravityManifest } from "./manifest.js";
 export { antigravityProbe } from "./probe.js";
-export { antigravityListModels } from "./models.js";
+export { antigravityListModels, parseModelLines } from "./models.js";
 export { ANTIGRAVITY_PRESET_MODELS } from "./preset-models.js";
 
 export interface AntigravityConfig extends AdapterConfig {

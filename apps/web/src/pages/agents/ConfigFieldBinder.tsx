@@ -23,10 +23,18 @@ export function ConfigFieldBinder({
 }) {
   const isModelField = field.kind === "select" && field.key === "model";
   const command = config.command as string | undefined;
+  // 폼에 입력한 env(=API 키)를 모델 조회에 전달 — provider-API 어댑터가 그 키로
+  // 라이브 모델을 가져온다. 키가 없으면 서버 process.env 로 폴백.
+  const env =
+    config.env && typeof config.env === "object"
+      ? (config.env as Record<string, string>)
+      : undefined;
+  // 키 변경 시 refetch 되도록 queryKey 에 env 의 키 이름들을 포함(값은 제외).
+  const envFingerprint = env ? Object.keys(env).sort().join(",") : "";
 
   const liveModels = useQuery({
-    queryKey: ["models", manifest.kind, command ?? ""],
-    queryFn: () => api.listAdapterModels(manifest.kind, { command }),
+    queryKey: ["models", manifest.kind, command ?? "", envFingerprint],
+    queryFn: () => api.listAdapterModels(manifest.kind, { command, env }),
     enabled: isModelField,
     staleTime: 5 * 60_000,
   });

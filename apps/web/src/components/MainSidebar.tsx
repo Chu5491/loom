@@ -17,6 +17,7 @@ import {
   Folder,
   Plug,
   Settings as SettingsIcon,
+  Users,
 } from "lucide-react";
 import { LoomLogo } from "./LoomLogo.js";
 import { useI18n } from "../context/I18nContext.js";
@@ -49,6 +50,12 @@ export function MainSidebar({
       end: true,
     },
     {
+      to: "/agents",
+      icon: <Users className="size-4" />,
+      label: t("activity.agentsHome"),
+      end: false,
+    },
+    {
       to: "/skills",
       icon: <FileText className="size-4" />,
       label: t("activity.skills"),
@@ -70,7 +77,7 @@ export function MainSidebar({
 
   return (
     <aside
-      className="shrink-0 flex flex-col border-r border-border bg-card"
+      className="shrink-0 flex flex-col border-r border-border bg-card/70 backdrop-blur-xl"
       style={{ width: MAIN_SIDEBAR_WIDTH }}
     >
       {/* 헤더 — 로고 + wordmark. project rail 의 logo-only(48px h-10) 와 톤이 달라서
@@ -100,7 +107,7 @@ export function MainSidebar({
               cn(
                 "relative flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-all duration-150",
                 isActive
-                  ? "bg-foreground/[0.08] text-foreground font-medium"
+                  ? "bg-primary/15 text-foreground font-medium shadow-[var(--shadow-glow-sm)]"
                   : "text-muted-foreground hover:bg-muted/70 hover:text-foreground active:scale-[0.98]",
               )
             }
@@ -110,7 +117,7 @@ export function MainSidebar({
                 {isActive ? (
                   <span
                     aria-hidden
-                    className="absolute -left-2 top-1.5 bottom-1.5 w-[2px] rounded-r-full bg-foreground"
+                    className="absolute -left-2 top-1.5 bottom-1.5 w-[2px] rounded-r-full bg-gradient-accent"
                   />
                 ) : null}
                 {it.icon}

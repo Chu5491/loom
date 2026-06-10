@@ -33,6 +33,12 @@ import {
   opencodeManifest,
   opencodeProbe,
 } from "@loom/adapter-opencode";
+import {
+  devinAdapter,
+  devinListModels,
+  devinManifest,
+  devinProbe,
+} from "@loom/adapter-devin";
 
 interface RegistryEntry {
   adapter: CliAdapter;
@@ -152,6 +158,9 @@ export async function probeAdapter(
 export interface ListModelsOptions {
   command?: string;
   refresh?: boolean;
+  /** Adapter env (API keys). When present, the result depends on the key, so
+   *  we skip the shared cache and fetch fresh. */
+  env?: Record<string, string>;
 }
 
 export async function listModelsForAdapter(
@@ -167,6 +176,13 @@ export async function listModelsForAdapter(
       fetchedAt: new Date().toISOString(),
       hint: "This adapter has no live model fetcher; using manifest presets.",
     };
+  }
+  // env-bearing requests (provider-API fetches keyed by a secret) bypass the
+  // shared cache — caching across different keys would leak/stale results. The
+  // client's own query cache prevents spamming.
+  const hasEnv = !!options.env && Object.keys(options.env).length > 0;
+  if (hasEnv) {
+    return entry.listModels({ command: options.command, env: options.env });
   }
   const cacheKey = `${kind}::${options.command ?? ""}`;
   return memoize(
@@ -323,6 +339,14 @@ const builtIns: Array<[CliAdapter, AdapterRegistration]> = [
       manifest: opencodeManifest,
       probe: opencodeProbe,
       listModels: opencodeListModels,
+    },
+  ],
+  [
+    devinAdapter,
+    {
+      manifest: devinManifest,
+      probe: devinProbe,
+      listModels: devinListModels,
     },
   ],
 ];

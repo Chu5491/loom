@@ -12,6 +12,10 @@ import type {
   GeminiSyncReport,
   GeminiSyncStatus,
   GhProbe,
+  HarnessEdge,
+  HarnessMode,
+  HarnessTrigger,
+  ScheduledRun,
   GitAuthStatus,
   GitBranchInfo,
   GitCollaborator,
@@ -189,6 +193,8 @@ export interface CreateRunBody {
   agentId: string;
   prompt: string;
   cwd?: string;
+  /** 새 thread 를 만들 프로젝트(전역 에이전트가 어느 팀에서 도는지). */
+  projectId?: string | null;
   threadId?: string | null;
   parentRunId?: string | null;
   attachedSpecIds?: string[];
@@ -224,6 +230,35 @@ export interface UpdateSpecBody {
   content?: string;
   agentId?: string | null;
   tags?: string[];
+}
+
+export interface CreateScheduleBody {
+  agentId: string;
+  name: string;
+  prompt: string;
+  cron: string;
+  timezone?: string | null;
+  cwd?: string | null;
+  enabled?: boolean;
+}
+
+export type UpdateScheduleBody = Partial<Omit<CreateScheduleBody, "agentId">>;
+
+export interface CreateHarnessEdgeBody {
+  projectId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  trigger: HarnessTrigger;
+  prompt?: string | null;
+  carryResult?: boolean;
+  mode?: HarnessMode;
+}
+
+export interface UpdateHarnessEdgeBody {
+  trigger?: HarnessTrigger;
+  prompt?: string | null;
+  carryResult?: boolean;
+  mode?: HarnessMode;
 }
 
 
@@ -269,16 +304,18 @@ export const api = {
   },
   listAdapterModels: (
     kind: string,
-    options: { command?: string; refresh?: boolean } = {},
-  ) => {
-    const params = new URLSearchParams();
-    if (options.command) params.set("command", options.command);
-    if (options.refresh) params.set("refresh", "1");
-    const qs = params.toString() ? `?${params}` : "";
-    return request<{ models: ModelListResult }>(
-      `/api/adapters/${kind}/models${qs}`,
-    );
-  },
+    options: {
+      command?: string;
+      refresh?: boolean;
+      /** Agent env (API keys). POSTed in the body — provider-API adapters read
+       *  the key from here to fetch live models. Never goes in the URL. */
+      env?: Record<string, string>;
+    } = {},
+  ) =>
+    request<{ models: ModelListResult }>(`/api/adapters/${kind}/models`, {
+      method: "POST",
+      body: JSON.stringify(options),
+    }),
   testAdapter: (
     kind: string,
     body: {
@@ -538,6 +575,17 @@ export const api = {
     }),
   deleteAgent: (id: string) =>
     request<void>(`/api/agents/${id}`, { method: "DELETE" }),
+  /** 전역 에이전트를 프로젝트 팀에 추가. */
+  addAgentToProject: (agentId: string, projectId: string) =>
+    request<{ ok: true }>(`/api/agents/${agentId}/team`, {
+      method: "POST",
+      body: JSON.stringify({ projectId }),
+    }),
+  /** 프로젝트 팀에서 제거(그 프로젝트의 관련 하네스 엣지도 정리). */
+  removeAgentFromProject: (agentId: string, projectId: string) =>
+    request<{ ok: true }>(`/api/agents/${agentId}/team/${projectId}`, {
+      method: "DELETE",
+    }),
 
   listRuns: (
     filter: {
@@ -746,4 +794,42 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     }),
+
+  // ── Schedules (cron-driven runs) ─────────────────────────────────────────
+  listSchedules: (filter: { agentId?: string } = {}) => {
+    const qs = filter.agentId ? `?agentId=${filter.agentId}` : "";
+    return request<{ schedules: ScheduledRun[] }>(`/api/schedules${qs}`);
+  },
+  getSchedule: (id: string) =>
+    request<{ schedule: ScheduledRun }>(`/api/schedules/${id}`),
+  createSchedule: (body: CreateScheduleBody) =>
+    request<{ schedule: ScheduledRun }>("/api/schedules", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateSchedule: (id: string, body: UpdateScheduleBody) =>
+    request<{ schedule: ScheduledRun }>(`/api/schedules/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteSchedule: (id: string) =>
+    request<{ ok: true }>(`/api/schedules/${id}`, { method: "DELETE" }),
+
+  // ── Harness (agent-to-agent handoff edges) ───────────────────────────────
+  listHarnessEdges: (projectId: string) =>
+    request<{ edges: HarnessEdge[] }>(
+      `/api/harness?projectId=${encodeURIComponent(projectId)}`,
+    ),
+  createHarnessEdge: (body: CreateHarnessEdgeBody) =>
+    request<{ edge: HarnessEdge }>("/api/harness", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateHarnessEdge: (id: string, body: UpdateHarnessEdgeBody) =>
+    request<{ edge: HarnessEdge }>(`/api/harness/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteHarnessEdge: (id: string) =>
+    request<{ ok: true }>(`/api/harness/${id}`, { method: "DELETE" }),
 };

@@ -3,7 +3,7 @@ import type { AdapterConfig, BuiltCommand, McpServer, ToolUse, TouchedEdit } fro
 
 export { codexManifest } from "./manifest.js";
 export { codexProbe } from "./probe.js";
-export { codexListModels } from "./models.js";
+export { codexListModels, filterOpenAiModels } from "./models.js";
 
 export interface CodexConfig extends AdapterConfig {
   command?: string;

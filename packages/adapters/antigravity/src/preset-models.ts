@@ -3,10 +3,10 @@ import type { AdapterSelectOption } from "@loom/core";
 /**
  * Antigravity CLI model catalogue — preset list from the official picker.
  *
- * agy CLI has no --model flag; model selection is done via the interactive
- * picker or settings.json `model` key. We surface the known catalogue here
- * so the Loom UI can show the dropdown. The actual model id may differ from
- * what the user sees in the picker label.
+ * Used as the fallback when `agy models` (live fetch in models.ts) is
+ * unavailable, and as the label→id map for the live labels (agy prints
+ * display labels, not ids). The actual model id may differ from the picker
+ * label, so these ids are the source of truth fed to ANTIGRAVITY_MODEL.
  *
  * "High / Medium / Low" suffixes refer to the thinking-budget tier.
  */

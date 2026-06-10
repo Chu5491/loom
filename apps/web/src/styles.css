@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* 기하학 sans — UI(Inter) + 디스플레이/헤딩(Space Grotesk). 코드는 CommitMonoChu 유지.
+ * 네트워크 없으면 system-ui로 폴백. (로컬 우선 앱이라 추후 번들 가능.) */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 
 /* Class-based dark variant: html.dark gates all dark:* utilities. */
 @variant dark (&:where(.dark, .dark *));
@@ -71,42 +74,48 @@
   --duration-normal: 200ms;
   --duration-slow: 350ms;
 
-  /* 단일 폰트 정책: CommitMonoChu가 UI(sans), 헤딩(serif), 코드(mono) 모두
-   * 담당. fallback은 시스템 mono로 — CommitMonoChu가 mono 베이스 글꼴이라
-   * 한글/시스템 글리프와의 메트릭 차이를 줄이는 데 효과적. */
-  --font-sans: "CommitMonoChu", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --font-serif: "CommitMonoChu", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 폰트: UI 본문은 기하학 sans(Inter), 헤딩/디스플레이는 Space Grotesk,
+   * 코드/데이터만 mono(CommitMonoChu). "모노 종이톤"에서 "모던 sans"로. */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-serif: "Space Grotesk", "Inter", system-ui, sans-serif;
   --font-mono: "CommitMonoChu", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* 일렉트릭 액센트 — violet → cyan. 글로우/그라데이션으로 "AI" 시그널. */
+  --color-accent-2: var(--accent-2);
+  --gradient-accent: linear-gradient(135deg, var(--accent-strong), var(--accent-2));
+  --shadow-glow: 0 0 24px -6px color-mix(in oklch, var(--accent-strong) 65%, transparent);
+  --shadow-glow-sm: 0 0 12px -3px color-mix(in oklch, var(--accent-strong) 60%, transparent);
 }
 
 :root {
-  /* Warm off-white paper, matching Medit. */
-  --background: oklch(0.985 0.005 75);
-  --foreground: oklch(0.22 0.01 60);
-  --card: oklch(0.995 0.003 70);
-  --card-foreground: oklch(0.22 0.01 60);
-  --popover: oklch(0.995 0.003 70);
-  --popover-foreground: oklch(0.22 0.01 60);
-  --primary: oklch(0.22 0.01 60);
-  --primary-foreground: oklch(0.985 0.005 75);
-  --secondary: oklch(0.94 0.008 70);
-  --secondary-foreground: oklch(0.22 0.01 60);
-  --muted: oklch(0.94 0.008 70);
-  --muted-foreground: oklch(0.50 0.01 60);
-  --accent: oklch(0.94 0.04 35);            /* terracotta-soft */
-  --accent-foreground: oklch(0.22 0.01 60);
-  --destructive: oklch(0.52 0.18 25);
-  --destructive-foreground: oklch(0.985 0.005 75);
-  --success: oklch(0.55 0.14 155);             /* emerald 700 */
-  --warning: oklch(0.62 0.15 75);              /* amber 600 */
-  --border: oklch(0.88 0.008 70);
-  --input: oklch(0.88 0.008 70);
-  --ring: oklch(0.55 0.13 35);              /* terracotta */
-  --radius: 0.5rem;
+  /* Cool near-white — futuristic light. Electric violet accent, cyan partner. */
+  --background: oklch(0.985 0.002 280);
+  --foreground: oklch(0.16 0.012 280);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.16 0.012 280);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.16 0.012 280);
+  --primary: oklch(0.52 0.23 280);             /* electric violet */
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.004 280);
+  --secondary-foreground: oklch(0.16 0.012 280);
+  --muted: oklch(0.955 0.004 280);
+  --muted-foreground: oklch(0.46 0.015 280);
+  --accent: oklch(0.93 0.045 285);             /* violet tint surface */
+  --accent-foreground: oklch(0.30 0.14 285);
+  --destructive: oklch(0.55 0.20 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.58 0.14 165);
+  --warning: oklch(0.65 0.15 70);
+  --border: oklch(0.16 0.012 280 / 0.10);
+  --input: oklch(0.16 0.012 280 / 0.16);
+  --ring: oklch(0.52 0.23 280);
+  --radius: 0.625rem;
 
-  /* Extra Medit tokens used directly by a few components. */
-  --accent-strong: oklch(0.55 0.13 35);     /* terracotta */
-  --border-soft: oklch(0.93 0.006 70);
+  --accent-strong: oklch(0.52 0.23 280);       /* violet */
+  --accent-2: oklch(0.66 0.14 205);            /* cyan */
+  --border-soft: oklch(0.16 0.012 280 / 0.06);
 
   /* ── Pixel office (light) ──────────────────────────────────────────
    * 책상 디오라마용 색상 팔레트. itch.io 픽셀팩 스타일을 참고했지만
@@ -159,31 +168,32 @@
 }
 
 .dark {
-  /* Soft warm dark — not pure neutral, so the off-white still reads as
-   * "paper at night" rather than a generic dark UI. */
-  --background: oklch(0.18 0.008 70);
-  --foreground: oklch(0.93 0.006 70);
-  --card: oklch(0.21 0.01 70);
-  --card-foreground: oklch(0.93 0.006 70);
-  --popover: oklch(0.21 0.01 70);
-  --popover-foreground: oklch(0.93 0.006 70);
-  --primary: oklch(0.93 0.006 70);
-  --primary-foreground: oklch(0.18 0.008 70);
-  --secondary: oklch(0.235 0.01 70);
-  --secondary-foreground: oklch(0.93 0.006 70);
-  --muted: oklch(0.235 0.01 70);
-  --muted-foreground: oklch(0.66 0.01 70);
-  --accent: oklch(0.32 0.05 45);            /* warm amber soft */
-  --accent-foreground: oklch(0.93 0.006 70);
-  --destructive: oklch(0.72 0.16 25);
-  --destructive-foreground: oklch(0.18 0.008 70);
-  --success: oklch(0.74 0.16 155);             /* emerald 400 */
-  --warning: oklch(0.78 0.16 75);              /* amber 400 */
-  --border: oklch(0.30 0.012 70);
-  --input: oklch(0.30 0.012 70);
-  --ring: oklch(0.72 0.12 45);              /* warm amber */
-  --accent-strong: oklch(0.72 0.12 45);
-  --border-soft: oklch(0.24 0.008 70);
+  /* Near-black, cool. Electric violet accent + glassy low-alpha borders.
+   * 미래지향 AI — "paper at night"가 아니라 딥 스페이스 톤. */
+  --background: oklch(0.15 0.006 285);
+  --foreground: oklch(0.95 0.004 285);
+  --card: oklch(0.185 0.007 285);
+  --card-foreground: oklch(0.95 0.004 285);
+  --popover: oklch(0.185 0.007 285);
+  --popover-foreground: oklch(0.95 0.004 285);
+  --primary: oklch(0.64 0.21 285);             /* electric violet (bright on dark) */
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.225 0.008 285);
+  --secondary-foreground: oklch(0.95 0.004 285);
+  --muted: oklch(0.225 0.008 285);
+  --muted-foreground: oklch(0.65 0.015 285);
+  --accent: oklch(0.27 0.055 288);             /* violet-tinted surface */
+  --accent-foreground: oklch(0.95 0.004 285);
+  --destructive: oklch(0.66 0.19 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.76 0.16 165);
+  --warning: oklch(0.80 0.15 75);
+  --border: oklch(0.95 0.004 285 / 0.10);
+  --input: oklch(0.95 0.004 285 / 0.14);
+  --ring: oklch(0.64 0.21 285);
+  --accent-strong: oklch(0.68 0.20 285);
+  --accent-2: oklch(0.80 0.13 200);            /* cyan */
+  --border-soft: oklch(0.95 0.004 285 / 0.06);
 
   /* ── Pixel office (dark) ───────────────────────────────────────────
    * 다크 모드는 톤을 살짝 낮추고 화면은 더 발광하는 형광 cyan으로. */
@@ -251,7 +261,8 @@ body {
   font-family: var(--font-sans);
   background: var(--background);
   color: var(--foreground);
-  font-feature-settings: "ss01", "cv11";
+  font-feature-settings: "cv05", "cv11", "calt";
+  letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -264,6 +275,27 @@ body {
 
 .mono {
   font-family: var(--font-mono);
+}
+
+/* ── Futuristic AI helpers ─────────────────────────────────────────────
+ * 헤딩은 Space Grotesk(display) + 타이트 자간. 일렉트릭 글로우/그라데이션은
+ * 키 요소(primary 버튼, 활성 상태, 로고)가 opt-in 으로 두른다. */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+.glow-accent { box-shadow: var(--shadow-glow); }
+.glow-accent-sm { box-shadow: var(--shadow-glow-sm); }
+.bg-gradient-accent { background-image: var(--gradient-accent); }
+.text-gradient-accent {
+  background-image: var(--gradient-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.ring-glow:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring), var(--shadow-glow-sm);
 }
 
 /* Minimal scrollbar — used in dense areas like the file tree where

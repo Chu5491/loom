@@ -512,7 +512,7 @@ export function Composer({
             </span>
             <Button
               size="icon"
-              className="size-7"
+              className="size-7 bg-gradient-accent text-white hover:brightness-110 disabled:bg-none disabled:bg-muted disabled:text-muted-foreground"
               disabled={!canSend}
               onClick={send}
               aria-label={t("chat.composer.send")}

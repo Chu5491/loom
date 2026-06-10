@@ -10,6 +10,7 @@ import { useConfirm } from "../components/ConfirmDialog.js";
 import { useRoomDerived } from "../components/chat/index.js";
 import { ContextDrawer } from "../components/ContextDrawer.js";
 import { TeamRibbon } from "../components/TeamRibbon.js";
+import { TeamHarnessPanel } from "../components/TeamHarnessPanel.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useLoomEvent } from "../lib/loomEvents.js";
 import { ActivePin } from "./workspace/ActivePin.js";
@@ -233,7 +234,8 @@ export function WorkspacePage() {
 
   return (
     <>
-      <div className="flex h-full min-w-0 flex-col">
+      <div className="flex h-full min-w-0">
+        <div className="flex h-full min-w-0 flex-1 flex-col">
         <TeamRibbon
           project={p}
           agents={agentList}
@@ -278,6 +280,12 @@ export function WorkspacePage() {
             onConsumedJump={() => setPendingJumpRunId(null)}
           />
         </div>
+        </div>
+        <TeamHarnessPanel
+          projectId={projectId!}
+          agents={agentList}
+          workingIds={workingIds}
+        />
       </div>
 
       <ContextDrawer

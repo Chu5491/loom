@@ -537,6 +537,82 @@ function applyMigrations(db: DB): void {
       `CREATE INDEX IF NOT EXISTS idx_thread_agents_thread ON thread_agents(thread_id)`,
     );
   });
+
+  migration(db, 27, "scheduled_runs table for cron-driven runs", () => {
+    // 한 행 = "이 에이전트에게 이 프롬프트를 이 cron 으로". 스케줄러가 enabled
+    // 행마다 cron job 을 arm 하고, 발화 시 startRun 을 호출 — 손으로 누르는
+    // run 과 같은 primitive 를 타이머에 걸 뿐.
+    db.exec(`CREATE TABLE IF NOT EXISTS scheduled_runs (
+      id            TEXT PRIMARY KEY,
+      agent_id      TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      name          TEXT NOT NULL,
+      prompt        TEXT NOT NULL,
+      cron          TEXT NOT NULL,
+      timezone      TEXT,
+      cwd           TEXT,
+      enabled       INTEGER NOT NULL DEFAULT 1,
+      last_fired_at TEXT,
+      last_run_id   TEXT REFERENCES runs(id) ON DELETE SET NULL,
+      next_fire_at  TEXT,
+      created_at    TEXT NOT NULL,
+      updated_at    TEXT NOT NULL
+    )`);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_scheduled_runs_agent ON scheduled_runs(agent_id)`,
+    );
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_scheduled_runs_enabled ON scheduled_runs(enabled)`,
+    );
+  });
+
+  migration(db, 28, "harness_edges table for agent-to-agent handoff rules", () => {
+    // 한 행 = "fromAgent 의 run 이 trigger 로 끝나면 toAgent 로 라우팅".
+    // 프로젝트 스코프 — 팀 그래프 전체가 프로젝트 git 설정으로 직렬화되도록.
+    db.exec(`CREATE TABLE IF NOT EXISTS harness_edges (
+      id            TEXT PRIMARY KEY,
+      project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      from_agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      to_agent_id   TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      trigger       TEXT NOT NULL,
+      carry_result  INTEGER NOT NULL DEFAULT 0,
+      mode          TEXT NOT NULL DEFAULT 'ask',
+      created_at    TEXT NOT NULL,
+      updated_at    TEXT NOT NULL
+    )`);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_harness_edges_project ON harness_edges(project_id)`,
+    );
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_harness_edges_from ON harness_edges(from_agent_id)`,
+    );
+  });
+
+  migration(db, 29, "harness_edges.prompt — handoff instruction", () => {
+    // 발화 시 toAgent 에게 보낼 지시문. NULL 가능 — carry_result 만으로도
+    // 자식이 받을 내용이 생기므로. 둘 다 비면 라우트에서 거름.
+    if (!columnExists(db, "harness_edges", "prompt")) {
+      db.exec(`ALTER TABLE harness_edges ADD COLUMN prompt TEXT`);
+    }
+  });
+
+  migration(db, 30, "project_agents — agents become global, projects pick a team", () => {
+    // 에이전트를 스킬/MCP 처럼 전역으로 승격. agents.project_id 는 "origin"
+    // (어디서 처음 만들었나) 으로 남고, 실제 "이 프로젝트 팀" 은 이 멤버십이
+    // 결정한다. 기존 에이전트는 자기 origin 프로젝트 팀으로 백필.
+    db.exec(`CREATE TABLE IF NOT EXISTS project_agents (
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      agent_id   TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      added_at   TEXT NOT NULL,
+      PRIMARY KEY (project_id, agent_id)
+    )`);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_project_agents_agent ON project_agents(agent_id)`,
+    );
+    db.exec(
+      `INSERT OR IGNORE INTO project_agents (project_id, agent_id, added_at)
+       SELECT project_id, id, created_at FROM agents WHERE project_id IS NOT NULL`,
+    );
+  });
 }
 
 interface OrphanRunRow {

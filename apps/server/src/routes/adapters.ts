@@ -46,12 +46,21 @@ adaptersRoute.post("/:kind/test", async (c) => {
   return c.json({ test: result });
 });
 
-adaptersRoute.get("/:kind/models", async (c) => {
-  const command = c.req.query("command") || undefined;
-  const refresh = c.req.query("refresh") === "1";
+// POST (not GET) so the agent's env — which carries the provider API key for
+// adapters that fetch live models over HTTP — never lands in a URL/query log.
+const modelsBodySchema = z.object({
+  command: z.string().optional(),
+  refresh: z.boolean().optional(),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
+adaptersRoute.post("/:kind/models", async (c) => {
+  const data = await parseBody(c, modelsBodySchema);
+  if (isResponse(data)) return data;
   const result = await listModelsForAdapter(kind(c), {
-    command,
-    refresh,
+    command: data.command,
+    refresh: data.refresh,
+    env: data.env,
   });
   if (!result) return c.json({ error: "not_found" }, 404);
   return c.json({ models: result });

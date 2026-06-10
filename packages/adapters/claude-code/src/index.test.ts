@@ -6,7 +6,24 @@ import {
   extractClaudeSessionId,
   extractClaudeTouchedEdits,
   extractClaudeTouchedPaths,
+  parseAnthropicModels,
 } from "./index.js";
+
+describe("parseAnthropicModels (Anthropic /v1/models → options)", () => {
+  it("keeps claude models, maps display_name, sorts newest first, tags family", () => {
+    const out = parseAnthropicModels([
+      { id: "claude-opus-4-6-20260101", display_name: "Claude Opus 4.6" },
+      { id: "claude-sonnet-4-6-20251001", display_name: "Claude Sonnet 4.6" },
+      { id: "text-embedding-3", display_name: "Embedding" },
+    ]);
+    expect(out.map((m) => m.value)).toEqual([
+      "claude-sonnet-4-6-20251001",
+      "claude-opus-4-6-20260101",
+    ]);
+    expect(out[0]!.label).toBe("Claude Sonnet 4.6");
+    expect(out.find((m) => m.value.includes("opus"))!.category).toBe("Opus");
+  });
+});
 
 describe("buildClaudeCommand", () => {
   it("uses defaults: claude --print - --output-format stream-json --verbose", () => {

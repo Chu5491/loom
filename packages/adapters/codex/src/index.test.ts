@@ -8,7 +8,39 @@ import {
   extractCodexTouchedEdits,
   extractCodexTouchedPaths,
   extractCodexToolUses,
+  filterOpenAiModels,
 } from "./index.js";
+
+describe("filterOpenAiModels (OpenAI /v1/models → coding models)", () => {
+  it("keeps gpt / o-series / codex and drops media + embedding models", () => {
+    const out = filterOpenAiModels([
+      { id: "gpt-5.1" },
+      { id: "o3" },
+      { id: "codex-mini-latest" },
+      { id: "text-embedding-3-large" },
+      { id: "gpt-4o-audio-preview" },
+      { id: "dall-e-3" },
+      { id: "whisper-1" },
+      { id: "tts-1" },
+    ]);
+    const values = out.map((m) => m.value);
+    expect(values).toContain("gpt-5.1");
+    expect(values).toContain("o3");
+    expect(values).toContain("codex-mini-latest");
+    expect(values).not.toContain("text-embedding-3-large");
+    expect(values).not.toContain("gpt-4o-audio-preview");
+    expect(values).not.toContain("dall-e-3");
+    expect(values).not.toContain("whisper-1");
+    expect(values).not.toContain("tts-1");
+  });
+
+  it("tags o-series as Reasoning and codex as Codex", () => {
+    const out = filterOpenAiModels([{ id: "o4-mini" }, { id: "codex-mini-latest" }]);
+    const byId = new Map(out.map((m) => [m.value, m.category]));
+    expect(byId.get("o4-mini")).toBe("Reasoning (o-series)");
+    expect(byId.get("codex-mini-latest")).toBe("Codex");
+  });
+});
 
 function makeServer(
   over: Partial<McpServer> & Pick<McpServer, "kind" | "name">,

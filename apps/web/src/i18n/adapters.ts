@@ -100,6 +100,20 @@ const en = {
   "adapter.opencode.field.command": "Command override",
   "adapter.opencode.field.extraArgs": "Extra args",
   "adapter.opencode.field.env": "Environment variables",
+
+  // devin
+  "adapter.devin.description":
+    "Cognition's Devin — a fast, minimal agent in your terminal and the cloud.",
+  "adapter.devin.field.model": "Model",
+  "adapter.devin.field.model.help":
+    "Devin routes to the chosen model. Leave empty for Devin's default, or use Custom….",
+  "adapter.devin.field.dangerouslySkipPermissions":
+    "Auto-approve all tools (dangerous)",
+  "adapter.devin.field.dangerouslySkipPermissions.help":
+    "Default 'auto' approves read-only tools. Enable to auto-approve writes/execs too — trusted dirs only.",
+  "adapter.devin.field.command": "Command override",
+  "adapter.devin.field.extraArgs": "Extra args",
+  "adapter.devin.field.env": "Environment variables",
 } satisfies Record<string, string>;
 
 export type AdapterDictKey = keyof typeof en;
@@ -199,6 +213,20 @@ const ko: Record<AdapterDictKey, string> = {
   "adapter.opencode.field.command": "명령 재정의",
   "adapter.opencode.field.extraArgs": "추가 인자",
   "adapter.opencode.field.env": "환경 변수",
+
+  // devin
+  "adapter.devin.description":
+    "Cognition의 Devin — 터미널과 클라우드에서 도는 빠르고 미니멀한 에이전트.",
+  "adapter.devin.field.model": "모델",
+  "adapter.devin.field.model.help":
+    "Devin이 선택한 모델로 라우팅합니다. 비우면 Devin 기본값, 또는 'Custom…' 사용.",
+  "adapter.devin.field.dangerouslySkipPermissions":
+    "모든 도구 자동 승인 (위험)",
+  "adapter.devin.field.dangerouslySkipPermissions.help":
+    "기본 'auto'는 읽기 전용 도구만 자동 승인. 켜면 쓰기·실행도 자동 승인 — 신뢰된 디렉토리에서만.",
+  "adapter.devin.field.command": "명령 재정의",
+  "adapter.devin.field.extraArgs": "추가 인자",
+  "adapter.devin.field.env": "환경 변수",
 };
 
 export const ADAPTER_DICTIONARIES: Record<Lang, Dictionary> = { en, ko };

@@ -27,7 +27,15 @@ import { getMcpServersByIds } from "../db/mcp-servers.js";
 import { getGlobalRule } from "../db/settings.js";
 import { getSpecsByIds } from "../db/specs.js";
 import { getThread, touchThread } from "../db/threads.js";
+import { listEdgesFromAgentInProject } from "../db/harness-edges.js";
 import { runLogger } from "../logger.js";
+import {
+  buildHandoffPrompt,
+  resolveAutoEdges,
+  MAX_HARNESS_HOPS,
+  type RunOutcome,
+} from "./harness.js";
+import { extractRunResultText } from "./run/run-result.js";
 import { startTracking, stopTracking } from "./active-touches.js";
 import {
   startToolTracking,
@@ -76,6 +84,10 @@ export interface StartRunInput {
    * 명시 전달은 "broadcast — 같은 thread에 N개 run" 경로용.
    */
   threadId?: string | null;
+  /** 새 thread 를 만들 프로젝트(전역 에이전트가 *어느 팀에서* 도는지). 미지정 시
+   *  agent 의 origin 프로젝트로 폴백. 기존 thread/parent 가 있으면 그 thread 의
+   *  프로젝트가 우선. */
+  projectId?: string | null;
   attachedSpecIds?: string[];
   /** opt-in: thread.contextBundle을 *이 run의* 프롬프트 앞에 붙임. 자동 주입 절대 안 함. */
   includeContext?: boolean;
@@ -144,15 +156,13 @@ async function startRunInner(
   for (const s of perRunSkills) skillsById.set(s.id, s);
   const allSkills = [...skillsById.values()];
 
-  const project = getProject(agent.projectId);
-
   // 스레드 결정 (explicit > inherit-from-parent > create-fresh).
   // git-first: 새 thread 생성 시 worktree 도 자동 할당 (async).
   const threadId = await resolveThreadForRun({
     explicitThreadId: input.threadId ?? null,
     parentRunId: input.parentRunId ?? null,
     prompt: input.prompt,
-    projectId: agent.projectId,
+    projectId: input.projectId ?? agent.projectId,
   });
   if (threadId.kind === "error") {
     return { ok: false, status: threadId.status, error: threadId.error };
@@ -167,6 +177,10 @@ async function startRunInner(
   // 스레드 worktree가 agent.defaultCwd 위에 — 격리는 스레드 레벨 의도이므로
   // 에이전트 오버라이드가 sandbox를 벗어나면 안 됨.
   const thread = getThread(threadId.id);
+  // run 의 프로젝트 = thread 의 프로젝트(전역 에이전트가 어느 팀에서 도는지).
+  // 명시 input.projectId, 없으면 agent origin 으로 폴백.
+  const runProjectId = thread?.projectId ?? input.projectId ?? agent.projectId;
+  const project = runProjectId ? getProject(runProjectId) : null;
   const cwd =
     input.cwd ??
     thread?.worktreePath ??
@@ -236,6 +250,7 @@ async function startRunInner(
     mcpServers,
     abort,
     !!thread?.worktreePath,
+    runProjectId,
   );
 
   return { ok: true, run: getRun(pendingRun.id)! };
@@ -252,12 +267,19 @@ async function executeRun(
   mcpServers: ReturnType<typeof getMcpServersByIds>,
   abort: AbortController,
   inWorktree: boolean,
+  projectId: string | null,
 ): Promise<void> {
   const log = runLogger(runId, {
     agentId: agent.id,
     adapter: agent.adapterKind,
   });
   log.info({ cwd, resumeSessionId }, "run starting");
+
+  // 종료 후 하네스 평가에 쓸 결과 — try/catch 어느 경로로 끝나든 finally 에서
+  // 같은 값을 읽도록 바깥 스코프에 둔다.
+  let finalStatus: RunOutcome["status"] = "failed";
+  let changedFileCount = 0;
+
   try {
     const beforeRef = await snapshotWorkTree(cwd);
     if (beforeRef) setRunBeforeRef(runId, beforeRef);
@@ -276,23 +298,14 @@ async function executeRun(
     const tools = makeToolsTapper(runId, adapter);
     const delegations = makeDelegationTapper(runId, adapter);
 
-    if (agent.projectId) {
-      startTracking({
-        runId,
-        agentId: agent.id,
-        projectId: agent.projectId,
-        cwd,
-      });
-      startToolTracking({
-        runId,
-        agentId: agent.id,
-        projectId: agent.projectId,
-      });
+    if (projectId) {
+      startTracking({ runId, agentId: agent.id, projectId, cwd });
+      startToolTracking({ runId, agentId: agent.id, projectId });
     }
 
-    // 프로젝트 단위 env — 모든 에이전트가 공통으로 받는 KV. 에이전트의
+    // 프로젝트 단위 env — 그 프로젝트의 모든 run 이 공통으로 받는 KV. 에이전트의
     // adapterConfig.env가 더 높은 우선순위 (define.ts spawn 합성 참고).
-    const projectEnv = agent.projectId ? listProjectEnv(agent.projectId) : {};
+    const projectEnv = projectId ? listProjectEnv(projectId) : {};
 
     const handle = await adapter.spawn(
       {
@@ -335,19 +348,19 @@ async function executeRun(
     tools.flush();
     delegations.flush();
 
-    const status = abort.signal.aborted
+    finalStatus = abort.signal.aborted
       ? "cancelled"
       : result.exitCode === 0
         ? "succeeded"
         : "failed";
-    markRunFinished(runId, status, result.exitCode);
+    markRunFinished(runId, finalStatus, result.exitCode);
     finishLog(runId, {
       ts: new Date().toISOString(),
-      status,
+      status: finalStatus,
       exitCode: result.exitCode,
     });
-    log[status === "failed" ? "warn" : "info"](
-      { status, exitCode: result.exitCode },
+    log[finalStatus === "failed" ? "warn" : "info"](
+      { status: finalStatus, exitCode: result.exitCode },
       "run finished",
     );
   } catch (err) {
@@ -373,6 +386,7 @@ async function executeRun(
     try {
       const run = getRun(runId);
       const changes = await diffStat(run?.beforeRef ?? null, afterRef, cwd);
+      changedFileCount = changes.length;
       if (changes.length > 0) replaceRunChanges(runId, changes);
     } catch {
       // best-effort. 변경 영속화 실패가 run을 실패시키면 안 됨.
@@ -392,5 +406,84 @@ async function executeRun(
     stopTracking(runId);
     stopToolTracking(runId);
     untrackActiveRun(runId);
+
+    // 하네스 자동 발화 — 모든 정리/슬롯 해제 후. 자식 run 이 concurrency 슬롯을
+    // 잡을 수 있도록 부모 untrack 뒤에 둔다. fire-and-forget, 내부에서 에러 처리.
+    const finishedRun = getRun(runId);
+    if (finishedRun && projectId) {
+      void fireHarnessEdges(finishedRun, agent, projectId, {
+        status: finalStatus,
+        changedFileCount,
+      });
+    }
+  }
+}
+
+// parent_run 체인 깊이 — A→B→A 무한루프 방어. MAX_HARNESS_HOPS 에 닿으면 발화 중단.
+function harnessHops(run: Run): number {
+  let hops = 0;
+  let cur = run.parentRunId;
+  while (cur && hops <= MAX_HARNESS_HOPS) {
+    const parent = getRun(cur);
+    if (!parent) break;
+    hops++;
+    cur = parent.parentRunId;
+  }
+  return hops;
+}
+
+// run 완료 시 그 에이전트가 source 인 auto 엣지를 평가해 자식 run 을 띄운다.
+// fire-and-forget — 모든 에러를 내부에서 처리(호출부는 void).
+async function fireHarnessEdges(
+  finishedRun: Run,
+  fromAgent: NonNullable<ReturnType<typeof getAgent>>,
+  projectId: string,
+  outcome: RunOutcome,
+): Promise<void> {
+  // 이 run 의 프로젝트 엣지만 — 전역 에이전트는 프로젝트마다 다른 하네스를 가짐.
+  const fired = resolveAutoEdges(
+    listEdgesFromAgentInProject(fromAgent.id, projectId),
+    outcome,
+  );
+  if (fired.length === 0) return;
+
+  const log = runLogger(finishedRun.id, {
+    agentId: fromAgent.id,
+    adapter: fromAgent.adapterKind,
+  });
+
+  if (harnessHops(finishedRun) >= MAX_HARNESS_HOPS) {
+    log.warn({ max: MAX_HARNESS_HOPS }, "harness hop limit reached; not firing");
+    return;
+  }
+
+  // carry 하는 엣지가 하나라도 있을 때만 결과를 읽음 (로그 파일 I/O 회피).
+  const resultText = fired.some((e) => e.carryResult)
+    ? await extractRunResultText(finishedRun).catch(() => null)
+    : null;
+
+  for (const edge of fired) {
+    const prompt = buildHandoffPrompt({
+      edgePrompt: edge.prompt,
+      carryResult: edge.carryResult,
+      fromAgentName: fromAgent.name,
+      fromRunId: finishedRun.id,
+      resultText,
+    });
+    startRun({
+      agentId: edge.toAgentId,
+      prompt,
+      threadId: finishedRun.threadId,
+      parentRunId: finishedRun.id,
+    })
+      .then((res) => {
+        if (!res.ok) {
+          log.warn(
+            { edge: edge.id, error: res.error },
+            "harness child did not start",
+          );
+        }
+      })
+      .catch((err) => log.error({ err, edge: edge.id }, "harness child threw"));
   }
 }

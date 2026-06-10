@@ -171,6 +171,10 @@ export interface ModelListResult {
 export interface ListModelsInput {
   /** Optional `command` override matching the agent's adapter_config.command. */
   command?: string;
+  /** Adapter env (the agent's adapterConfig.env). Adapters that fetch from a
+   *  provider HTTP API read the API key from here, falling back to the server's
+   *  process.env. Adapters that list via their own CLI ignore it. */
+  env?: Record<string, string>;
 }
 
 export type ListModelsFn = (input: ListModelsInput) => Promise<ModelListResult>;

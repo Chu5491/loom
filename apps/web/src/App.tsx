@@ -60,6 +60,12 @@ const WorkspaceInsightsPage = lazy(() =>
     default: m.WorkspaceInsightsPage,
   })),
 );
+const SchedulesPage = lazy(() =>
+  import("./pages/SchedulesPage.js").then((m) => ({ default: m.SchedulesPage })),
+);
+const HarnessPage = lazy(() =>
+  import("./pages/HarnessPage.js").then((m) => ({ default: m.HarnessPage })),
+);
 
 function PageLoader() {
   const { t } = useI18n();
@@ -92,6 +98,14 @@ export function App() {
         />
         {/* 시스템 레벨 카탈로그 — 어떤 프로젝트에서든 같은 것을 본다.
             에이전트는 여기서 골라 자기 loadout을 구성. */}
+        <Route
+          path="/agents"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <AgentsPage />
+            </Suspense>
+          }
+        />
         <Route
           path="/skills"
           element={
@@ -196,6 +210,22 @@ export function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <GitPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="schedules"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <SchedulesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="harness"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <HarnessPage />
               </Suspense>
             }
           />

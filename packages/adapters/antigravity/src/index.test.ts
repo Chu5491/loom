@@ -6,6 +6,7 @@ import {
   extractAntigravityTouchedEdits,
   extractAntigravityTouchedPaths,
   extractAntigravityToolUses,
+  parseModelLines,
   ANTIGRAVITY_PRESET_MODELS,
 } from "./index.js";
 
@@ -60,6 +61,37 @@ describe("ANTIGRAVITY_PRESET_MODELS", () => {
       expect(m.label).toBeTruthy();
       expect(m.category).toBeTruthy();
     }
+  });
+});
+
+describe("parseModelLines (agy models live → ids)", () => {
+  it("maps recognised display labels back to their preset id", () => {
+    // agy prints labels, not ids; normalised-label match recovers the real id.
+    const models = parseModelLines(
+      ["Claude Opus 4.6 (Thinking)", "Gemini 3.5 Flash (Medium)"].join("\n"),
+    );
+    const byLabel = new Map(models.map((m) => [m.label, m.value]));
+    expect(byLabel.get("Claude Opus 4.6 Thinking")).toBe("claude-opus-4-6");
+    expect(byLabel.get("Gemini 3.5 Flash (Medium)")).toBe(
+      "gemini-3.5-flash:thinking-medium",
+    );
+  });
+
+  it("surfaces models not in our preset map as Other (label as value)", () => {
+    // e.g. extra thinking tiers agy exposes that our curated presets don't list.
+    const models = parseModelLines("Gemini 3.5 Flash (High)");
+    expect(models).toEqual([
+      {
+        value: "Gemini 3.5 Flash (High)",
+        label: "Gemini 3.5 Flash (High)",
+        category: "Other",
+      },
+    ]);
+  });
+
+  it("skips blank lines and chrome", () => {
+    expect(parseModelLines("\n  \nAvailable models:\nClaude Opus 4.6 (Thinking)\n"))
+      .toHaveLength(1);
   });
 });
 

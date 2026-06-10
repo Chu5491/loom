@@ -40,7 +40,8 @@ function parseMentions(prompt: string): MentionToken[] {
     // The regex may match leading whitespace — the actual @name starts
     // at m.index + (m[0].length - m[1].length - 1).
     const atIdx = m.index + m[0].indexOf("@");
-    tokens.push({ name, start: atIdx, end: atIdx + m[1].length + 1 });
+    // name === m[1] lowercased, so name.length is the matched-name length.
+    tokens.push({ name, start: atIdx, end: atIdx + name.length + 1 });
   }
   return tokens;
 }

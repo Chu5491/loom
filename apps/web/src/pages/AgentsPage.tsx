@@ -43,6 +43,12 @@ export function AgentsPage() {
     queryKey: ["adapters"],
     queryFn: api.listAdapters,
   });
+  // 프로젝트 모드에서만 — 팀에 *추가할 수 있는* 전역 에이전트 후보.
+  const allAgents = useQuery({
+    queryKey: ["agents", "all"],
+    queryFn: () => api.listAgents(),
+    enabled: !!projectId,
+  });
 
   const activeProject = projectId
     ? projects.data?.projects.find((p) => p.id === projectId)
@@ -97,11 +103,29 @@ export function AgentsPage() {
     onError: onMutationError,
   });
 
+  const addToTeam = useMutation({
+    mutationFn: (agentId: string) =>
+      api.addAgentToProject(agentId, projectId!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
+    onError: onMutationError,
+  });
+  const removeFromTeam = useMutation({
+    mutationFn: (agentId: string) =>
+      api.removeAgentFromProject(agentId, projectId!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
+    onError: onMutationError,
+  });
+
+  const teamIds = new Set((list.data?.agents ?? []).map((a) => a.id));
+  const availableToAdd = (allAgents.data?.agents ?? []).filter(
+    (a) => !teamIds.has(a.id),
+  );
+
   return (
     <PageScroll className="space-y-4">
       <PageHeader
-        title={t("agents.title")}
-        description={t("agents.subtitle")}
+        title={projectId ? t("agents.title") : t("agents.homeTitle")}
+        description={projectId ? t("agents.subtitle") : t("agents.homeSubtitle")}
         action={
           <Button
             onClick={() =>
@@ -154,6 +178,32 @@ export function AgentsPage() {
         />
       ) : null}
 
+      {projectId && availableToAdd.length > 0 ? (
+        <Card className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            {t("agents.team.addTitle")}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {availableToAdd.map((a) => {
+              const cls = classesFor(agentColorOf(a));
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => addToTeam.mutate(a.id)}
+                  disabled={addToTeam.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs transition-colors hover:bg-muted"
+                >
+                  <span className={cn("size-2 rounded-full", cls.dot)} aria-hidden />
+                  <span className={cls.text}>@{a.name}</span>
+                  <span className="text-muted-foreground">+</span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      ) : null}
+
       {list.isLoading ? (
         // 그리드 형태 그대로 스켈레톤 — 진짜 로딩 후의 레이아웃이 그대로 자리 잡음.
         <div className="grid gap-2 sm:grid-cols-2">
@@ -198,6 +248,9 @@ export function AgentsPage() {
                 });
                 if (ok) remove.mutate(a.id);
               }}
+              onRemoveFromTeam={
+                projectId ? () => removeFromTeam.mutate(a.id) : undefined
+              }
             />
           ))}
         </div>
@@ -211,11 +264,13 @@ function AgentRow({
   manifest,
   onEdit,
   onDelete,
+  onRemoveFromTeam,
 }: {
   agent: Agent;
   manifest: import("@loom/core").AdapterManifest | undefined;
   onEdit: () => void;
   onDelete: () => void;
+  onRemoveFromTeam?: () => void;
 }) {
   const { t } = useI18n();
   const cls = classesFor(agentColorOf(a));
@@ -266,6 +321,11 @@ function AgentRow({
           </div>
         </div>
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onRemoveFromTeam ? (
+            <Button variant="ghost" size="sm" onClick={onRemoveFromTeam}>
+              {t("agents.team.remove")}
+            </Button>
+          ) : null}
           <Button variant="ghost" size="sm" onClick={onEdit}>
             {t("common.edit")}
           </Button>
