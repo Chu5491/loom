@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Languages, MessagesSquare, Moon, Plug, RefreshCw, Sun, FolderCog } from "lucide-react";
+import { CliStatus } from "./components/CliStatus.js";
 import { LoomLogo } from "./components/LoomLogo.js";
 import { ProjectSelector } from "./components/ProjectSelector.js";
 import { Button } from "./components/ui.js";
@@ -61,6 +62,7 @@ export function App() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
+            <CliStatus onOpenConnections={() => setTab("connections")} />
             <ProjectSelector activeId={projectId} onChange={setProject} />
             <Button variant="ghost" size="sm" aria-label="theme"
               onClick={() => setMode(effective === "dark" ? "light" : "dark")}>

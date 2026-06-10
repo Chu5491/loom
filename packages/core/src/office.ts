@@ -108,4 +108,6 @@ export interface RunInfo {
   parentRunId: string | null;
   /** 어느 프로젝트(작업 디렉토리)에서 돌았나. 미지정이면 null(office 홈). */
   projectId: string | null;
+  /** 이 run 의 비용(USD). CLI 가 보고할 때만(claude 등), 아니면 null. */
+  costUsd: number | null;
 }

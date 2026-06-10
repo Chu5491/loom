@@ -31,6 +31,11 @@ const en = {
   "talk.team": "Team",
   "talk.team.working": "working",
   "talk.team.harness": "Hand-offs",
+  "talk.team.cost": "Total cost",
+  "talk.cancel": "Stop",
+  "talk.handoffTo": "Hand off to @{name}",
+
+  "conn.header.tooltip": "{count} CLI(s) connected — click for details",
   "talk.noOutput": "No output.",
   "talk.status.failed": "Run failed",
   "talk.status.cancelled": "Cancelled",
@@ -176,6 +181,11 @@ const ko: Dictionary = {
   "talk.team": "팀",
   "talk.team.working": "작업 중",
   "talk.team.harness": "핸드오프",
+  "talk.team.cost": "총 비용",
+  "talk.cancel": "중지",
+  "talk.handoffTo": "@{name}에게 넘기기",
+
+  "conn.header.tooltip": "{count}개 CLI 연결됨 — 클릭하면 상세",
   "talk.noOutput": "출력 없음.",
   "talk.status.failed": "실행 실패",
   "talk.status.cancelled": "취소됨",

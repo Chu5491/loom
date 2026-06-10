@@ -137,6 +137,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     exitCode: null,
     parentRunId: input.parentRunId ?? null,
     projectId: input.projectId ?? null,
+    costUsd: null,
   };
   fs.mkdirSync(paths.logs, { recursive: true });
   const rawFd = fs.openSync(path.join(paths.logs, `${id}.log`), "a");
@@ -294,6 +295,30 @@ function evaluateFiredEdges(state: RunState, status: RunInfo["status"]): import(
   }
 }
 
+// ask/manual 엣지의 수동 발화 — 사용자가 UI 에서 "넘기기"를 눌렀을 때.
+// 완료된 run 에서 from=run.agent, to=대상 인 엣지를 찾아 자식 run 을 시작한다.
+export async function fireManualHandoff(runId: string, to: string): Promise<StartRunResult> {
+  const run = getRun(runId);
+  if (!run) return { ok: false, status: 404, error: "run_not_found" };
+  if (run.status === "running") return { ok: false, status: 400, error: "run_still_running" };
+  const edge = readEdges().find((e) => e.from === run.agent && e.to === to);
+  if (!edge) return { ok: false, status: 404, error: "edge_not_found" };
+
+  // 결과 텍스트 — 인메모리에 있으면 거기서, 아니면 디스크 기록에서.
+  const events = runs.get(runId)?.events ?? getRunEventsDb(runId);
+  const last = [...events].reverse().find(
+    (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",
+  );
+  const prompt = buildHandoffPrompt({
+    edgePrompt: edge.prompt,
+    carryResult: !!edge.carryResult,
+    fromAgentName: run.agent,
+    fromRunId: run.id,
+    resultText: last?.text ?? null,
+  });
+  return startRun({ agent: to, prompt, parentRunId: run.id, projectId: run.projectId });
+}
+
 function spawnHarnessChildren(state: RunState, fired: import("@loom/core").HarnessEdge[]): void {
   if (fired.length === 0) return;
   const log = logger.child({ runId: state.info.id, agent: state.info.agent });
@@ -321,6 +346,7 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
   state.info.status = status;
   state.info.exitCode = exitCode;
   state.info.endedAt = new Date().toISOString();
+  state.info.costUsd = state.costUsd ?? null;
   finishRun(state.info, { costUsd: state.costUsd, sessionId: state.sessionId });
   try {
     fs.closeSync(state.rawFd);

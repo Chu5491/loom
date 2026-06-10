@@ -100,7 +100,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
             <Welcome activeAgent={agents.find((a) => a.name === active)} />
           ) : (
             <div className="space-y-5">
-              {messages.map((msg) =>
+              {messages.map((msg, i) =>
                 msg.role === "user" ? (
                   <UserBubble key={msg.id} text={msg.text} />
                 ) : (
@@ -109,6 +109,8 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
                     agent={agents.find((a) => a.name === msg.agent)}
                     fromAgent={msg.fromAgent}
                     runId={msg.runId}
+                    edges={office.data.office.edges}
+                    isLast={i === messages.length - 1}
                     onDone={() => void runs.refetch()}
                   />
                 ),
@@ -196,6 +198,7 @@ function TeamPanel({
     () => new Set(runs.filter((r) => r.status === "running").map((r) => r.agent)),
     [runs],
   );
+  const totalCost = useMemo(() => runs.reduce((sum, r) => sum + (r.costUsd ?? 0), 0), [runs]);
 
   return (
     <aside className="hidden w-60 shrink-0 overflow-y-auto py-6 xl:block">
@@ -250,6 +253,14 @@ function TeamPanel({
           </div>
         </>
       ) : null}
+
+      {/* 스레드 총 비용 — CLI 가 보고한 run 만 합산 */}
+      {totalCost > 0 ? (
+        <div className="mt-5 flex items-center justify-between rounded-lg border border-border/60 px-2.5 py-1.5 text-xs">
+          <span className="text-muted-foreground">{t("talk.team.cost")}</span>
+          <span className="font-mono font-medium">${totalCost.toFixed(4)}</span>
+        </div>
+      ) : null}
     </aside>
   );
 }
@@ -265,10 +276,11 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
-function AgentBubble({ agent, fromAgent, runId, onDone }: { agent?: AgentSpec; fromAgent?: string; runId: string; onDone?: () => void }) {
+function AgentBubble({ agent, fromAgent, runId, edges, isLast, onDone }: { agent?: AgentSpec; fromAgent?: string; runId: string; edges: HarnessEdge[]; isLast?: boolean; onDone?: () => void }) {
   const { t } = useI18n();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
+  const [handedOff, setHandedOff] = useState<string[]>([]);
 
   const name = agent?.label || agent?.name || "?";
   const view = useMemo(() => deriveView(stream.events), [stream.events]);
@@ -280,6 +292,28 @@ function AgentBubble({ agent, fromAgent, runId, onDone }: { agent?: AgentSpec; f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.status, isStartError]);
 
+  // 수동 발화 제안 — 자동발화로 이미 자식이 생긴 핸드오프(view.trace 의 →)는 제외.
+  const autoFired = useMemo(
+    () => new Set(stream.events.filter((e) => e.kind === "handoff").map((e) => (e as Extract<OfficeEvent, { kind: "handoff" }>).toAgent)),
+    [stream.events],
+  );
+  // 마지막 버블에만 제안 — 과거 모든 버블에 붙으면 시끄럽다.
+  const suggestions = isStartError || !isLast
+    ? []
+    : suggestedEdges(edges, agent?.name ?? "", stream.status, view.changedFiles).filter(
+        (e) => !autoFired.has(e.to) && !handedOff.includes(e.to),
+      );
+
+  async function fireHandoff(to: string) {
+    setHandedOff((prev) => [...prev, to]);
+    try {
+      await api.handoffRun(runId, to);
+      onDone?.();
+    } catch {
+      setHandedOff((prev) => prev.filter((x) => x !== to)); // 실패 시 버튼 복원
+    }
+  }
+
   return (
     <div className="flex gap-3">
       <Avatar agent={agent} />
@@ -288,7 +322,18 @@ function AgentBubble({ agent, fromAgent, runId, onDone }: { agent?: AgentSpec; f
           <span className="font-display text-sm font-semibold">{name}</span>
           {agent ? <span className="text-[11px] text-muted-foreground">{agent.adapter}</span> : null}
           {fromAgent ? <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">↳ @{fromAgent}</span> : null}
-          {running ? <span className="size-1.5 animate-pulse rounded-full bg-primary" /> : null}
+          {running ? (
+            <>
+              <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+              <button
+                type="button"
+                onClick={() => void api.cancelRun(runId).catch(() => {})}
+                className="rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+              >
+                {t("talk.cancel")}
+              </button>
+            </>
+          ) : null}
         </div>
 
         {/* 도구·파일·핸드오프 트레이스 */}
@@ -329,6 +374,23 @@ function AgentBubble({ agent, fromAgent, runId, onDone }: { agent?: AgentSpec; f
         {!isStartError && (stream.status === "failed" || stream.status === "cancelled") ? (
           <p className="mt-1 text-[11px] text-muted-foreground">{t(`talk.status.${stream.status}`)}</p>
         ) : null}
+
+        {/* ask/manual 엣지 수동 발화 제안 */}
+        {suggestions.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {suggestions.map((e) => (
+              <button
+                key={e.to}
+                type="button"
+                onClick={() => void fireHandoff(e.to)}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-primary/50 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+              >
+                <Workflow className="size-3" />
+                {t("talk.handoffTo", { name: e.to })}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -347,23 +409,41 @@ interface DerivedView {
   body: string;
   result?: Extract<OfficeEvent, { kind: "result" }>;
   errors: string[];
+  changedFiles: number;
 }
 function deriveView(events: OfficeEvent[]): DerivedView {
   const trace: string[] = [];
   const texts: string[] = [];
   const errors: string[] = [];
   let result: Extract<OfficeEvent, { kind: "result" }> | undefined;
+  let changedFiles = 0;
   for (const e of events) {
     if (e.kind === "text") texts.push(e.text);
     else if (e.kind === "tool") trace.push(`⚙ ${e.name}${e.target ? ` ${e.target}` : ""}`);
-    else if (e.kind === "file") trace.push(`${e.action === "edit" ? "✎" : "+"} ${e.path}`);
-    else if (e.kind === "handoff") trace.push(`→ @${e.toAgent}`);
+    else if (e.kind === "file") {
+      trace.push(`${e.action === "edit" ? "✎" : "+"} ${e.path}`);
+      changedFiles++;
+    } else if (e.kind === "handoff") trace.push(`→ @${e.toAgent}`);
     else if (e.kind === "result") result = e;
     else if (e.kind === "error") errors.push(e.message);
   }
   // result 가 오면 그게 최종 전체 텍스트 — 누적 text 보다 우선.
   const body = result?.text ?? texts.join("");
-  return { trace, body, result, errors };
+  return { trace, body, result, errors, changedFiles };
+}
+
+// 완료된 run 에서 수동 발화를 제안할 엣지 — manual 트리거는 항상,
+// ask 모드는 트리거가 결과와 맞을 때만. auto+매치는 엔진이 이미 발화했으니 제외.
+function suggestedEdges(edges: HarnessEdge[], agent: string, status: string, changedFiles: number): HarnessEdge[] {
+  if (status !== "succeeded" && status !== "failed") return [];
+  return edges.filter((e) => {
+    if (e.from !== agent) return false;
+    if (e.trigger === "manual") return true;
+    if (e.mode !== "ask") return false;
+    if (e.trigger === "on_success") return status === "succeeded";
+    if (e.trigger === "on_fail") return status === "failed";
+    return status === "succeeded" && changedFiles > 0; // on_changes
+  });
 }
 
 // ── Composer — @ 하나로 에이전트(라우팅)·스킬(첨부)·파일(경로 삽입) 검색 ─────────

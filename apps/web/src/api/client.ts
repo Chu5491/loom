@@ -121,6 +121,13 @@ export const api = {
     }),
   cancelRun: (id: string) =>
     request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: "POST" }),
+
+  /** ask/manual 엣지 수동 발화 — 완료된 run 에서 to 에이전트로 핸드오프. */
+  handoffRun: (id: string, to: string) =>
+    request<{ run: RunInfo }>(`/api/runs/${id}/handoff`, {
+      method: "POST",
+      body: JSON.stringify({ to }),
+    }),
 };
 
 /** SSE 구독 URL — EventSource 가 직접 연다(`event`/`done` 네임드 이벤트). */

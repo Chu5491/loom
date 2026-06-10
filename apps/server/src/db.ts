@@ -73,6 +73,7 @@ interface RunRow {
   exit_code: number | null;
   parent_run_id: string | null;
   project_id: string | null;
+  cost_usd: number | null;
 }
 function toInfo(r: RunRow): RunInfo {
   return {
@@ -85,6 +86,7 @@ function toInfo(r: RunRow): RunInfo {
     exitCode: r.exit_code,
     parentRunId: r.parent_run_id,
     projectId: r.project_id,
+    costUsd: r.cost_usd,
   };
 }
 

@@ -29,6 +29,7 @@ function run(id: string): RunInfo {
     exitCode: null,
     parentRunId: null,
     projectId: null,
+    costUsd: null,
   };
 }
 

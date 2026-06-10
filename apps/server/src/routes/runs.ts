@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isResponse, parseBody } from "./helpers.js";
-import { cancelRun, getPersistedRun, getRun, listRuns, startRun, subscribe } from "../run/engine.js";
+import { cancelRun, fireManualHandoff, getPersistedRun, getRun, listRuns, startRun, subscribe } from "../run/engine.js";
 
 export const runsRoute = new Hono();
 
@@ -42,6 +42,16 @@ runsRoute.post("/:id/cancel", (c) =>
     ? c.json({ ok: true })
     : c.json({ error: "not_active" }, 409),
 );
+
+// ask/manual 엣지 수동 발화 — body: { to: agentName }.
+const handoffSchema = z.object({ to: z.string().min(1) });
+runsRoute.post("/:id/handoff", async (c) => {
+  const data = await parseBody(c, handoffSchema);
+  if (isResponse(data)) return data;
+  const result = await fireManualHandoff(c.req.param("id"), data.to);
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json({ run: result.run }, 201);
+});
 
 // SSE — replay(이미 나온 이벤트) → 라이브 → done. 순서 보장을 위해 큐로 직렬화.
 runsRoute.get("/:id/events", (c) => {
