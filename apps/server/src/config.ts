@@ -25,4 +25,5 @@ export const paths = {
   data: path.join(home, "data"),
   logs: path.join(home, "data", "logs"),
   loadouts: path.join(home, "data", "loadouts"),
+  db: path.join(home, "data", "loom.db"), // 런 기록(history) — 정의 아님. gitignore.
 } as const;

@@ -95,6 +95,8 @@ export const api = {
     }),
 
   // ── runs (Talk) ────────────────────────────────────────────────────────
+  listRuns: () => request<{ runs: RunInfo[] }>("/api/runs"),
+
   startRun: (body: { agent: string; prompt: string; cwd?: string }) =>
     request<{ run: RunInfo }>("/api/runs", {
       method: "POST",

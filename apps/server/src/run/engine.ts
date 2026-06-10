@@ -8,6 +8,7 @@ import path from "node:path";
 import type { AdapterConfig, McpServer, OfficeEvent, RunInfo } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { config, paths } from "../config.js";
+import { appendEvent, finishRun, getRunDb, getRunEventsDb, insertRun, listRunsDb } from "../db.js";
 import { logger } from "../logger.js";
 import {
   readAgents,
@@ -38,6 +39,9 @@ interface RunState {
   buf: string; // stdout line buffer
   sawResult: boolean;
   lastText: string;
+  seq: number; // run_events 순번 — 디스크 영속 순서 보장
+  costUsd?: number;
+  sessionId?: string;
   abort: AbortController;
   kill: () => void;
 }
@@ -45,10 +49,10 @@ interface RunState {
 const runs = new Map<string, RunState>();
 
 export function getRun(id: string): RunInfo | null {
-  return runs.get(id)?.info ?? null;
+  return runs.get(id)?.info ?? getRunDb(id);
 }
 export function listRuns(): RunInfo[] {
-  return [...runs.values()].map((r) => r.info).sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+  return listRunsDb();
 }
 
 export function subscribe(id: string, fn: Listener): { replay: OfficeEvent[]; done: RunInfo | null; off: () => void } | null {
@@ -60,6 +64,13 @@ export function subscribe(id: string, fn: Listener): { replay: OfficeEvent[]; do
     done: r.info.status === "running" ? null : r.info,
     off: () => r.listeners.delete(fn),
   };
+}
+
+// 서버 재시작 후 인메모리 Map 에 없는 완료 run — 디스크 기록에서 정적 복원.
+export function getPersistedRun(id: string): { events: OfficeEvent[]; run: RunInfo } | null {
+  const run = getRunDb(id);
+  if (!run) return null;
+  return { events: getRunEventsDb(id), run };
 }
 
 export function cancelRun(id: string): boolean {
@@ -121,10 +132,12 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     buf: "",
     sawResult: false,
     lastText: "",
+    seq: 0,
     abort,
     kill: () => {},
   };
   runs.set(id, state);
+  insertRun(info); // history 영속 — running 상태로 즉시 기록(finish 가 갱신).
 
   // adapterConfig — 에이전트 config + model. env 의 secret 참조도 resolve.
   const cfg = (agent.config ?? {}) as AdapterConfig;
@@ -146,7 +159,12 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
 function emit(state: RunState, events: OfficeEvent[]): void {
   for (const ev of events) {
     state.events.push(ev);
-    if (ev.kind === "result") state.sawResult = true;
+    appendEvent(state.info.id, state.seq++, ev); // 순서 보존하며 디스크에 기록
+    if (ev.kind === "result") {
+      state.sawResult = true;
+      state.costUsd = ev.costUsd;
+      state.sessionId = ev.sessionId;
+    }
     if (ev.kind === "text") state.lastText = ev.text;
     for (const fn of state.listeners) {
       try {
@@ -216,6 +234,7 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
   state.info.status = status;
   state.info.exitCode = exitCode;
   state.info.endedAt = new Date().toISOString();
+  finishRun(state.info, { costUsd: state.costUsd, sessionId: state.sessionId });
   try {
     fs.closeSync(state.rawFd);
   } catch {

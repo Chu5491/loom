@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isResponse, parseBody } from "./helpers.js";
-import { cancelRun, getRun, listRuns, startRun, subscribe } from "../run/engine.js";
+import { cancelRun, getPersistedRun, getRun, listRuns, startRun, subscribe } from "../run/engine.js";
 
 export const runsRoute = new Hono();
 
@@ -50,7 +50,16 @@ runsRoute.get("/:id/events", (c) => {
       wake?.();
     });
     if (!sub) {
-      await stream.writeSSE({ event: "error", data: JSON.stringify({ error: "not_found" }) });
+      // 인메모리에 없음 — 재시작 후의 완료 run 이면 디스크 기록에서 정적 복원.
+      const persisted = getPersistedRun(id);
+      if (!persisted) {
+        await stream.writeSSE({ event: "error", data: JSON.stringify({ error: "not_found" }) });
+        return;
+      }
+      for (const ev of persisted.events) {
+        await stream.writeSSE({ event: "event", data: JSON.stringify({ kind: "event", event: ev }) });
+      }
+      await stream.writeSSE({ event: "done", data: JSON.stringify({ kind: "done", run: persisted.run }) });
       return;
     }
     // 구독 시점 스냅샷을 큐 앞에 — 등록 이후 들어온 라이브 이벤트보다 먼저 나가도록.

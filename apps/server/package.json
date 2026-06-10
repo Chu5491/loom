@@ -18,12 +18,14 @@
     "@loom/adapter-devin": "workspace:*",
     "@loom/adapter-opencode": "workspace:*",
     "@loom/core": "workspace:*",
+    "better-sqlite3": "^12.10.0",
     "hono": "^4.6.13",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

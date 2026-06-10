@@ -35,16 +35,32 @@ const nextId = () => `m${seq++}`;
 export function TalkPage() {
   const { t } = useI18n();
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
+  const runs = useQuery({ queryKey: ["runs"], queryFn: api.listRuns });
   const agents = office.data?.office.agents ?? [];
 
   const [active, setActive] = useState<string>("");
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [seeded, setSeeded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 첫 에이전트를 기본 대상으로.
   useEffect(() => {
     if (!active && agents.length) setActive(agents[0]!.name);
   }, [agents, active]);
+
+  // 마운트 시 과거 run 기록으로 스레드 복원 — 한 run = user 버블 + agent 버블.
+  // 한 번만 시드(이후엔 세션 내 로컬 append). 새로고침하면 DB에서 다시 복원된다.
+  useEffect(() => {
+    if (seeded || !runs.data) return;
+    const ordered = [...runs.data.runs].sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1));
+    setMessages(
+      ordered.flatMap((r): Msg[] => [
+        { id: `u-${r.id}`, role: "user", agent: r.agent, text: r.prompt },
+        { id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id },
+      ]),
+    );
+    setSeeded(true);
+  }, [runs.data, seeded]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -74,7 +90,7 @@ export function TalkPage() {
     }
   }
 
-  if (!office.data) {
+  if (!office.data || !runs.data) {
     return <Centered>{t("common.checking")}</Centered>;
   }
   if (agents.length === 0) {
