@@ -131,6 +131,11 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const adapterConfig: AdapterConfig = {
     ...cfg,
     ...(agent.model ? { model: agent.model } : {}),
+    // 권한: bypass → 전 어댑터 공통 위험 토글, acceptEdits → claude/devin permission-mode.
+    ...(agent.permission === "bypass" ? { dangerouslySkipPermissions: true } : {}),
+    ...(agent.permission === "acceptEdits" ? { permissionMode: "acceptEdits" } : {}),
+    // 추론 강도: 지원하는 어댑터(codex 등)가 config.reasoning 으로 읽음.
+    ...(agent.reasoning ? { reasoning: agent.reasoning } : {}),
     ...(cfg.env ? { env: resolveRefs(cfg.env as Record<string, string>) } : {}),
   };
 

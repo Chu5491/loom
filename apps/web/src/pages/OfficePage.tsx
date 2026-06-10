@@ -1,9 +1,9 @@
 // Office 화면 — office/ 파일들을 UI로 편집. 정의의 원천은 파일, 여긴 그 뷰.
-// 4섹션: Rules / Skills / Agents / MCP. 모든 변경은 PUT → 파일 저장 → 재조회.
+// 4섹션: Agents / Rules / Skills / MCP. 모든 변경은 PUT → 파일 저장 → 재조회.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Sparkles, Trash2, Bot, Plug } from "lucide-react";
+import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle } from "lucide-react";
 import type { AdapterKind, AgentSpec, Office } from "@loom/core";
 import { api } from "../api/client.js";
 import { Badge, Button } from "../components/ui.js";
@@ -11,11 +11,28 @@ import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
 const ADAPTERS: AdapterKind[] = ["claude-code", "antigravity", "codex", "opencode", "devin"];
+const MCP_UNSUPPORTED: AdapterKind[] = ["antigravity"];
+
 const inputCls =
-  "w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-ring";
 const areaCls = inputCls + " font-mono text-xs leading-relaxed";
 
-type Section = "rules" | "skills" | "agents" | "mcp";
+// 에이전트 아바타 색 — 이름 해시로 안정적으로 배정.
+const AVATAR = [
+  "from-sky-500/80 to-indigo-500/80",
+  "from-emerald-500/80 to-teal-500/80",
+  "from-fuchsia-500/80 to-purple-500/80",
+  "from-amber-500/80 to-orange-500/80",
+  "from-rose-500/80 to-pink-500/80",
+  "from-cyan-500/80 to-blue-500/80",
+];
+function avatarFor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR[h % AVATAR.length]!;
+}
+
+type Section = "agents" | "rules" | "skills" | "mcp";
 
 export function OfficePage() {
   const { t } = useI18n();
@@ -31,42 +48,59 @@ export function OfficePage() {
   ];
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight">{t("office.title")}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{t("office.subtitle")}</p>
+    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <header>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">{t("office.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("office.subtitle")}</p>
+      </header>
 
-      <div className="mt-5 flex flex-wrap gap-1.5">
-        {tabs.map((tb) => (
-          <button
-            key={tb.key}
-            type="button"
-            onClick={() => setSection(tb.key)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
-              section === tb.key
-                ? "border-primary/40 bg-primary/10 text-foreground"
-                : "border-border text-muted-foreground hover:bg-muted/60",
-            )}
-          >
-            {tb.icon}
-            {t(`office.section.${tb.key}`)}
-            <span className="text-xs opacity-60">{tb.count}</span>
-          </button>
-        ))}
-      </div>
+      <div className="mt-7 grid gap-6 md:grid-cols-[220px_1fr]">
+        {/* 사이드 레일 */}
+        <nav className="flex gap-1.5 md:flex-col">
+          {tabs.map((tb) => (
+            <button
+              key={tb.key}
+              type="button"
+              onClick={() => setSection(tb.key)}
+              className={cn(
+                "group flex flex-1 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition-all md:flex-none",
+                section === tb.key
+                  ? "border-primary/40 bg-primary/10 text-foreground shadow-[var(--shadow-glow-sm)]"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors",
+                  section === tb.key ? "bg-primary/15 text-primary" : "bg-muted/60 text-muted-foreground group-hover:text-foreground",
+                )}
+              >
+                {tb.icon}
+              </span>
+              <span className="flex-1 font-medium">{t(`office.section.${tb.key}`)}</span>
+              <span className="rounded-full bg-muted/70 px-1.5 text-xs tabular-nums text-muted-foreground">{tb.count}</span>
+            </button>
+          ))}
+        </nav>
 
-      <div className="mt-5">
-        {!data ? (
-          <p className="text-sm text-muted-foreground">{t("common.checking")}</p>
-        ) : section === "rules" ? (
-          <RulesSection office={data} />
-        ) : section === "skills" ? (
-          <SkillsSection office={data} />
-        ) : section === "agents" ? (
-          <AgentsSection office={data} />
-        ) : (
-          <McpSection office={data} />
-        )}
+        {/* 콘텐츠 */}
+        <div className="min-w-0">
+          <div className="mb-4">
+            <h2 className="font-display text-lg font-semibold">{t(`office.section.${section}`)}</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">{t(`office.section.${section}.desc`)}</p>
+          </div>
+          {!data ? (
+            <p className="text-sm text-muted-foreground">{t("common.checking")}</p>
+          ) : section === "rules" ? (
+            <RulesSection office={data} />
+          ) : section === "skills" ? (
+            <SkillsSection office={data} />
+          ) : section === "agents" ? (
+            <AgentsSection office={data} />
+          ) : (
+            <McpSection office={data} />
+          )}
+        </div>
       </div>
     </main>
   );
@@ -78,12 +112,12 @@ function useInvalidate() {
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl border border-border bg-card p-4">{children}</div>;
+  return <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">{children}</div>;
 }
 
 function SectionHead({ onAdd, label }: { onAdd: () => void; label: string }) {
   return (
-    <div className="mb-3 flex justify-end">
+    <div className="mb-4 flex justify-end">
       <Button size="sm" onClick={onAdd}>
         <Plus className="size-3.5" />
         {label}
@@ -92,92 +126,33 @@ function SectionHead({ onAdd, label }: { onAdd: () => void; label: string }) {
   );
 }
 
-// ── Rules ────────────────────────────────────────────────────────────────────
-function RulesSection({ office }: { office: Office }) {
-  const { t } = useI18n();
-  const invalidate = useInvalidate();
-  const [drafts, setDrafts] = useState<{ name: string; body: string }[]>([]);
-  const save = useMutation({
-    mutationFn: (r: { name: string; body: string }) => api.putRule(r.name, r.body),
-    onSuccess: invalidate,
-  });
-  const del = useMutation({ mutationFn: api.deleteRule, onSuccess: invalidate });
-
-  const items = [...office.rules.map((r) => ({ ...r, isNew: false })), ...drafts.map((d) => ({ ...d, isNew: true }))];
-
-  return (
-    <div className="space-y-3">
-      <SectionHead label={t("office.new")} onAdd={() => setDrafts((d) => [...d, { name: "", body: "" }])} />
-      {items.length === 0 ? <Empty /> : null}
-      {items.map((r, i) => (
-        <Card key={r.isNew ? `new-${i}` : r.name}>
-          <RowHead
-            name={r.name}
-            editable={r.isNew}
-            onName={(v) => r.isNew && setDrafts((d) => d.map((x, j) => (j === i - office.rules.length ? { ...x, name: v } : x)))}
-            onDelete={r.isNew ? undefined : () => confirm(t("office.deleteConfirm", { name: r.name })) && del.mutate(r.name)}
-          />
-          <textarea
-            className={cn(areaCls, "mt-2 min-h-28")}
-            defaultValue={r.body}
-            id={`rule-${i}`}
-            placeholder="# Markdown rule body"
-          />
-          <SaveRow
-            onSave={() => {
-              const name = r.name.trim();
-              const body = (document.getElementById(`rule-${i}`) as HTMLTextAreaElement).value;
-              if (name) save.mutate({ name, body });
-            }}
-            pending={save.isPending}
-          />
-        </Card>
-      ))}
-    </div>
-  );
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <span className="mb-1.5 block text-xs font-medium text-muted-foreground">{children}</span>;
 }
 
-// ── Skills ───────────────────────────────────────────────────────────────────
-function SkillsSection({ office }: { office: Office }) {
-  const { t } = useI18n();
-  const invalidate = useInvalidate();
-  const [drafts, setDrafts] = useState<{ name: string }[]>([]);
-  const save = useMutation({
-    mutationFn: (s: { name: string; description: string; body: string }) =>
-      api.putSkill(s.name, s.description, s.body),
-    onSuccess: invalidate,
-  });
-  const del = useMutation({ mutationFn: api.deleteSkill, onSuccess: invalidate });
-
-  const items = [
-    ...office.skills.map((s) => ({ ...s, isNew: false })),
-    ...drafts.map((d) => ({ name: d.name, description: "", body: "", isNew: true })),
-  ];
-
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T | undefined;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
   return (
-    <div className="space-y-3">
-      <SectionHead label={t("office.new")} onAdd={() => setDrafts((d) => [...d, { name: "" }])} />
-      {items.length === 0 ? <Empty /> : null}
-      {items.map((s, i) => (
-        <Card key={s.isNew ? `new-${i}` : s.name}>
-          <RowHead
-            name={s.name}
-            editable={s.isNew}
-            onName={(v) => s.isNew && setDrafts((d) => d.map((x, j) => (j === i - office.skills.length ? { name: v } : x)))}
-            onDelete={s.isNew ? undefined : () => confirm(t("office.deleteConfirm", { name: s.name })) && del.mutate(s.name)}
-          />
-          <input className={cn(inputCls, "mt-2")} defaultValue={s.description} id={`skill-desc-${i}`} placeholder={t("office.skill.desc")} />
-          <textarea className={cn(areaCls, "mt-2 min-h-24")} defaultValue={s.body} id={`skill-body-${i}`} placeholder="# Markdown skill body" />
-          <SaveRow
-            onSave={() => {
-              const name = s.name.trim();
-              const description = (document.getElementById(`skill-desc-${i}`) as HTMLInputElement).value;
-              const body = (document.getElementById(`skill-body-${i}`) as HTMLTextAreaElement).value;
-              if (name) save.mutate({ name, description, body });
-            }}
-            pending={save.isPending}
-          />
-        </Card>
+    <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+            value === o.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {o.label}
+        </button>
       ))}
     </div>
   );
@@ -199,7 +174,7 @@ function AgentsSection({ office }: { office: Office }) {
   return (
     <div className="space-y-3">
       <SectionHead
-        label={t("office.new")}
+        label={t("office.new.agent")}
         onAdd={() => setDrafts((d) => [...d, { name: "", adapter: "claude-code" }])}
       />
       {items.length === 0 ? <Empty /> : null}
@@ -244,57 +219,300 @@ function AgentCard({
       set.has(name) ? set.delete(name) : set.add(name);
       return { ...p, [key]: [...set] };
     });
+  const setAdapter = (adapter: AdapterKind) =>
+    setA((p) => ({ ...p, adapter, ...(MCP_UNSUPPORTED.includes(adapter) ? { mcp: [] } : {}) }));
+
+  const mcpBlocked = MCP_UNSUPPORTED.includes(a.adapter);
+  const label = (a.name || "?").trim() || "?";
 
   return (
     <Card>
-      <RowHead name={a.name} editable={isNew} onName={(v) => setA((p) => ({ ...p, name: v }))} onDelete={onDelete} />
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <label className="text-xs text-muted-foreground">
-          {t("office.agent.adapter")}
-          <select className={cn(inputCls, "mt-1")} value={a.adapter} onChange={(e) => setA((p) => ({ ...p, adapter: e.target.value as AdapterKind }))}>
-            {ADAPTERS.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
-        </label>
-        <label className="text-xs text-muted-foreground">
-          {t("office.agent.model")}
-          <input className={cn(inputCls, "mt-1 font-mono")} value={a.model ?? ""} placeholder="claude-fable-5" onChange={(e) => setA((p) => ({ ...p, model: e.target.value || undefined }))} />
-        </label>
+      {/* 헤더: 아바타 + 이름 + 어댑터 배지 + 삭제 */}
+      <div className="flex items-center gap-3">
+        <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br font-display text-base font-semibold text-white shadow-sm", avatarFor(label))}>
+          {label.charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
+          {isNew ? (
+            <input
+              className={cn(inputCls, "max-w-64 font-mono")}
+              value={a.name}
+              autoFocus
+              placeholder={t("office.namePlaceholder")}
+              onChange={(e) => setA((p) => ({ ...p, name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") }))}
+            />
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="font-display text-base font-semibold">{a.name}</span>
+              <Badge tone="neutral">{a.adapter}</Badge>
+            </div>
+          )}
+        </div>
+        {onDelete ? (
+          <button type="button" onClick={onDelete} className="text-muted-foreground transition-colors hover:text-destructive" aria-label="delete">
+            <Trash2 className="size-4" />
+          </button>
+        ) : null}
       </div>
-      <label className="mt-2 block text-xs text-muted-foreground">
-        {t("office.agent.prompt")}
-        <textarea className={cn(areaCls, "mt-1 min-h-20")} value={a.prompt ?? ""} placeholder="You are a backend engineer…" onChange={(e) => setA((p) => ({ ...p, prompt: e.target.value || undefined }))} />
-      </label>
-      <Chips label={t("office.agent.rules")} all={office.rules.map((r) => r.name)} selected={a.rules ?? []} onToggle={(n) => toggle("rules", n)} />
-      <Chips label={t("office.agent.skills")} all={office.skills.map((s) => s.name)} selected={a.skills ?? []} onToggle={(n) => toggle("skills", n)} />
-      <Chips label={t("office.agent.mcp")} all={office.mcp.map((m) => m.name)} selected={a.mcp ?? []} onToggle={(n) => toggle("mcp", n)} />
+
+      {/* Identity: 어댑터 + 모델 */}
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <FieldLabel>{t("office.agent.adapter")}</FieldLabel>
+          <select className={inputCls} value={a.adapter} onChange={(e) => setAdapter(e.target.value as AdapterKind)}>
+            {ADAPTERS.map((k) => (
+              <option key={k} value={k}>{k}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <FieldLabel>{t("office.agent.model")}</FieldLabel>
+          <ModelField adapter={a.adapter} value={a.model} onChange={(v) => setA((p) => ({ ...p, model: v }))} />
+        </div>
+      </div>
+
+      {/* Behavior: 성능 + 권한 */}
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <FieldLabel>{t("office.agent.reasoning")}</FieldLabel>
+          <Segmented
+            value={a.reasoning}
+            onChange={(v) => setA((p) => ({ ...p, reasoning: v }))}
+            options={[
+              { value: "low", label: t("office.agent.reasoning.low") },
+              { value: "medium", label: t("office.agent.reasoning.medium") },
+              { value: "high", label: t("office.agent.reasoning.high") },
+            ]}
+          />
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.agent.reasoning.hint")}</p>
+        </div>
+        <div>
+          <FieldLabel>{t("office.agent.permission")}</FieldLabel>
+          <Segmented
+            value={a.permission ?? "default"}
+            onChange={(v) => setA((p) => ({ ...p, permission: v === "default" ? undefined : v }))}
+            options={[
+              { value: "default", label: t("office.agent.permission.default") },
+              { value: "acceptEdits", label: t("office.agent.permission.acceptEdits") },
+              { value: "bypass", label: t("office.agent.permission.bypass") },
+            ]}
+          />
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.agent.permission.hint")}</p>
+        </div>
+      </div>
+
+      {/* 지시 프롬프트 */}
+      <div className="mt-4">
+        <FieldLabel>{t("office.agent.prompt")}</FieldLabel>
+        <textarea
+          className={cn(areaCls, "min-h-20")}
+          value={a.prompt ?? ""}
+          placeholder="You are a backend engineer…"
+          onChange={(e) => setA((p) => ({ ...p, prompt: e.target.value || undefined }))}
+        />
+      </div>
+
+      {/* Context & tools */}
+      <div className="mt-5 border-t border-border/60 pt-4">
+        <Chips label={t("office.agent.rules")} all={office.rules.map((r) => r.name)} selected={a.rules ?? []} onToggle={(n) => toggle("rules", n)} />
+        <Chips label={t("office.agent.skills")} all={office.skills.map((s) => s.name)} selected={a.skills ?? []} onToggle={(n) => toggle("skills", n)} />
+        {mcpBlocked ? (
+          <div className="mt-3">
+            <span className="text-xs font-medium text-muted-foreground">{t("office.agent.mcp")}</span>
+            <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
+              <span>{t("office.agent.mcpUnsupported")}</span>
+            </div>
+          </div>
+        ) : (
+          <Chips label={t("office.agent.mcp")} all={office.mcp.map((m) => m.name)} selected={a.mcp ?? []} onToggle={(n) => toggle("mcp", n)} />
+        )}
+      </div>
+
       <SaveRow onSave={() => onSave(a)} pending={pending} />
     </Card>
   );
 }
 
-function Chips({ label, all, selected, onToggle }: { label: string; all: string[]; selected: string[]; onToggle: (n: string) => void }) {
-  if (all.length === 0) return null;
-  return (
-    <div className="mt-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <div className="mt-1 flex flex-wrap gap-1.5">
-        {all.map((n) => {
-          const on = selected.includes(n);
-          return (
-            <button
-              key={n}
-              type="button"
-              onClick={() => onToggle(n)}
-              className={cn(
-                "rounded-md border px-2 py-0.5 text-xs transition-colors",
-                on ? "border-primary/50 bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:bg-muted/60",
-              )}
-            >
-              {on ? "✓ " : ""}{n}
-            </button>
-          );
-        })}
+// 모델 선택 — 어댑터별 라이브/프리셋 목록을 드롭다운으로, custom 은 직접 입력.
+function ModelField({ adapter, value, onChange }: { adapter: AdapterKind; value?: string; onChange: (v: string | undefined) => void }) {
+  const { t } = useI18n();
+  const models = useQuery({
+    queryKey: ["models", adapter],
+    queryFn: () => api.listAdapterModels(adapter),
+    staleTime: 5 * 60_000,
+  });
+  const list = models.data?.models.models ?? [];
+  const known = new Set(list.map((m) => m.value));
+  const [custom, setCustom] = useState(!!value && !known.has(value) && list.length > 0);
+
+  const grouped = new Map<string, typeof list>();
+  for (const m of list) {
+    const g = m.category ?? "";
+    if (!grouped.has(g)) grouped.set(g, []);
+    grouped.get(g)!.push(m);
+  }
+
+  if (custom || (value && !known.has(value) && list.length === 0)) {
+    return (
+      <div className="flex gap-1.5">
+        <input
+          className={cn(inputCls, "font-mono")}
+          value={value ?? ""}
+          placeholder="claude-fable-5"
+          onChange={(e) => onChange(e.target.value || undefined)}
+        />
+        {list.length > 0 ? (
+          <button type="button" onClick={() => { setCustom(false); onChange(undefined); }} className="shrink-0 rounded-lg border border-border px-2 text-xs text-muted-foreground hover:bg-muted/60">
+            ↩
+          </button>
+        ) : null}
       </div>
+    );
+  }
+
+  return (
+    <select
+      className={cn(inputCls, "font-mono")}
+      value={value ?? ""}
+      onChange={(e) => {
+        if (e.target.value === "__custom") { setCustom(true); return; }
+        onChange(e.target.value || undefined);
+      }}
+    >
+      <option value="">{t("office.agent.model.default")}</option>
+      {[...grouped.entries()].map(([g, items]) =>
+        g ? (
+          <optgroup key={g} label={g}>
+            {items.map((m) => <option key={m.value} value={m.value}>{m.value}</option>)}
+          </optgroup>
+        ) : (
+          items.map((m) => <option key={m.value} value={m.value}>{m.value}</option>)
+        ),
+      )}
+      <option value="__custom">{t("office.agent.model.custom")}</option>
+    </select>
+  );
+}
+
+function Chips({ label, all, selected, onToggle }: { label: string; all: string[]; selected: string[]; onToggle: (n: string) => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="mt-3 first:mt-0">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {all.length === 0 ? (
+          <span className="text-xs text-muted-foreground/70">{t("office.empty")}</span>
+        ) : (
+          all.map((n) => {
+            const on = selected.includes(n);
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => onToggle(n)}
+                className={cn(
+                  "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+                  on ? "border-primary/50 bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:bg-muted/60",
+                )}
+              >
+                {on ? "✓ " : ""}{n}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Rules ────────────────────────────────────────────────────────────────────
+function RulesSection({ office }: { office: Office }) {
+  const { t } = useI18n();
+  const invalidate = useInvalidate();
+  const [drafts, setDrafts] = useState<{ name: string; body: string }[]>([]);
+  const save = useMutation({
+    mutationFn: (r: { name: string; body: string }) => api.putRule(r.name, r.body),
+    onSuccess: invalidate,
+  });
+  const del = useMutation({ mutationFn: api.deleteRule, onSuccess: invalidate });
+
+  const items = [...office.rules.map((r) => ({ ...r, isNew: false })), ...drafts.map((d) => ({ ...d, isNew: true }))];
+
+  return (
+    <div className="space-y-3">
+      <SectionHead label={t("office.new.rule")} onAdd={() => setDrafts((d) => [...d, { name: "", body: "" }])} />
+      {items.length === 0 ? <Empty /> : null}
+      {items.map((r, i) => (
+        <Card key={r.isNew ? `new-${i}` : r.name}>
+          <RowHead
+            name={r.name}
+            editable={r.isNew}
+            onName={(v) => r.isNew && setDrafts((d) => d.map((x, j) => (j === i - office.rules.length ? { ...x, name: v } : x)))}
+            onDelete={r.isNew ? undefined : () => confirm(t("office.deleteConfirm", { name: r.name })) && del.mutate(r.name)}
+          />
+          <textarea
+            className={cn(areaCls, "mt-3 min-h-28")}
+            defaultValue={r.body}
+            id={`rule-${i}`}
+            placeholder="# Markdown rule body"
+          />
+          <SaveRow
+            onSave={() => {
+              const name = r.name.trim();
+              const body = (document.getElementById(`rule-${i}`) as HTMLTextAreaElement).value;
+              if (name) save.mutate({ name, body });
+            }}
+            pending={save.isPending}
+          />
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ── Skills ───────────────────────────────────────────────────────────────────
+function SkillsSection({ office }: { office: Office }) {
+  const { t } = useI18n();
+  const invalidate = useInvalidate();
+  const [drafts, setDrafts] = useState<{ name: string }[]>([]);
+  const save = useMutation({
+    mutationFn: (s: { name: string; description: string; body: string }) =>
+      api.putSkill(s.name, s.description, s.body),
+    onSuccess: invalidate,
+  });
+  const del = useMutation({ mutationFn: api.deleteSkill, onSuccess: invalidate });
+
+  const items = [
+    ...office.skills.map((s) => ({ ...s, isNew: false })),
+    ...drafts.map((d) => ({ name: d.name, description: "", body: "", isNew: true })),
+  ];
+
+  return (
+    <div className="space-y-3">
+      <SectionHead label={t("office.new.skill")} onAdd={() => setDrafts((d) => [...d, { name: "" }])} />
+      {items.length === 0 ? <Empty /> : null}
+      {items.map((s, i) => (
+        <Card key={s.isNew ? `new-${i}` : s.name}>
+          <RowHead
+            name={s.name}
+            editable={s.isNew}
+            onName={(v) => s.isNew && setDrafts((d) => d.map((x, j) => (j === i - office.skills.length ? { name: v } : x)))}
+            onDelete={s.isNew ? undefined : () => confirm(t("office.deleteConfirm", { name: s.name })) && del.mutate(s.name)}
+          />
+          <input className={cn(inputCls, "mt-3")} defaultValue={s.description} id={`skill-desc-${i}`} placeholder={t("office.skill.desc")} />
+          <textarea className={cn(areaCls, "mt-2 min-h-24")} defaultValue={s.body} id={`skill-body-${i}`} placeholder="# Markdown skill body" />
+          <SaveRow
+            onSave={() => {
+              const name = s.name.trim();
+              const description = (document.getElementById(`skill-desc-${i}`) as HTMLInputElement).value;
+              const body = (document.getElementById(`skill-body-${i}`) as HTMLTextAreaElement).value;
+              if (name) save.mutate({ name, description, body });
+            }}
+            pending={save.isPending}
+          />
+        </Card>
+      ))}
     </div>
   );
 }
@@ -315,7 +533,7 @@ function McpSection({ office }: { office: Office }) {
     <Card>
       <p className="text-xs text-muted-foreground">{t("office.mcp.hint")}</p>
       <textarea
-        className={cn(areaCls, "mt-2 min-h-64")}
+        className={cn(areaCls, "mt-3 min-h-64")}
         value={text}
         onChange={(e) => { setText(e.target.value); setErr(null); }}
       />
@@ -364,7 +582,7 @@ function RowHead({ name, editable, onName, onDelete }: { name: string; editable:
 function SaveRow({ onSave, pending }: { onSave: () => void; pending: boolean }) {
   const { t } = useI18n();
   return (
-    <div className="mt-2 flex justify-end">
+    <div className="mt-4 flex justify-end">
       <Button size="sm" onClick={onSave} disabled={pending}>
         {pending ? t("office.saving") : t("office.save")}
       </Button>

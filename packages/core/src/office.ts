@@ -31,6 +31,10 @@ export interface AgentSpec {
   /** UI 색상 키(에이전트 구분). 없으면 name 해시로 자동 배정. */
   color?: string;
   model?: string;
+  /** 추론 강도(성능 다이얼). high=깊게/느림, low=빠름/얕음. 어댑터가 지원하면 반영. */
+  reasoning?: "high" | "medium" | "low";
+  /** 권한 모드. default=매번 확인, acceptEdits=편집 자동승인, bypass=전부 건너뜀(위험). */
+  permission?: "default" | "acceptEdits" | "bypass";
   /** 시스템/지시 프롬프트 — 매 run 의 user 입력 앞에 붙는다. */
   prompt?: string;
   /** 포함할 rule 이름들. */

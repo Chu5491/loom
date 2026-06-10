@@ -59,6 +59,8 @@ export const agentSchema = z.object({
   label: z.string().optional(),
   color: z.string().optional(),
   model: z.string().optional(),
+  reasoning: z.enum(["high", "medium", "low"]).optional(),
+  permission: z.enum(["default", "acceptEdits", "bypass"]).optional(),
   prompt: z.string().optional(),
   rules: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
