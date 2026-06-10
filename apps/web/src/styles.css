@@ -1,16 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-/* 기하학 sans — UI(Inter) + 디스플레이/헤딩(Space Grotesk). 코드는 CommitMonoChu 유지.
- * 네트워크 없으면 system-ui로 폴백. (로컬 우선 앱이라 추후 번들 가능.) */
+/* 기하학 sans — UI(Inter) + 디스플레이/헤딩(Space Grotesk). 코드는 CommitMonoChu.
+ * 네트워크 없으면 system-ui 폴백. (로컬 우선 앱이라 추후 번들 가능.) */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 
 /* Class-based dark variant: html.dark gates all dark:* utilities. */
 @variant dark (&:where(.dark, .dark *));
 
-/* CommitMonoChu — 서비스의 단일 폰트. UI / 본문 / 코드 / Monaco 에디터까지
- * 한 글꼴로 통일. otf 한 파일이 모든 무게(550 single-weight)를 담당하므로
- * font-weight 변형은 시각적 효과(굵기 시뮬레이션) 또는 자연스러운 fallback에
- * 의존. font-display: swap — 로드 전엔 시스템 mono로 즉시 보여주고 swap. */
+/* CommitMonoChu — 코드/모델 id 등 mono 전용. */
 @font-face {
   font-family: "CommitMonoChu";
   src: url("/fonts/CommitMonoChu-550-Regular.otf") format("opentype");
@@ -20,22 +17,13 @@
 }
 
 /*
-  ─── Design notes ─────────────────────────────────────────────────────
-  Inherited from the Medit project: warm off-white paper tones with a
-  single terracotta accent. We keep the shadcn token NAMES (background,
-  foreground, muted, accent, …) so existing components don't need to
-  change — only the values move from cool blue-gray HSL to warm paper
-  OKLCH.
-  Type: CommitMonoChu — single mono font for UI / headings / code.
-  Hover: bg = muted, fg = fg. Active rows pair bg-muted with an accent
-  edge instead of inverting (gentler against the paper background).
-  ─────────────────────────────────────────────────────────────────────
+  ─── Design notes (v2-core) ───────────────────────────────────────────
+  Futuristic AI: cool near-black(dark)/near-white(light) + electric
+  violet primary + cyan partner. Glass low-alpha borders, opt-in glow.
+  shadcn token NAMES are kept so ui/* components work untouched.
+  ──────────────────────────────────────────────────────────────────────
 */
 
-/* shadcn/ui design tokens — bound to Tailwind v4's @theme so we can use
- * `bg-background`, `text-foreground`, `border-border`, etc. as utilities.
- * Values are OKLCH literals on :root / .dark so the @theme block can
- * pass them through verbatim. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -62,47 +50,40 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  /* ── Elevation (shadow) ─────────────────────────────────── */
-  --shadow-xs: 0 1px 2px 0 var(--shadow-color, rgba(0,0,0,.04));
-  --shadow-sm: 0 1px 3px 0 var(--shadow-color, rgba(0,0,0,.06)), 0 1px 2px -1px var(--shadow-color, rgba(0,0,0,.06));
-  --shadow-md: 0 4px 6px -1px var(--shadow-color, rgba(0,0,0,.07)), 0 2px 4px -2px var(--shadow-color, rgba(0,0,0,.07));
-  --shadow-lg: 0 10px 15px -3px var(--shadow-color, rgba(0,0,0,.08)), 0 4px 6px -4px var(--shadow-color, rgba(0,0,0,.08));
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.07);
 
-  /* ── Transition presets ─────────────────────────────────── */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 120ms;
   --duration-normal: 200ms;
-  --duration-slow: 350ms;
 
-  /* 폰트: UI 본문은 기하학 sans(Inter), 헤딩/디스플레이는 Space Grotesk,
-   * 코드/데이터만 mono(CommitMonoChu). "모노 종이톤"에서 "모던 sans"로. */
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
   --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
-  --font-serif: "Space Grotesk", "Inter", system-ui, sans-serif;
   --font-mono: "CommitMonoChu", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* 일렉트릭 액센트 — violet → cyan. 글로우/그라데이션으로 "AI" 시그널. */
   --color-accent-2: var(--accent-2);
   --gradient-accent: linear-gradient(135deg, var(--accent-strong), var(--accent-2));
   --shadow-glow: 0 0 24px -6px color-mix(in oklch, var(--accent-strong) 65%, transparent);
   --shadow-glow-sm: 0 0 12px -3px color-mix(in oklch, var(--accent-strong) 60%, transparent);
+
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
 }
 
 :root {
-  /* Cool near-white — futuristic light. Electric violet accent, cyan partner. */
   --background: oklch(0.985 0.002 280);
   --foreground: oklch(0.16 0.012 280);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.16 0.012 280);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.16 0.012 280);
-  --primary: oklch(0.52 0.23 280);             /* electric violet */
+  --primary: oklch(0.52 0.23 280);
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.955 0.004 280);
   --secondary-foreground: oklch(0.16 0.012 280);
   --muted: oklch(0.955 0.004 280);
   --muted-foreground: oklch(0.46 0.015 280);
-  --accent: oklch(0.93 0.045 285);             /* violet tint surface */
+  --accent: oklch(0.93 0.045 285);
   --accent-foreground: oklch(0.30 0.14 285);
   --destructive: oklch(0.55 0.20 25);
   --destructive-foreground: oklch(0.99 0 0);
@@ -113,76 +94,25 @@
   --ring: oklch(0.52 0.23 280);
   --radius: 0.625rem;
 
-  --accent-strong: oklch(0.52 0.23 280);       /* violet */
-  --accent-2: oklch(0.66 0.14 205);            /* cyan */
+  --accent-strong: oklch(0.52 0.23 280);
+  --accent-2: oklch(0.66 0.14 205);
   --border-soft: oklch(0.16 0.012 280 / 0.06);
-
-  /* ── Pixel office (light) ──────────────────────────────────────────
-   * 책상 디오라마용 색상 팔레트. itch.io 픽셀팩 스타일을 참고했지만
-   * 라이센스 트래킹이 필요 없도록 SVG <rect>로 직접 박는 방식 — 색상은
-   * 여기서 정의해 light/dark 둘 다 자연스럽게. */
-  --pixel-monitor: oklch(0.32 0.01 60);          /* 모니터 프레임 */
-  --pixel-monitor-stand: oklch(0.42 0.01 60);    /* 모니터 받침대 */
-  --pixel-screen: oklch(0.78 0.06 220);          /* 화면 (cyan-ish) */
-  --pixel-screen-on: oklch(0.86 0.10 200);       /* 화면 active */
-  --pixel-keyboard: oklch(0.56 0.01 60);         /* 키보드 */
-  --pixel-mug: oklch(0.62 0.13 35);              /* 머그 (terracotta) */
-  --pixel-desk: oklch(0.78 0.04 65);             /* 책상 상판 (warm tan) */
-  --pixel-desk-edge: oklch(0.55 0.06 50);        /* 책상 모서리 */
-  --pixel-plant-leaf: oklch(0.65 0.13 145);      /* 식물 잎 (sage) */
-  --pixel-plant-stem: oklch(0.45 0.10 145);      /* 줄기 */
-  --pixel-plant-pot: oklch(0.55 0.10 50);        /* 화분 (terracotta) */
-
-  /* 캐릭터 — 셔츠 색상은 PixelCharacter prop으로 직접 받지만 그 외 부분은 토큰. */
-  --pixel-char-skin: oklch(0.85 0.05 60);        /* 피부 (warm cream) */
-  --pixel-char-hair: oklch(0.32 0.04 50);        /* 머리카락 (dark brown) */
-  --pixel-char-eye: oklch(0.18 0.01 60);         /* 눈 (검정에 가까움) */
-  --pixel-char-pants: oklch(0.40 0.02 250);      /* 바지 (slate) */
-  --pixel-char-boots: oklch(0.25 0.02 50);       /* 신발 */
-
-  /* 사무실 데코 — 창문/커피/화분/책장. light: 따뜻한 낮 분위기. */
-  --decor-window-frame: oklch(0.42 0.04 50);
-  --decor-window-sky:   oklch(0.85 0.08 220);    /* 맑은 하늘 */
-  --decor-window-halo:  oklch(0.92 0.10 90);     /* 햇살 */
-  --decor-window-sun:   oklch(0.88 0.18 80);     /* 태양 */
-  --decor-counter:      oklch(0.78 0.04 65);
-  --decor-counter-edge: oklch(0.55 0.06 50);
-  --decor-machine:      oklch(0.32 0.01 60);
-  --decor-machine-base: oklch(0.45 0.01 60);
-  --decor-steam:        oklch(0.92 0.005 60);
-  --decor-cup:          oklch(0.93 0.005 60);
-  --decor-plant-highlight: oklch(0.78 0.13 130);
-  --decor-plant-pot-edge:  oklch(0.40 0.08 50);
-  --decor-shelf-frame:  oklch(0.42 0.04 50);
-  --decor-book-r:       oklch(0.55 0.16 25);
-  --decor-book-o:       oklch(0.65 0.15 50);
-  --decor-book-y:       oklch(0.78 0.14 95);
-  --decor-book-g:       oklch(0.55 0.14 150);
-  --decor-book-b:       oklch(0.50 0.16 250);
-  --decor-book-p:       oklch(0.50 0.18 300);
-
-  /* 카펫/벽 톤 — 사무실 바닥/벽 분리감. light는 따뜻한 베이지 카펫. */
-  --office-wall:   oklch(0.93 0.012 80);
-  --office-carpet: oklch(0.86 0.02 60);
-  --office-skirt:  oklch(0.62 0.04 50);
 }
 
 .dark {
-  /* Near-black, cool. Electric violet accent + glassy low-alpha borders.
-   * 미래지향 AI — "paper at night"가 아니라 딥 스페이스 톤. */
   --background: oklch(0.15 0.006 285);
   --foreground: oklch(0.95 0.004 285);
   --card: oklch(0.185 0.007 285);
   --card-foreground: oklch(0.95 0.004 285);
   --popover: oklch(0.185 0.007 285);
   --popover-foreground: oklch(0.95 0.004 285);
-  --primary: oklch(0.64 0.21 285);             /* electric violet (bright on dark) */
+  --primary: oklch(0.64 0.21 285);
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.225 0.008 285);
   --secondary-foreground: oklch(0.95 0.004 285);
   --muted: oklch(0.225 0.008 285);
   --muted-foreground: oklch(0.65 0.015 285);
-  --accent: oklch(0.27 0.055 288);             /* violet-tinted surface */
+  --accent: oklch(0.27 0.055 288);
   --accent-foreground: oklch(0.95 0.004 285);
   --destructive: oklch(0.66 0.19 25);
   --destructive-foreground: oklch(0.99 0 0);
@@ -192,54 +122,8 @@
   --input: oklch(0.95 0.004 285 / 0.14);
   --ring: oklch(0.64 0.21 285);
   --accent-strong: oklch(0.68 0.20 285);
-  --accent-2: oklch(0.80 0.13 200);            /* cyan */
+  --accent-2: oklch(0.80 0.13 200);
   --border-soft: oklch(0.95 0.004 285 / 0.06);
-
-  /* ── Pixel office (dark) ───────────────────────────────────────────
-   * 다크 모드는 톤을 살짝 낮추고 화면은 더 발광하는 형광 cyan으로. */
-  --pixel-monitor: oklch(0.18 0.01 70);
-  --pixel-monitor-stand: oklch(0.30 0.01 70);
-  --pixel-screen: oklch(0.55 0.12 220);
-  --pixel-screen-on: oklch(0.72 0.18 200);
-  --pixel-keyboard: oklch(0.42 0.01 70);
-  --pixel-mug: oklch(0.66 0.13 35);
-  --pixel-desk: oklch(0.42 0.05 65);
-  --pixel-desk-edge: oklch(0.28 0.04 50);
-  --pixel-plant-leaf: oklch(0.62 0.14 145);
-  --pixel-plant-stem: oklch(0.42 0.10 145);
-  --pixel-plant-pot: oklch(0.48 0.10 50);
-
-  /* 다크 모드 — 셔츠는 그대로(에이전트 컬러), 피부톤은 살짝 어둡게. */
-  --pixel-char-skin: oklch(0.78 0.06 50);
-  --pixel-char-hair: oklch(0.28 0.04 50);
-  --pixel-char-eye: oklch(0.10 0.01 60);
-  --pixel-char-pants: oklch(0.32 0.02 250);
-  --pixel-char-boots: oklch(0.18 0.02 50);
-
-  /* 데코 (dark) — 창밖은 야경, 책색은 살짝 어둡고 채도 유지. */
-  --decor-window-frame: oklch(0.20 0.02 50);
-  --decor-window-sky:   oklch(0.22 0.06 260);    /* 미드나잇 블루 */
-  --decor-window-halo:  oklch(0.45 0.05 85);     /* 달빛 */
-  --decor-window-sun:   oklch(0.85 0.05 90);     /* 달 */
-  --decor-counter:      oklch(0.42 0.05 65);
-  --decor-counter-edge: oklch(0.28 0.04 50);
-  --decor-machine:      oklch(0.14 0.01 60);
-  --decor-machine-base: oklch(0.28 0.01 60);
-  --decor-steam:        oklch(0.65 0.01 60);
-  --decor-cup:          oklch(0.78 0.01 60);
-  --decor-plant-highlight: oklch(0.72 0.13 130);
-  --decor-plant-pot-edge:  oklch(0.30 0.08 50);
-  --decor-shelf-frame:  oklch(0.22 0.02 50);
-  --decor-book-r:       oklch(0.55 0.18 25);
-  --decor-book-o:       oklch(0.62 0.16 50);
-  --decor-book-y:       oklch(0.70 0.16 95);
-  --decor-book-g:       oklch(0.55 0.16 150);
-  --decor-book-b:       oklch(0.55 0.18 250);
-  --decor-book-p:       oklch(0.55 0.20 300);
-
-  --office-wall:   oklch(0.20 0.012 70);
-  --office-carpet: oklch(0.16 0.015 60);
-  --office-skirt:  oklch(0.12 0.01 60);
 }
 
 html,
@@ -277,9 +161,7 @@ body {
   font-family: var(--font-mono);
 }
 
-/* ── Futuristic AI helpers ─────────────────────────────────────────────
- * 헤딩은 Space Grotesk(display) + 타이트 자간. 일렉트릭 글로우/그라데이션은
- * 키 요소(primary 버튼, 활성 상태, 로고)가 opt-in 으로 두른다. */
+/* ── Futuristic AI helpers — opt-in glow / gradient / display type ──── */
 .font-display {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
@@ -293,47 +175,14 @@ body {
   background-clip: text;
   color: transparent;
 }
-.ring-glow:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring), var(--shadow-glow-sm);
+
+/* Skeleton 시머 — ui/skeleton.tsx 의 before:animate-shimmer. */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
-/* Minimal scrollbar — used in dense areas like the file tree where
- * macOS's default "always show" scrollbar feels visually loud. The
- * track stays invisible; the thumb is a thin neutral pill that only
- * shows up while the user is actually pointing at the panel. */
-.subtle-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  transition: scrollbar-color 150ms ease;
-}
-.subtle-scrollbar:hover,
-.subtle-scrollbar:focus-within {
-  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
-}
-.subtle-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.subtle-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.subtle-scrollbar::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 4px;
-  transition: background-color 150ms ease;
-}
-.subtle-scrollbar:hover::-webkit-scrollbar-thumb,
-.subtle-scrollbar:focus-within::-webkit-scrollbar-thumb {
-  background: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
-}
-.subtle-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
-}
-
-/* Default browser scrollbars — slim but properly visible. Track stays
- * transparent so it blends into the panel; thumb is a clear muted-fg
- * pill that reads on both paper-light and warm-dark backgrounds. */
+/* 슬림 스크롤바 — 패널에 녹아드는 얇은 thumb. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--muted-foreground) transparent;
@@ -354,342 +203,4 @@ body {
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
-}
-.subtle-scrollbar::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* Markdown preview — uses shadcn tokens for theme integration. Headings
- * pick up the serif face for a paper-like read; body text stays sans. */
-.prose-loom {
-  color: var(--foreground);
-  font-size: 0.9rem;
-  line-height: 1.7;
-  word-break: break-word;
-  overflow-wrap: break-word;
-}
-.prose-loom h1,
-.prose-loom h2,
-.prose-loom h3,
-.prose-loom h4 {
-  font-family: var(--font-serif);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  margin: 1.2em 0 0.5em;
-  line-height: 1.25;
-}
-.prose-loom h1 { font-size: 1.6rem; }
-.prose-loom h2 { font-size: 1.3rem; margin-top: 1.4em; }
-.prose-loom h3 { font-size: 1.1rem; margin-top: 1.2em; }
-.prose-loom h4 { font-size: 1rem; }
-.prose-loom h1:first-child,
-.prose-loom h2:first-child,
-.prose-loom h3:first-child {
-  margin-top: 0;
-}
-.prose-loom p { margin: 0.75em 0; }
-.prose-loom ul,
-.prose-loom ol {
-  margin: 0.75em 0;
-  padding-left: 1.8em;
-  list-style-position: inside;
-}
-.prose-loom ul { list-style-type: disc; }
-.prose-loom ol { list-style-type: decimal; }
-.prose-loom li { margin: 0.25em 0; }
-.prose-loom code:not(pre code) {
-  font-family: var(--font-mono);
-  font-size: 0.85em;
-  background: var(--muted);
-  padding: 0.12em 0.4em;
-  border-radius: 4px;
-  color: var(--foreground);
-  word-break: break-word;
-}
-.prose-loom pre {
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  line-height: 1.6;
-  background: oklch(0.16 0.008 70);
-  color: oklch(0.93 0.006 70);
-  border: 1px solid oklch(0.24 0.008 70);
-  padding: 14px 16px;
-  border-radius: 6px;
-  overflow-x: auto;
-  margin: 0.85em 0;
-}
-.prose-loom pre code {
-  background: transparent;
-  border: 0;
-  padding: 0;
-  font-size: inherit;
-  white-space: pre;
-}
-.prose-loom blockquote {
-  border-left: 2px solid var(--accent-strong);
-  padding: 0.1em 0 0.1em 1em;
-  margin: 0.7em 0;
-  color: color-mix(in oklch, var(--foreground) 75%, transparent);
-  font-style: normal;
-}
-.prose-loom blockquote p { margin: 0.25em 0; }
-.prose-loom a {
-  color: var(--accent-strong);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-}
-.prose-loom hr {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 1.4em 0;
-}
-.prose-loom table {
-  border-collapse: collapse;
-  margin: 0.75em 0;
-  width: 100%;
-}
-.prose-loom th,
-.prose-loom td {
-  border: 1px solid var(--border);
-  padding: 0.5em 0.85em;
-}
-.prose-loom th {
-  background: var(--muted);
-  font-weight: 600;
-}
-.prose-loom strong {
-  font-weight: 600;
-  color: var(--foreground);
-}
-.prose-loom em { font-style: italic; }
-
-/* msg-in CSS 키프레임은 motion 라이브러리로 대체됨 (chat/MessageRow.tsx). */
-
-@keyframes breath {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.55; transform: scale(0.85); }
-}
-.breath {
-  animation: breath 1.6s ease-in-out infinite;
-}
-
-/* Flash highlight when navigating to a parent message — drawn around the
- * agent-message body when the reader clicks "↳ from @x" to trace where a
- * chain came from. One full cycle, then back to neutral. */
-@keyframes loom-flash {
-  0%   { background-color: transparent; }
-  20%  { background-color: var(--accent); }
-  60%  { background-color: var(--accent); }
-  100% { background-color: transparent; }
-}
-.flash-target {
-  animation: loom-flash 1.4s ease-in-out;
-  border-radius: 6px;
-}
-
-/* Quiet tint while a "↳ from …" badge is being hovered — lets the reader
- * preview where the chain came from without committing to a click. */
-.hover-target {
-  background-color: color-mix(in oklch, var(--muted) 60%, transparent);
-  transition: background-color 120ms ease;
-  border-radius: 6px;
-}
-
-/* Skeleton 로더 시머 — `before` 의사 요소가 좌→우로 슬라이드. */
-@keyframes shimmer {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-.animate-shimmer {
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-/* Monaco 에디터 — 에이전트 presence 데코레이션 (18색 팔레트).
- * - .loom-pres-{c} : isWholeLine 라인 배경 틴트
- * - .loom-pres-mk-{c} : linesDecorationsClassName (거터 좌측 컬러 바)
- * 라벨(@agent)은 Monaco IContentWidget이 인라인 스타일로 직접 색칠한다. */
-.loom-pres-sky      { background-color: rgba(14, 165, 233, 0.12); }
-.loom-pres-emerald  { background-color: rgba(16, 185, 129, 0.12); }
-.loom-pres-amber    { background-color: rgba(245, 158, 11, 0.12); }
-.loom-pres-rose     { background-color: rgba(244,  63,  94, 0.12); }
-.loom-pres-violet   { background-color: rgba(139,  92, 246, 0.12); }
-.loom-pres-teal     { background-color: rgba( 20, 184, 166, 0.12); }
-.loom-pres-fuchsia  { background-color: rgba(217,  70, 239, 0.12); }
-.loom-pres-lime     { background-color: rgba(132, 204,  22, 0.12); }
-.loom-pres-orange   { background-color: rgba(249, 115,  22, 0.12); }
-.loom-pres-cyan     { background-color: rgba(  6, 182, 212, 0.12); }
-.loom-pres-red      { background-color: rgba(239,  68,  68, 0.12); }
-.loom-pres-yellow   { background-color: rgba(234, 179,   8, 0.12); }
-.loom-pres-green    { background-color: rgba( 34, 197,  94, 0.12); }
-.loom-pres-blue     { background-color: rgba( 59, 130, 246, 0.12); }
-.loom-pres-indigo   { background-color: rgba( 99, 102, 241, 0.12); }
-.loom-pres-purple   { background-color: rgba(168,  85, 247, 0.12); }
-.loom-pres-pink     { background-color: rgba(236,  72, 153, 0.12); }
-.loom-pres-slate    { background-color: rgba(100, 116, 139, 0.12); }
-
-.loom-pres-mk-sky      { background-color: #0ea5e9; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-emerald  { background-color: #10b981; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-amber    { background-color: #f59e0b; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-rose     { background-color: #f43f5e; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-violet   { background-color: #8b5cf6; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-teal     { background-color: #14b8a6; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-fuchsia  { background-color: #d946ef; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-lime     { background-color: #84cc16; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-orange   { background-color: #f97316; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-cyan     { background-color: #06b6d4; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-red      { background-color: #ef4444; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-yellow   { background-color: #eab308; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-green    { background-color: #22c55e; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-blue     { background-color: #3b82f6; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-indigo   { background-color: #6366f1; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-purple   { background-color: #a855f7; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-pink     { background-color: #ec4899; width: 3px !important; margin-left: 3px; }
-.loom-pres-mk-slate    { background-color: #64748b; width: 3px !important; margin-left: 3px; }
-
-/* Presence 라벨(@agent) — 라인 끝에 떠다니는 작은 칩.
- * 각 칩은 IContentWidget으로 DOM에 직접 박혀 inline style로 색을 가짐. */
-.loom-pres-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  margin-left: 16px;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-family: var(--font-mono);
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
-  user-select: none;
-}
-.loom-pres-label::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: currentColor;
-  animation: loom-pres-pulse 1.6s ease-in-out infinite;
-}
-@keyframes loom-pres-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.3; }
-}
-
-/* ────────────────────────────────────────────────────────────
- * Office view — 사무실 디오라마 톤. 픽셀 sprite는 아니지만 "방"의 느낌:
- *   - 바닥: 미세한 격자 (도트 그리드) — 픽셀 사무실의 평면도 분위기.
- *   - 책상: 살짝 들린 그림자 + 둥근 모서리. status별 outline 색상.
- * 다크/라이트 모두 안전하도록 alpha 기반.
- * ──────────────────────────────────────────────────────────── */
-.office-floor {
-  background-color: var(--card);
-  background-image:
-    radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 10%, transparent) 1px, transparent 0);
-  background-size: 16px 16px;
-  background-position: 0 0;
-}
-.dark .office-floor {
-  background-image:
-    radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 14%, transparent) 1px, transparent 0);
-}
-
-.office-desk {
-  /* 책상 모서리 살짝 두꺼운 그림자 — 떠 있는 느낌 + 픽셀 사무실의 입체감. */
-  box-shadow:
-    0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent),
-    0 0 0 1px color-mix(in oklch, var(--foreground) 4%, transparent);
-}
-
-/* ────────────────────────────────────────────────────────────
- * Pixel desk — 책상 카드 상단 디오라마.
- * 평상시엔 차분한 톤, working 상태(.pixel-desk-active)면 화면이 펄스.
- * ──────────────────────────────────────────────────────────── */
-.pixel-desk {
-  display: block;
-}
-.pixel-desk-active .pixel-screen {
-  animation: pixel-screen-glow 1.6s ease-in-out infinite;
-}
-@keyframes pixel-screen-glow {
-  0%, 100% { fill: var(--pixel-screen); }
-  50%      { fill: var(--pixel-screen-on); }
-}
-
-/* ────────────────────────────────────────────────────────────
- * Pixel character — 두 walk 프레임을 한 SVG 안에 두고 visibility로 교대.
- * 0.4s 주기로 A↔B 전환 → 종종걸음 효과. JS는 위치만 보간하고 프레임 swap은
- * CSS가 담당해서 React 리렌더 부담 없음.
- * ──────────────────────────────────────────────────────────── */
-.pixel-walk-frame-a,
-.pixel-walk-frame-b {
-  animation: pixel-walk-swap 0.4s steps(1, end) infinite;
-}
-.pixel-walk-frame-a {
-  visibility: visible;
-}
-.pixel-walk-frame-b {
-  visibility: hidden;
-  animation-delay: 0.2s;
-}
-@keyframes pixel-walk-swap {
-  0%, 49%   { visibility: visible; }
-  50%, 100% { visibility: hidden; }
-}
-
-/* 캐릭터 미세 동작:
- *   - 걷기: 0.55s 한 걸음 — 2 단계 (왼발/오른발) → 시각적으로 "터벅터벅".
- *           amplitude 1px (이전 2px는 통통 튀는 느낌이었음).
- *   - 서있기: 5s 호흡 — 매우 느린 1px 흔들림.
- * SVG의 flipX와 충돌 없도록 outer span 에서만 transform 적용.
- */
-.pixel-bob-walk {
-  animation: pixel-bob-walk 0.55s steps(2, end) infinite;
-}
-.pixel-bob-idle {
-  animation: pixel-bob-idle 5s ease-in-out infinite;
-}
-@keyframes pixel-bob-walk {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-1px); }
-}
-@keyframes pixel-bob-idle {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-1px); }
-}
-
-/* ────────────────────────────────────────────────────────────
- * Office room — 벽 / 카펫 / 걸레받이 톤. PixelDesk와 같이 픽셀 톤을 유지.
- * 벽: 살짝 줄무늬 (벽지 모티프). 카펫: 미세한 도트 무늬.
- * 걸레받이는 1.2% 높이 띠로 벽-바닥 경계 강조.
- * ──────────────────────────────────────────────────────────── */
-.office-room-outer {
-  background: var(--background);
-}
-.office-room {
-  background: var(--card);
-}
-.office-wall {
-  background-color: var(--office-wall);
-  /* 가는 세로 줄무늬 = 벽지 효과. 8px 간격으로 살짝 어두운 줄. */
-  background-image: repeating-linear-gradient(
-    to right,
-    transparent 0,
-    transparent 7px,
-    color-mix(in oklch, var(--foreground) 4%, transparent) 7px,
-    color-mix(in oklch, var(--foreground) 4%, transparent) 8px
-  );
-}
-.office-skirt {
-  background: var(--office-skirt);
-}
-.office-carpet {
-  background-color: var(--office-carpet);
-  /* 카펫 미세 도트 — 픽셀 게임의 "뜨개질된 양탄자" 느낌. */
-  background-image: radial-gradient(
-    circle at 1px 1px,
-    color-mix(in oklch, var(--foreground) 6%, transparent) 1px,
-    transparent 0
-  );
-  background-size: 8px 8px;
 }

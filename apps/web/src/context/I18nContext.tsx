@@ -30,13 +30,13 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 function detectLang(): Lang {
   if (typeof localStorage !== "undefined") {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && (SUPPORTED_LANGS as string[]).includes(stored)) {
+    if (stored && (SUPPORTED_LANGS as readonly string[]).includes(stored)) {
       return stored as Lang;
     }
   }
   if (typeof navigator !== "undefined" && navigator.language) {
     const base = navigator.language.split("-")[0]?.toLowerCase();
-    if (base && (SUPPORTED_LANGS as string[]).includes(base)) {
+    if (base && (SUPPORTED_LANGS as readonly string[]).includes(base)) {
       return base as Lang;
     }
   }
@@ -68,8 +68,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const t = useCallback(
     (key: TranslateKey, vars?: Record<string, string | number>) => {
-      const dict = DICTIONARIES[lang];
-      const value = dict[key] ?? DICTIONARIES.en[key] ?? key;
+      const dict = DICTIONARIES[lang] as Record<string, string>;
+      const en = DICTIONARIES.en as Record<string, string>;
+      const value = dict[key] ?? en[key] ?? key;
       return interpolate(value, vars);
     },
     [lang],
