@@ -23,8 +23,8 @@ export const devinManifest: AdapterManifest = {
     },
     {
       level: "info",
-      title: "MCP / skills / rules are managed by the devin CLI",
-      body: "Devin manages MCP servers, skills, and rules through its own subcommands (`devin mcp`, `devin skills`, `devin rules`). Loom's catalogs are not auto-synced to Devin.",
+      title: "MCP via project-local config",
+      body: "Loom injects MCP servers by writing `.devin/config.local.json` in the run's working directory (devin's project-local config — your `~/.config/devin` is never touched). Add `.devin/` to that project's .gitignore.",
       url: "https://docs.devin.ai/",
     },
     {

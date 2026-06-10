@@ -39,8 +39,11 @@ function renderLoadout(l: AgentLoadout): string {
     for (const s of l.skills) lines.push(`  - ${s.relPath}  ${s.name}${s.blurb ? ` — ${s.blurb}` : ""}`);
   }
   if (l.mcpServerNames.length) {
-    lines.push("", `MCP servers (${l.mcpServerNames.length}):`);
-    for (const n of l.mcpServerNames) lines.push(`  - ${n}   (call as mcp__${n}__<method>)`);
+    // 툴 네이밍은 CLI마다 다름(claude=mcp__server__method, devin/others=서버 고유명).
+    // 특정 컨벤션을 강제하지 않고 "사용 가능"만 알린다 — 잘못된 이름 강제가
+    // 일부 CLI에서 툴을 못 찾게 만들었음(검증).
+    lines.push("", `MCP servers available (${l.mcpServerNames.length}):`);
+    for (const n of l.mcpServerNames) lines.push(`  - ${n}  — its tools are available; call them when relevant.`);
   }
   lines.push(`\nFull index: ${l.readmePath}`, "=== End Loadout ===");
   return lines.join("\n");

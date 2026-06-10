@@ -56,6 +56,8 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
    *    - codex       → `-c mcp_servers.<name>.command="..."` per server.
    *    - opencode    → write `<loadoutDir>/xdg/opencode/opencode.json`,
    *                     return env { XDG_CONFIG_HOME, OPENCODE_DISABLE_PROJECT_CONFIG }.
+   *    - devin       → write `<cwd>/.devin/config.local.json` (devin의
+   *                     프로젝트-로컬 설정 — CLI root 아님).
    *  Returns possibly-modified args + optional env additions. The env
    *  layers on top of (and wins over) project + adapter resolveEnv. */
   applyMcpServers?(input: {
@@ -63,6 +65,8 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
     servers: McpServer[];
     mcpConfigPath: string | null;
     loadoutDir: string | null;
+    /** run 작업 디렉토리 — 프로젝트-로컬 설정 파일을 쓰는 어댑터(devin)용. */
+    cwd: string;
   }): {
     args: string[];
     env?: Record<string, string>;
@@ -107,6 +111,7 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
               servers: spawnArgs.mcpServers ?? [],
               mcpConfigPath: spawnArgs.mcpConfigPath ?? null,
               loadoutDir: spawnArgs.loadoutDir ?? null,
+              cwd: spawnArgs.cwd,
             })
           : { args: baseArgs };
       const { args, stdin } = applyPrompt(mcpApplied.args, spawnArgs.prompt, promptMode);

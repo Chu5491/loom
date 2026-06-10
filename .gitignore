@@ -84,3 +84,6 @@ $RECYCLE.BIN/
 scratch/
 notes-local/
 TODO.local.md
+
+# devin 프로젝트-로컬 설정 (어댑터가 run마다 merge-write)
+.devin/

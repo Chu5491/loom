@@ -17,20 +17,28 @@ root 설정(`~/.claude`, `~/.codex`, `~/.config/opencode`, `~/.gemini`, `~/.conf
 
 | CLI | rule | skill 읽기 | MCP 주입 메커니즘 | MCP 실호출 | root 격리 |
 |-----|------|-----------|------------------|-----------|----------|
-| claude-code | ✅ | ✅ 카나리 | `--mcp-config <loadout>/mcp.json --strict-mcp-config` | ✅ 토큰 반환 | ✅ strict |
+| claude-code | ✅ | ✅ 카나리 | `--mcp-config <loadout>/mcp.json --strict-mcp-config` | ✅ MCP-CANARY-X4K9 | ✅ strict |
 | codex | ✅ | ✅ (Phase A) | `-c mcp_servers.<n>.command=…` (+ `${ENV}` 치환됨) | (로그아웃) | ✅ |
 | opencode | ✅ | ✅ 카나리 | `XDG_CONFIG_HOME=<loadout>/xdg` + opencode.json | (대표=claude) | ✅ disable-project-config |
-| antigravity | ✅ | ✅ 카나리 | `--add-dir`만 (MCP 등록 플래그 없음) | — | ✅ |
-| devin | ✅ | (용량이슈) | 없음 (프롬프트 텍스트만) | — | ✅ |
+| antigravity | ✅ | ✅ 카나리 | ✗ 불가 (`--add-dir`만) | ✗ | ✅ |
+| devin | ✅ | ✅ 카나리 | **`<cwd>/.devin/config.local.json` merge-write** | ✅ MCP-CANARY-X4K9 | ✅ project-local |
 
 ## 핵심 결론
 
 1. **규약·스킬·격리: 5개 CLI 전부 통과.** 모든 CLI가 자기 root를 무시하고 office 정의만 사용.
-2. **MCP 실제 tool 주입+호출: claude / codex / opencode 3개 가능.**
-3. **antigravity·devin은 MCP를 callable tool로 주입 불가** — CLI 구조적 한계:
-   - antigravity: `--allowed-mcp-server-names`는 *필터*라 새 서버 *추가* 불가 (CLI root 의존).
-   - devin: MCP를 자체 서브커맨드(`devin mcp`)로만 관리.
-   - 두 경우 office MCP는 프롬프트 인덱스로만 인지됨 (호출은 안 됨). 우리 버그 아님.
+2. **MCP 실제 tool 주입+호출: claude / codex / opencode / devin 4개 가능.**
+   - devin은 `devin mcp add`가 쓰는 것과 동일한 `<cwd>/.devin/config.local.json`(프로젝트-로컬,
+     CLI root 아님)에 mcpServers를 merge-write. 어댑터가 자동화(unit test). 엔진경로 실호출 검증.
+3. **antigravity만 MCP callable 주입 불가** — `agy`는 프로젝트-로컬 config가 없고 MCP는
+   `~/.gemini`(CLI root)로만 가능. 격리 원칙상 주입 안 함. office MCP는 프롬프트로만 인지.
+
+## 도중 발견·수정한 실제 버그
+
+- **loadout MCP 블록이 `(call as mcp__<name>__<method>)`를 강제** — 이건 claude-code 전용
+  네이밍. devin은 그 이름의 툴을 못 찾아 호출 실패(NO-MCP-ACCESS)했음. → 중립 문구로 수정
+  (`run/compose.ts`). 이후 devin MCP 엔진경로 정상.
+- **주의(검증 경험)**: 큰 프롬프트(긴 규약 + 무관한 스킬)는 일부 모델(devin swe)의 주의를
+  분산시켜 MCP 호출을 건너뛰게 함. 최소 프롬프트에선 정상. → 향후 loadout 블록 간결화 고려.
 
 ## 검증 도구 (재현용)
 

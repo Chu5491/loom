@@ -1,10 +1,63 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { applyPrompt } from "@loom/adapter-utils";
 import {
   buildDevinCommand,
   devinAdapter,
+  toDevinMcpEntry,
+  writeDevinMcpConfig,
   DEVIN_PRESET_MODELS,
 } from "./index.js";
+
+const CANARY = {
+  name: "canary",
+  description: null,
+  kind: "stdio" as const,
+  command: "node",
+  args: ["c.mjs"],
+  env: {},
+  url: null,
+  headers: {},
+};
+
+describe("devin MCP injection (.devin/config.local.json)", () => {
+  it("encodes stdio server with transport", () => {
+    expect(toDevinMcpEntry(CANARY)).toEqual({
+      command: "node",
+      args: ["c.mjs"],
+      transport: "stdio",
+    });
+  });
+
+  it("merge-writes preserving user entries and other keys", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
+    const file = path.join(tmp, ".devin", "config.local.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ other: 1, mcpServers: { user: { url: "http://u", transport: "http" } } }),
+    );
+
+    expect(writeDevinMcpConfig(tmp, [CANARY])).toBe(file);
+    const out = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(out.other).toBe(1);
+    expect(Object.keys(out.mcpServers).sort()).toEqual(["canary", "user"]);
+    expect(out.mcpServers.canary.transport).toBe("stdio");
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("creates the file from scratch when absent", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
+    writeDevinMcpConfig(tmp, [CANARY]);
+    const out = JSON.parse(
+      fs.readFileSync(path.join(tmp, ".devin", "config.local.json"), "utf8"),
+    );
+    expect(Object.keys(out.mcpServers)).toEqual(["canary"]);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
 
 describe("buildDevinCommand", () => {
   it("defaults: devin with no flags", () => {
