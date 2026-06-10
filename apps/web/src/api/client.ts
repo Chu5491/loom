@@ -8,6 +8,7 @@ import type {
   McpServer,
   ModelListResult,
   Office,
+  RunInfo,
   TestAdapterResult,
 } from "@loom/core";
 
@@ -92,4 +93,16 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ edges }),
     }),
+
+  // ── runs (Talk) ────────────────────────────────────────────────────────
+  startRun: (body: { agent: string; prompt: string; cwd?: string }) =>
+    request<{ run: RunInfo }>("/api/runs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  cancelRun: (id: string) =>
+    request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: "POST" }),
 };
+
+/** SSE 구독 URL — EventSource 가 직접 연다(`event`/`done` 네임드 이벤트). */
+export const runEventsUrl = (id: string) => `/api/runs/${id}/events`;

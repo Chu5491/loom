@@ -7,8 +7,20 @@ const en = {
   "app.title": "loom",
   "app.tagline": "Your CLI agents, one office.",
 
+  "nav.talk": "Talk",
   "nav.connections": "Connections",
   "nav.office": "Office",
+
+  "talk.welcomeTitle": "Start a conversation",
+  "talk.welcomeSub": "Pick an agent and type a message.",
+  "talk.welcomeWith": "Talking to {name}. Type a message to begin.",
+  "talk.noAgents": "No agents yet — define one in Office first.",
+  "talk.talkingTo": "To",
+  "talk.placeholder": "Message your agent…  (@ to switch, Enter to send)",
+  "talk.send": "Send",
+  "talk.noOutput": "No output.",
+  "talk.status.failed": "Run failed",
+  "talk.status.cancelled": "Cancelled",
 
   "office.title": "Office",
   "office.subtitle": "Your rules, skills, agents and MCP — defined here, committed to git. No CLI roots touched.",
@@ -91,8 +103,20 @@ const ko: Dictionary = {
   "app.title": "loom",
   "app.tagline": "내 CLI 에이전트들을 한 오피스에.",
 
+  "nav.talk": "대화",
   "nav.connections": "연결",
   "nav.office": "오피스",
+
+  "talk.welcomeTitle": "대화를 시작하세요",
+  "talk.welcomeSub": "에이전트를 고르고 메시지를 입력하세요.",
+  "talk.welcomeWith": "{name}와(과) 대화 중. 메시지를 입력해 시작하세요.",
+  "talk.noAgents": "에이전트가 없어요 — 오피스에서 먼저 만드세요.",
+  "talk.talkingTo": "대상",
+  "talk.placeholder": "에이전트에게 메시지…  (@로 전환, Enter로 전송)",
+  "talk.send": "전송",
+  "talk.noOutput": "출력 없음.",
+  "talk.status.failed": "실행 실패",
+  "talk.status.cancelled": "취소됨",
 
   "office.title": "오피스",
   "office.subtitle": "규약·스킬·에이전트·MCP를 여기서 정의하고 git에 커밋합니다. CLI root는 건드리지 않아요.",

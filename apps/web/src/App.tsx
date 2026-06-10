@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Languages, Moon, Plug, RefreshCw, Sun, FolderCog } from "lucide-react";
+import { Languages, MessagesSquare, Moon, Plug, RefreshCw, Sun, FolderCog } from "lucide-react";
 import { LoomLogo } from "./components/LoomLogo.js";
 import { Button } from "./components/ui.js";
 import { useI18n } from "./context/I18nContext.js";
@@ -11,18 +11,20 @@ import { useTheme } from "./context/ThemeContext.js";
 import { cn } from "./lib/utils.js";
 import { ConnectionsPage } from "./pages/ConnectionsPage.js";
 import { OfficePage } from "./pages/OfficePage.js";
+import { TalkPage } from "./pages/TalkPage.js";
 
-type Tab = "connections" | "office";
+type Tab = "talk" | "office" | "connections";
 
 export function App() {
   const { t, lang, setLang } = useI18n();
   const { effective, setMode } = useTheme();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>("connections");
+  const [tab, setTab] = useState<Tab>("talk");
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: "connections", label: t("nav.connections"), icon: <Plug className="size-4" /> },
+    { key: "talk", label: t("nav.talk"), icon: <MessagesSquare className="size-4" /> },
     { key: "office", label: t("nav.office"), icon: <FolderCog className="size-4" /> },
+    { key: "connections", label: t("nav.connections"), icon: <Plug className="size-4" /> },
   ];
 
   return (
@@ -69,7 +71,7 @@ export function App() {
         </div>
       </header>
 
-      {tab === "connections" ? <ConnectionsPage /> : <OfficePage />}
+      {tab === "talk" ? <TalkPage /> : tab === "office" ? <OfficePage /> : <ConnectionsPage />}
     </div>
   );
 }
