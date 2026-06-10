@@ -1,0 +1,5 @@
+{
+  "adapter": "claude-code",
+  "label": "Reviewer",
+  "prompt": "You are a terse reviewer."
+}

@@ -19,15 +19,16 @@ export function getDb(): DB {
   db.pragma("foreign_keys = ON");
   db.exec(`
     CREATE TABLE IF NOT EXISTS runs (
-      id          TEXT PRIMARY KEY,
-      agent       TEXT NOT NULL,
-      prompt      TEXT NOT NULL,
-      status      TEXT NOT NULL,
-      started_at  TEXT NOT NULL,
-      ended_at    TEXT,
-      exit_code   INTEGER,
-      cost_usd    REAL,
-      session_id  TEXT
+      id            TEXT PRIMARY KEY,
+      agent         TEXT NOT NULL,
+      prompt        TEXT NOT NULL,
+      status        TEXT NOT NULL,
+      started_at    TEXT NOT NULL,
+      ended_at      TEXT,
+      exit_code     INTEGER,
+      cost_usd      REAL,
+      session_id    TEXT,
+      parent_run_id TEXT
     );
     CREATE TABLE IF NOT EXISTS run_events (
       run_id  TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -37,6 +38,11 @@ export function getDb(): DB {
     );
     CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id);
   `);
+  // P3 에서 만든 db 는 parent_run_id 가 없음 — 자가치유(기록은 disposable이지만 안전하게).
+  const cols = db.prepare<[], { name: string }>(`PRAGMA table_info(runs)`).all();
+  if (!cols.some((c) => c.name === "parent_run_id")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN parent_run_id TEXT`);
+  }
   _db = db;
   return db;
 }
@@ -56,6 +62,7 @@ interface RunRow {
   started_at: string;
   ended_at: string | null;
   exit_code: number | null;
+  parent_run_id: string | null;
 }
 function toInfo(r: RunRow): RunInfo {
   return {
@@ -66,16 +73,17 @@ function toInfo(r: RunRow): RunInfo {
     startedAt: r.started_at,
     endedAt: r.ended_at,
     exitCode: r.exit_code,
+    parentRunId: r.parent_run_id,
   };
 }
 
 export function insertRun(info: RunInfo): void {
   getDb()
     .prepare(
-      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode);
+    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId);
 }
 
 export function appendEvent(runId: string, seq: number, event: OfficeEvent): void {

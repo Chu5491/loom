@@ -26,7 +26,7 @@ function avatarFor(name: string): string {
 }
 
 interface UserMsg { id: string; role: "user"; agent: string; text: string }
-interface AgentMsg { id: string; role: "agent"; agent: string; runId: string }
+interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string }
 type Msg = UserMsg | AgentMsg;
 
 let seq = 0;
@@ -40,7 +40,6 @@ export function TalkPage() {
 
   const [active, setActive] = useState<string>("");
   const [messages, setMessages] = useState<Msg[]>([]);
-  const [seeded, setSeeded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 첫 에이전트를 기본 대상으로.
@@ -48,19 +47,31 @@ export function TalkPage() {
     if (!active && agents.length) setActive(agents[0]!.name);
   }, [agents, active]);
 
-  // 마운트 시 과거 run 기록으로 스레드 복원 — 한 run = user 버블 + agent 버블.
-  // 한 번만 시드(이후엔 세션 내 로컬 append). 새로고침하면 DB에서 다시 복원된다.
+  // runs 가 바뀔 때마다 아직 스레드에 없는 run 을 이어붙인다(멱등 — runId 로 dedup).
+  // 초기 복원 + 하네스 자동발화 자식 run 의 라이브 등장을 한 경로로 처리.
+  // 부모가 있는 run(parentRunId)은 핸드오프 버블만(사용자 입력이 아니므로 user 버블 없음).
   useEffect(() => {
-    if (seeded || !runs.data) return;
-    const ordered = [...runs.data.runs].sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1));
-    setMessages(
-      ordered.flatMap((r): Msg[] => [
-        { id: `u-${r.id}`, role: "user", agent: r.agent, text: r.prompt },
-        { id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id },
-      ]),
-    );
-    setSeeded(true);
-  }, [runs.data, seeded]);
+    if (!runs.data) return;
+    const byId = new Map(runs.data.runs.map((r) => [r.id, r]));
+    setMessages((prev) => {
+      const known = new Set(
+        prev.filter((m): m is AgentMsg => m.role === "agent").map((m) => m.runId),
+      );
+      const fresh = [...runs.data!.runs]
+        .sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1))
+        .filter((r) => !known.has(r.id));
+      if (fresh.length === 0) return prev;
+      const add = fresh.flatMap((r): Msg[] =>
+        r.parentRunId
+          ? [{ id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id, fromAgent: byId.get(r.parentRunId)?.agent }]
+          : [
+              { id: `u-${r.id}`, role: "user", agent: r.agent, text: r.prompt },
+              { id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id },
+            ],
+      );
+      return [...prev, ...add];
+    });
+  }, [runs.data]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -108,7 +119,13 @@ export function TalkPage() {
               msg.role === "user" ? (
                 <UserBubble key={msg.id} text={msg.text} />
               ) : (
-                <AgentBubble key={msg.id} agent={agents.find((a) => a.name === msg.agent)} runId={msg.runId} />
+                <AgentBubble
+                  key={msg.id}
+                  agent={agents.find((a) => a.name === msg.agent)}
+                  fromAgent={msg.fromAgent}
+                  runId={msg.runId}
+                  onDone={() => void runs.refetch()}
+                />
               ),
             )}
           </div>
@@ -162,7 +179,7 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
-function AgentBubble({ agent, runId }: { agent?: AgentSpec; runId: string }) {
+function AgentBubble({ agent, fromAgent, runId, onDone }: { agent?: AgentSpec; fromAgent?: string; runId: string; onDone?: () => void }) {
   const { t } = useI18n();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
@@ -171,6 +188,12 @@ function AgentBubble({ agent, runId }: { agent?: AgentSpec; runId: string }) {
   const view = useMemo(() => deriveView(stream.events), [stream.events]);
   const running = !isStartError && stream.status === "running";
 
+  // run 이 끝나면 부모에 알림 → runs 재조회로 하네스 자동발화 자식을 끌어온다.
+  useEffect(() => {
+    if (!isStartError && stream.status !== "running") onDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream.status, isStartError]);
+
   return (
     <div className="flex gap-3">
       <Avatar name={agent?.name || "?"} />
@@ -178,6 +201,7 @@ function AgentBubble({ agent, runId }: { agent?: AgentSpec; runId: string }) {
         <div className="mb-1 flex items-center gap-2">
           <span className="font-display text-sm font-semibold">{name}</span>
           {agent ? <span className="text-[11px] text-muted-foreground">{agent.adapter}</span> : null}
+          {fromAgent ? <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">↳ @{fromAgent}</span> : null}
           {running ? <span className="size-1.5 animate-pulse rounded-full bg-primary" /> : null}
         </div>
 

@@ -1,3 +1,12 @@
 {
-  "edges": []
+  "edges": [
+    {
+      "from": "claude",
+      "to": "reviewer",
+      "trigger": "on_success",
+      "mode": "ask",
+      "prompt": "Review the result",
+      "carryResult": true
+    }
+  ]
 }

@@ -12,11 +12,13 @@ import { appendEvent, finishRun, getRunDb, getRunEventsDb, insertRun, listRunsDb
 import { logger } from "../logger.js";
 import {
   readAgents,
+  readEdges,
   readMcp,
   readRules,
   readSkills,
 } from "../office.js";
 import { composePrompt } from "./compose.js";
+import { buildHandoffPrompt, MAX_HARNESS_HOPS, resolveAutoEdges, type RunOutcome } from "./harness.js";
 import { materializeLoadout } from "./loadout.js";
 import { parseLine } from "./parse.js";
 
@@ -24,6 +26,8 @@ export interface StartRunInput {
   agent: string; // office agent name
   prompt: string;
   cwd?: string;
+  /** 하네스 자동발화로 만든 자식이면 부모 run id. 사용자 시작이면 생략. */
+  parentRunId?: string | null;
 }
 export type StartRunResult =
   | { ok: true; run: RunInfo }
@@ -119,6 +123,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     startedAt: new Date().toISOString(),
     endedAt: null,
     exitCode: null,
+    parentRunId: input.parentRunId ?? null,
   };
   fs.mkdirSync(paths.logs, { recursive: true });
   const rawFd = fs.openSync(path.join(paths.logs, `${id}.log`), "a");
@@ -221,12 +226,81 @@ async function run(
       emit(state, [{ kind: "result", text: state.lastText }]);
     }
 
-    finish(state, state.abort.signal.aborted ? "cancelled" : exitCode === 0 ? "succeeded" : "failed", exitCode);
+    concludeRun(state, state.abort.signal.aborted ? "cancelled" : exitCode === 0 ? "succeeded" : "failed", exitCode);
     log.info({ exitCode }, "run done");
   } catch (err) {
     emit(state, [{ kind: "error", message: (err as Error).message }]);
-    finish(state, "failed", null);
+    concludeRun(state, "failed", null);
     log.error({ err }, "run threw");
+  }
+}
+
+// 종료 시퀀스: (1) 자동발화 엣지 평가 → 부모 버블에 handoff 이벤트(라이브+영속),
+// (2) finish(=done 통지), (3) 자식 run spawn(fire-and-forget). handoff 를 done
+// 앞에 emit 하므로 라이브 구독자가 스트림 닫기 전에 핸드오프를 본다.
+function concludeRun(state: RunState, status: RunInfo["status"], exitCode: number | null): void {
+  const fired = evaluateFiredEdges(state, status);
+  for (const edge of fired) emit(state, [{ kind: "handoff", toAgent: edge.to, via: "edge" }]);
+  finish(state, status, exitCode);
+  spawnHarnessChildren(state, fired);
+}
+
+// parentRunId 체인 깊이 — A→B→A 무한루프 방어. MAX 에 닿으면 발화 중단.
+function harnessHops(info: RunInfo): number {
+  let hops = 0;
+  let cur = info.parentRunId;
+  while (cur && hops <= MAX_HARNESS_HOPS) {
+    const parent = getRun(cur);
+    if (!parent) break;
+    hops++;
+    cur = parent.parentRunId;
+  }
+  return hops;
+}
+
+function evaluateFiredEdges(state: RunState, status: RunInfo["status"]): import("@loom/core").HarnessEdge[] {
+  if (status === "cancelled") return []; // cancelled 는 발화 안 함
+  try {
+    const outcome: RunOutcome = {
+      status,
+      changedFileCount: state.events.filter((e) => e.kind === "file").length,
+    };
+    const fired = resolveAutoEdges(
+      readEdges().filter((e) => e.from === state.info.agent),
+      outcome,
+    );
+    if (fired.length === 0) return [];
+    if (harnessHops(state.info) >= MAX_HARNESS_HOPS) {
+      logger.warn({ runId: state.info.id, max: MAX_HARNESS_HOPS }, "harness hop limit reached; not firing");
+      return [];
+    }
+    return fired;
+  } catch (err) {
+    logger.error({ err, runId: state.info.id }, "harness edge eval failed");
+    return [];
+  }
+}
+
+function spawnHarnessChildren(state: RunState, fired: import("@loom/core").HarnessEdge[]): void {
+  if (fired.length === 0) return;
+  const log = logger.child({ runId: state.info.id, agent: state.info.agent });
+  const last = [...state.events].reverse().find(
+    (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",
+  );
+  const resultText = last?.text ?? state.lastText ?? null;
+  for (const edge of fired) {
+    const prompt = buildHandoffPrompt({
+      edgePrompt: edge.prompt,
+      carryResult: !!edge.carryResult,
+      fromAgentName: state.info.agent,
+      fromRunId: state.info.id,
+      resultText,
+    });
+    void startRun({ agent: edge.to, prompt, parentRunId: state.info.id })
+      .then((r) => {
+        if (!r.ok) log.warn({ to: edge.to, error: r.error }, "harness child did not start");
+      })
+      .catch((err) => log.error({ err, to: edge.to }, "harness child threw"));
   }
 }
 

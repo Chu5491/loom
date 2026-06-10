@@ -94,4 +94,7 @@ export interface RunInfo {
   startedAt: string;
   endedAt: string | null;
   exitCode: number | null;
+  /** 하네스 엣지가 자동 발화시킨 자식이면 부모 run id. 사용자 시작이면 null.
+   *  핸드오프 표시 + hop 깊이 측정(무한루프 방어)에 쓰인다. */
+  parentRunId: string | null;
 }

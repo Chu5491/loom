@@ -27,6 +27,7 @@ function run(id: string): RunInfo {
     startedAt: "2026-06-10T00:00:00.000Z",
     endedAt: null,
     exitCode: null,
+    parentRunId: null,
   };
 }
 
