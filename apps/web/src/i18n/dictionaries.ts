@@ -11,6 +11,13 @@ const en = {
   "nav.connections": "Connections",
   "nav.office": "Office",
 
+  "project.home": "Office home",
+  "project.add": "Add a project",
+  "project.addBtn": "Add",
+  "project.name": "Display name",
+  "project.path": "Absolute path (e.g. /Users/me/code/app)",
+  "project.deleteConfirm": "Unregister \"{name}\"? (the folder is left untouched)",
+
   "talk.welcomeTitle": "Start a conversation",
   "talk.welcomeSub": "Pick an agent and type a message.",
   "talk.welcomeWith": "Talking to {name}. Type a message to begin.",
@@ -124,6 +131,13 @@ const ko: Dictionary = {
   "nav.talk": "대화",
   "nav.connections": "연결",
   "nav.office": "오피스",
+
+  "project.home": "오피스 홈",
+  "project.add": "프로젝트 추가",
+  "project.addBtn": "추가",
+  "project.name": "표시 이름",
+  "project.path": "절대 경로 (예: /Users/me/code/app)",
+  "project.deleteConfirm": "\"{name}\" 등록을 해제할까요? (폴더는 그대로 둡니다)",
 
   "talk.welcomeTitle": "대화를 시작하세요",
   "talk.welcomeSub": "에이전트를 고르고 메시지를 입력하세요.",

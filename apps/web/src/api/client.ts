@@ -8,6 +8,7 @@ import type {
   McpServer,
   ModelListResult,
   Office,
+  Project,
   RunInfo,
   TestAdapterResult,
 } from "@loom/core";
@@ -94,10 +95,22 @@ export const api = {
       body: JSON.stringify({ edges }),
     }),
 
-  // ── runs (Talk) ────────────────────────────────────────────────────────
-  listRuns: () => request<{ runs: RunInfo[] }>("/api/runs"),
+  // ── projects (작업 디렉토리) ─────────────────────────────────────────────
+  listProjects: () => request<{ projects: Project[] }>("/api/projects"),
+  createProject: (name: string, path: string) =>
+    request<{ project: Project }>("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ name, path }),
+    }),
+  deleteProject: (id: string) =>
+    request<{ ok: boolean }>(`/api/projects/${id}`, { method: "DELETE" }),
 
-  startRun: (body: { agent: string; prompt: string; cwd?: string }) =>
+  // ── runs (Talk) ────────────────────────────────────────────────────────
+  // projectId 없으면 전체, "none" 이면 프로젝트 없는 run, id 면 그 프로젝트.
+  listRuns: (projectId?: string | null) =>
+    request<{ runs: RunInfo[] }>(`/api/runs${projectId === undefined ? "" : `?projectId=${projectId ?? "none"}`}`),
+
+  startRun: (body: { agent: string; prompt: string; cwd?: string; projectId?: string | null }) =>
     request<{ run: RunInfo }>("/api/runs", {
       method: "POST",
       body: JSON.stringify(body),

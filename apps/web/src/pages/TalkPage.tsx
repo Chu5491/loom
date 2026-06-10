@@ -32,10 +32,10 @@ type Msg = UserMsg | AgentMsg;
 let seq = 0;
 const nextId = () => `m${seq++}`;
 
-export function TalkPage() {
+export function TalkPage({ projectId }: { projectId: string | null }) {
   const { t } = useI18n();
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
-  const runs = useQuery({ queryKey: ["runs"], queryFn: api.listRuns });
+  const runs = useQuery({ queryKey: ["runs", projectId], queryFn: () => api.listRuns(projectId) });
   const agents = office.data?.office.agents ?? [];
 
   const [active, setActive] = useState<string>("");
@@ -46,6 +46,11 @@ export function TalkPage() {
   useEffect(() => {
     if (!active && agents.length) setActive(agents[0]!.name);
   }, [agents, active]);
+
+  // 프로젝트가 바뀌면 스레드 초기화 — merge 효과가 새 프로젝트 run 으로 다시 채운다.
+  useEffect(() => {
+    setMessages([]);
+  }, [projectId]);
 
   // runs 가 바뀔 때마다 아직 스레드에 없는 run 을 이어붙인다(멱등 — runId 로 dedup).
   // 초기 복원 + 하네스 자동발화 자식 run 의 라이브 등장을 한 경로로 처리.
@@ -93,7 +98,7 @@ export function TalkPage() {
 
     setMessages((prev) => [...prev, { id: nextId(), role: "user", agent, text: prompt }]);
     try {
-      const { run } = await api.startRun({ agent, prompt });
+      const { run } = await api.startRun({ agent, prompt, projectId });
       setMessages((prev) => [...prev, { id: nextId(), role: "agent", agent, runId: run.id }]);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

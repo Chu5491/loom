@@ -5,7 +5,7 @@
       "to": "reviewer",
       "trigger": "on_success",
       "mode": "ask",
-      "prompt": "Review the result",
+      "prompt": "Review",
       "carryResult": true
     }
   ]

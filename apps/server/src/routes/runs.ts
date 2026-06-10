@@ -12,9 +12,15 @@ const startSchema = z.object({
   agent: z.string().min(1),
   prompt: z.string().min(1),
   cwd: z.string().optional(),
+  projectId: z.string().optional(),
 });
 
-runsRoute.get("/", (c) => c.json({ runs: listRuns() }));
+// ?projectId=<id> 로 스코프, ?projectId=none 으로 프로젝트 없는 run 만, 없으면 전체.
+runsRoute.get("/", (c) => {
+  const q = c.req.query("projectId");
+  const filter = q === undefined ? undefined : q === "none" ? null : q;
+  return c.json({ runs: listRuns(filter) });
+});
 
 runsRoute.post("/", async (c) => {
   const data = await parseBody(c, startSchema);

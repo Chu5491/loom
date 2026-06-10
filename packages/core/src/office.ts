@@ -83,6 +83,15 @@ export type OfficeEvent =
   | { kind: "result"; text: string; costUsd?: number; sessionId?: string }
   | { kind: "error"; message: string };
 
+/** 등록된 로컬 작업 디렉토리. 머신별 경로라 휴대 안 됨 → data/(gitignore)에 기록.
+ *  office(전역 공유 팀)와 분리: 프로젝트 = "팀이 일할 곳", run/스레드의 cwd. */
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  createdAt: string;
+}
+
 export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
 
 export interface RunInfo {
@@ -97,4 +106,6 @@ export interface RunInfo {
   /** 하네스 엣지가 자동 발화시킨 자식이면 부모 run id. 사용자 시작이면 null.
    *  핸드오프 표시 + hop 깊이 측정(무한루프 방어)에 쓰인다. */
   parentRunId: string | null;
+  /** 어느 프로젝트(작업 디렉토리)에서 돌았나. 미지정이면 null(office 홈). */
+  projectId: string | null;
 }

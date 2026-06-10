@@ -8,7 +8,7 @@ import path from "node:path";
 import type { AdapterConfig, McpServer, OfficeEvent, RunInfo } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { config, paths } from "../config.js";
-import { appendEvent, finishRun, getRunDb, getRunEventsDb, insertRun, listRunsDb } from "../db.js";
+import { appendEvent, finishRun, getProjectDb, getRunDb, getRunEventsDb, insertRun, listRunsDb } from "../db.js";
 import { logger } from "../logger.js";
 import {
   readAgents,
@@ -26,6 +26,8 @@ export interface StartRunInput {
   agent: string; // office agent name
   prompt: string;
   cwd?: string;
+  /** 실행할 프로젝트(작업 디렉토리) id. 있으면 그 경로가 cwd. */
+  projectId?: string | null;
   /** 하네스 자동발화로 만든 자식이면 부모 run id. 사용자 시작이면 생략. */
   parentRunId?: string | null;
 }
@@ -55,8 +57,8 @@ const runs = new Map<string, RunState>();
 export function getRun(id: string): RunInfo | null {
   return runs.get(id)?.info ?? getRunDb(id);
 }
-export function listRuns(): RunInfo[] {
-  return listRunsDb();
+export function listRuns(projectId?: string | null): RunInfo[] {
+  return listRunsDb(projectId);
 }
 
 export function subscribe(id: string, fn: Listener): { replay: OfficeEvent[]; done: RunInfo | null; off: () => void } | null {
@@ -103,6 +105,11 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const adapter = getAdapter(agent.adapter);
   if (!adapter) return { ok: false, status: 400, error: `adapter_not_registered: ${agent.adapter}` };
 
+  // 프로젝트 지정 시 그 디렉토리가 cwd. 검증 실패면 거절(엉뚱한 곳에서 돌지 않게).
+  const project = input.projectId ? getProjectDb(input.projectId) : null;
+  if (input.projectId && !project) return { ok: false, status: 404, error: "project_not_found" };
+  const cwd = project?.path ?? input.cwd ?? config.home;
+
   // office 에서 이 에이전트가 끌어올 rules·skills·mcp 만 추린다.
   const allRules = readRules();
   const allSkills = readSkills();
@@ -124,6 +131,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     endedAt: null,
     exitCode: null,
     parentRunId: input.parentRunId ?? null,
+    projectId: input.projectId ?? null,
   };
   fs.mkdirSync(paths.logs, { recursive: true });
   const rawFd = fs.openSync(path.join(paths.logs, `${id}.log`), "a");
@@ -157,7 +165,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     ...(cfg.env ? { env: resolveRefs(cfg.env as Record<string, string>) } : {}),
   };
 
-  void run(state, adapter, adapterConfig, prompt, mcp, loadout, input.cwd ?? config.home);
+  void run(state, adapter, adapterConfig, prompt, mcp, loadout, cwd);
   return { ok: true, run: info };
 }
 
@@ -296,7 +304,7 @@ function spawnHarnessChildren(state: RunState, fired: import("@loom/core").Harne
       fromRunId: state.info.id,
       resultText,
     });
-    void startRun({ agent: edge.to, prompt, parentRunId: state.info.id })
+    void startRun({ agent: edge.to, prompt, parentRunId: state.info.id, projectId: state.info.projectId })
       .then((r) => {
         if (!r.ok) log.warn({ to: edge.to, error: r.error }, "harness child did not start");
       })

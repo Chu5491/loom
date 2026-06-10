@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Languages, MessagesSquare, Moon, Plug, RefreshCw, Sun, FolderCog } from "lucide-react";
 import { LoomLogo } from "./components/LoomLogo.js";
+import { ProjectSelector } from "./components/ProjectSelector.js";
 import { Button } from "./components/ui.js";
 import { useI18n } from "./context/I18nContext.js";
 import { useTheme } from "./context/ThemeContext.js";
@@ -20,6 +21,12 @@ export function App() {
   const { effective, setMode } = useTheme();
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("talk");
+  const [projectId, setProjectId] = useState<string | null>(() => localStorage.getItem("loom.project") || null);
+  const setProject = (id: string | null) => {
+    setProjectId(id);
+    if (id) localStorage.setItem("loom.project", id);
+    else localStorage.removeItem("loom.project");
+  };
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "talk", label: t("nav.talk"), icon: <MessagesSquare className="size-4" /> },
@@ -53,7 +60,8 @@ export function App() {
             ))}
           </nav>
 
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-2">
+            <ProjectSelector activeId={projectId} onChange={setProject} />
             <Button variant="ghost" size="sm" aria-label="theme"
               onClick={() => setMode(effective === "dark" ? "light" : "dark")}>
               {effective === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
@@ -71,7 +79,7 @@ export function App() {
         </div>
       </header>
 
-      {tab === "talk" ? <TalkPage /> : tab === "office" ? <OfficePage /> : <ConnectionsPage />}
+      {tab === "talk" ? <TalkPage projectId={projectId} /> : tab === "office" ? <OfficePage /> : <ConnectionsPage />}
     </div>
   );
 }

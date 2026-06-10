@@ -28,6 +28,7 @@ function run(id: string): RunInfo {
     endedAt: null,
     exitCode: null,
     parentRunId: null,
+    projectId: null,
   };
 }
 
