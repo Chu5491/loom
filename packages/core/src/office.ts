@@ -15,11 +15,14 @@ export interface RuleSpec {
   body: string;
 }
 
-/** 스킬 — 필요할 때 참조되는 컨텍스트 블롭. frontmatter 에 name·description. */
+/** 스킬 — 필요할 때 참조되는 컨텍스트 블롭. frontmatter 에 name·description.
+ *  단일 `<name>.md` 또는 폴더 `<name>/SKILL.md` + 딸린 파일(references/스크립트). */
 export interface SkillSpec {
   name: string;
   description: string;
   body: string;
+  /** 폴더 스킬의 딸린 파일들(SKILL.md 제외, 폴더 기준 상대경로). 단일 파일이면 빈 배열. */
+  files?: string[];
 }
 
 /** 에이전트 = CLI + 모델 + 어떤 rules/skills/mcp 를 끌어올지. name = @mention 핸들. */

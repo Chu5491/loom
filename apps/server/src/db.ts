@@ -140,6 +140,12 @@ export function getRunEventsDb(id: string): OfficeEvent[] {
     .map((r) => JSON.parse(r.event) as OfficeEvent);
 }
 
+export function deleteRunDb(id: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM run_events WHERE run_id = ?`).run(id);
+  db.prepare(`DELETE FROM runs WHERE id = ?`).run(id);
+}
+
 // ── projects ──────────────────────────────────────────────────────────────────
 interface ProjectRow { id: string; name: string; path: string; created_at: string }
 const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, path: r.path, createdAt: r.created_at });

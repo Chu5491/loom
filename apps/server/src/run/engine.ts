@@ -8,7 +8,7 @@ import path from "node:path";
 import type { AdapterConfig, McpServer, OfficeEvent, RunInfo } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { config, paths } from "../config.js";
-import { appendEvent, finishRun, getProjectDb, getRunDb, getRunEventsDb, insertRun, listRunsDb } from "../db.js";
+import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEventsDb, insertRun, listRunsDb } from "../db.js";
 import { logger } from "../logger.js";
 import {
   readAgents,
@@ -80,6 +80,16 @@ export function getPersistedRun(id: string): { events: OfficeEvent[]; run: RunIn
   const run = getRunDb(id);
   if (!run) return null;
   return { events: getRunEventsDb(id), run };
+}
+
+// 기록 삭제 — running 은 거부(먼저 취소). 인메모리 상태도 같이 비운다.
+export function deleteRun(id: string): { ok: true } | { ok: false; status: 404 | 409; error: string } {
+  const info = getRun(id);
+  if (!info) return { ok: false, status: 404, error: "not_found" };
+  if (info.status === "running") return { ok: false, status: 409, error: "still_running" };
+  runs.delete(id);
+  deleteRunDb(id);
+  return { ok: true };
 }
 
 export function cancelRun(id: string): boolean {

@@ -122,6 +122,10 @@ export const api = {
   cancelRun: (id: string) =>
     request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: "POST" }),
 
+  /** 기록 삭제 — running 은 409(먼저 취소). user+agent 버블이 함께 사라진다. */
+  deleteRun: (id: string) =>
+    request<{ ok: boolean }>(`/api/runs/${id}`, { method: "DELETE" }),
+
   /** ask/manual 엣지 수동 발화 — 완료된 run 에서 to 에이전트로 핸드오프. */
   handoffRun: (id: string, to: string) =>
     request<{ run: RunInfo }>(`/api/runs/${id}/handoff`, {

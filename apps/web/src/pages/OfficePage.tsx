@@ -632,6 +632,18 @@ function SkillsSection({ office }: { office: Office }) {
             ) : null}
             <input className={cn(inputCls, "mb-2")} defaultValue={s.description} id={`skill-desc-${key}`} placeholder={t("office.skill.desc")} />
             <MarkdownField id={`skill-body-${key}`} defaultValue={s.body} placeholder="# Markdown skill body" minH="min-h-24" />
+            {/* 폴더 스킬의 딸린 파일(references/스크립트) — 파일은 git/파일시스템으로 관리 */}
+            {!s.isNew && (s as { files?: string[] }).files?.length ? (
+              <div className="mt-3">
+                <span className="text-xs font-medium text-muted-foreground">{t("office.skill.files")}</span>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {(s as { files?: string[] }).files!.map((f) => (
+                    <span key={f} className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{f}</span>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.skill.files.hint")}</p>
+              </div>
+            ) : null}
             <SaveRow
               onSave={() => {
                 const name = s.name.trim();

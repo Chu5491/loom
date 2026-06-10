@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isResponse, parseBody } from "./helpers.js";
-import { cancelRun, fireManualHandoff, getPersistedRun, getRun, listRuns, startRun, subscribe } from "../run/engine.js";
+import { cancelRun, deleteRun, fireManualHandoff, getPersistedRun, getRun, listRuns, startRun, subscribe } from "../run/engine.js";
 
 export const runsRoute = new Hono();
 
@@ -35,6 +35,11 @@ runsRoute.get("/:id", (c) => {
   const run = getRun(c.req.param("id"));
   if (!run) return c.json({ error: "not_found" }, 404);
   return c.json({ run });
+});
+
+runsRoute.delete("/:id", (c) => {
+  const r = deleteRun(c.req.param("id"));
+  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
 });
 
 runsRoute.post("/:id/cancel", (c) =>

@@ -120,12 +120,51 @@ export function readRules(): RuleSpec[] {
   }));
 }
 
+// 폴더 스킬의 딸린 파일 수집 — SKILL.md 제외, 폴더 기준 상대경로. 폭주 방지 cap.
+function listSkillFiles(root: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string, rel: string, depth: number): void => {
+    if (depth > 4 || out.length >= 200) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name.startsWith(".")) continue;
+      const relPath = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(path.join(d, e.name), relPath, depth + 1);
+      else if (e.isFile() && relPath !== "SKILL.md") out.push(relPath);
+    }
+  };
+  walk(root, "", 0);
+  return out;
+}
+
 export function readSkills(): SkillSpec[] {
-  return listMd(dir.skills()).map((name) => {
-    const raw = fs.readFileSync(path.join(dir.skills(), `${name}.md`), "utf8");
+  const root = dir.skills();
+  const single = listMd(root).map((name): SkillSpec => {
+    const raw = fs.readFileSync(path.join(root, `${name}.md`), "utf8");
     const { meta, body } = splitFrontmatter(raw);
-    return { name, description: meta.description ?? "", body };
+    return { name, description: meta.description ?? "", body, files: [] };
   });
+
+  // 폴더 스킬: <name>/SKILL.md 가 본문, 나머지 파일은 references 로 함께 실린다.
+  let dirs: fs.Dirent[] = [];
+  try {
+    dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && NAME_RE.test(e.name));
+  } catch {
+    // skills 디렉토리 자체가 없으면 빈 목록
+  }
+  const folder = dirs.flatMap((d): SkillSpec[] => {
+    const skillMd = path.join(root, d.name, "SKILL.md");
+    if (!fs.existsSync(skillMd)) return [];
+    const { meta, body } = splitFrontmatter(fs.readFileSync(skillMd, "utf8"));
+    return [{ name: d.name, description: meta.description ?? "", body, files: listSkillFiles(path.join(root, d.name)) }];
+  });
+
+  return [...single, ...folder].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function readMcp(): McpServer[] {
@@ -181,8 +220,14 @@ export function writeRule(name: string, body: string): RuleSpec {
 
 export function writeSkill(name: string, description: string, body: string): SkillSpec {
   const fm = `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n${body}`;
+  const folder = path.join(dir.skills(), safeName(name));
+  // 폴더 스킬이면 본문은 SKILL.md 에 — 딸린 파일은 건드리지 않는다.
+  if (fs.existsSync(folder) && fs.statSync(folder).isDirectory()) {
+    writeFileEnsured(path.join(folder, "SKILL.md"), fm);
+    return { name, description, body, files: listSkillFiles(folder) };
+  }
   writeFileEnsured(path.join(dir.skills(), `${safeName(name)}.md`), fm);
-  return { name, description, body };
+  return { name, description, body, files: [] };
 }
 
 export function writeMcp(servers: McpServer[]): McpServer[] {
@@ -214,8 +259,14 @@ function rmIfExists(file: string): boolean {
 }
 export const deleteRule = (name: string) =>
   rmIfExists(path.join(dir.rules(), `${safeName(name)}.md`));
-export const deleteSkill = (name: string) =>
-  rmIfExists(path.join(dir.skills(), `${safeName(name)}.md`));
+export const deleteSkill = (name: string) => {
+  const folder = path.join(dir.skills(), safeName(name));
+  if (fs.existsSync(folder) && fs.statSync(folder).isDirectory()) {
+    fs.rmSync(folder, { recursive: true, force: true });
+    return true;
+  }
+  return rmIfExists(path.join(dir.skills(), `${safeName(name)}.md`));
+};
 export const deleteAgent = (name: string) =>
   rmIfExists(path.join(dir.agents(), `${safeName(name)}.json`));
 

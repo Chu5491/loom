@@ -3,49 +3,45 @@
 </p>
 
 <h1 align="center">loom</h1>
-<p align="center"><strong>One workspace where your CLI coding agents work side by side.</strong></p>
+<p align="center"><strong>Your CLI coding agents, one office.</strong></p>
 
 <p align="center">
   <a href="./README.ko.md"><b>한국어</b></a> ·
-  <a href="./SLIM-HARNESS-DESIGN.md">Design notes</a> ·
+  <a href="./docs/V2-PLAN.md">Design notes</a> ·
   <a href="./CLAUDE.md">Working rules</a>
 </p>
 
-> **Status — alpha.** Local single-user. Stable on the claude-code adapter; gemini / codex / opencode are wired and parsing output, but expect rough edges.
+> **Status — alpha, local single-user.** Five adapters wired and verified: claude-code, codex, opencode, devin, antigravity.
 
 ---
 
 ## Overview
 
-loom is a local Node.js + React workspace for running multiple CLI coding agents — **Claude Code, Gemini CLI, Codex, OpenCode** — in one project.
+loom is a local Node.js + React workspace for running multiple CLI coding agents — **Claude Code, Codex, OpenCode, Devin, Antigravity** — as one team.
 
-You chat with them in threads, watch what files they touch in real time, review side-by-side diffs of every run, and stage/commit changes without leaving the app. The CLIs stay the CLIs — loom is the room they share.
+You define the team once (agents, rules, skills, MCP servers, hand-off rules) as plain files in `office/`, commit them to git, and talk to the team in a chat. Each turn spawns the real CLI in your project directory; output streams back as structured events. The CLIs stay the CLIs — loom is the office they share.
 
-## Why it exists
+## Constitution
 
-Each CLI ships its own terminal. Switching between them, copying context in and out, and tracking who did what across threads got tedious fast. loom puts all of them in one workspace, with **explicit prompt boundaries** (no hidden system prompts injected by the harness) and a thin per-CLI dispatcher.
+1. **CLIs stay untouched** — wrap, never mutate.
+2. **Automatic injection is a sin** — your prompt + the specs you explicitly attach are the only input.
+3. **CLI roots are sacred** — `~/.claude`, `~/.gemini` etc. are never written. Injection happens per-run via loadouts/flags.
+4. **Definitions in git, records local** — `office/` is committed; `data/` (sqlite, logs, loadouts) is gitignored.
+5. **Raw is truth** — original CLI output is always kept on disk; parsed events are a view.
 
 ## What's in the box
 
 | Surface | What it does |
 |---|---|
-| **Live view** | Every agent's current state at a glance — file being edited, tool in use, thread membership, line counts. Inline activity stream merges all agents' tool calls + sub-agent delegations chronologically. |
-| **Editor** | Monaco-backed file viewer with **side-by-side diff** for any prior run that touched the file. ⌘P fuzzy palette, multi-tab with active/inactive width balance. |
-| **Git** | Full commit graph + branches/remotes + working tree staging + fetch / pull / push, all in one page. Sidebar holds branch/stash navigation; main holds the actual commit work. |
-| **History** | Every past run with status, cost, file changes, jump-to-message. |
-| **Insights** | Cost / time / file activity, per agent and per project. |
-| **Skills + MCP** | Per-agent loadout — pick from a built-in catalog plus skills.sh and the official MCP registry (Smithery, etc). API keys stored in DB via UI, env-var fallback. |
-| **Threads** | Each thread can isolate to its own git worktree. Session resume threads CLI conversations across runs (`--resume <id>` per CLI). |
-| **Agent management** | Create / edit / delete agents inline from the live canvas — no page navigation. |
-
-🚧 Not yet: PR creation, log full-text search, multi-user, hardened deploy, sub-agent task spawning (Phase 2 — schema + UI surfaces are in place, adapter detection pending).
+| **Talk** | Chat with any agent. `@` mentions agents (routing), skills (attach to this run), and project files (live search). Markdown-rendered replies, live tool/file traces, stop button, cost rollup, hand-off suggestions. |
+| **Office** | Define the team as files: rules (always-on context), skills (single `.md` or folder with bundled references), MCP servers (form editor), agents (CLI + model + what they carry), harness edges (who hands off to whom, when). |
+| **Connections** | Discover · authenticate · pick models · smoke-test every CLI on the machine. The header shows authenticated CLIs at all times. |
+| **Harness** | `on_success / on_fail / on_changes` edges auto-fire the next agent (loop-guarded); `ask / manual` edges become one-click suggestions. Results carry over in explicitly marked blocks. |
+| **Projects** | Register local working directories; runs execute there. The office is global ("the team"), projects are where it works. |
 
 ## Quick start
 
-Prerequisites:
-- **Node ≥ 22**
-- **pnpm**
-- The CLI(s) you want to drive available on `PATH`: `claude`, `gemini`, `codex`, `opencode`
+Prerequisites: **Node ≥ 20**, **pnpm**, and the CLI(s) you want on `PATH` (`claude`, `codex`, `opencode`, `devin`, `agy`).
 
 ```bash
 pnpm install
@@ -53,85 +49,40 @@ pnpm dev
 # web → http://localhost:3201
 ```
 
-In the UI:
-
-1. Create a project (point at a local repo path or paste a git URL — loom will clone).
-2. Add an agent (pick CLI + model; optional skills/MCPs from the catalog).
-3. Open a thread, start chatting. `@<file>` mentions project files; `/<skill|mcp>` adds from the agent's loadout.
-
-## Architecture in one paragraph
-
-A single SQLite file (`./data/loom.db`) holds projects, agents, threads, runs, run_changes, delegations, settings, and the catalogs. The server (`apps/server`) is a Hono process that owns this DB plus an in-memory log store; CLI runs are spawned via `child_process.spawn` per adapter and stream output as SSE. The UI (`apps/web`) is a React + Vite SPA that polls the REST routes and subscribes to per-run SSE for live logs. Git activity is captured via lightweight before/after `git commit-tree` snapshots that don't disturb the working index, stash list, or untracked files.
+1. **Connections** — check your CLIs are detected and authenticated.
+2. **Office** — create an agent (CLI + model are required), optionally rules/skills/MCP.
+3. Pick a **project** in the header (a local directory) and start talking.
 
 ## Project layout
 
 ```
-apps/
-  server/                       Hono backend — DB, run lifecycle, SSE, git
-  web/                          React + Vite UI
-packages/
-  core/                         shared types
-  adapter-utils/                spawnProcess + defineCliAdapter
-  adapters/
-    claude-code/
-    gemini/
-    codex/
-    opencode/
-docs/                           design notes + assets
-.claude/launch.json             dev server config (preview tooling)
+office/                git-committed definitions (rules / skills / mcp / agents / harness)
+data/                  gitignored records (sqlite history, raw logs, per-run loadouts)
+apps/server/           Hono — office loader, run engine, SSE, harness
+apps/web/              React + Vite + Tailwind 4 — Talk / Office / Connections
+packages/core/         shared types (zero runtime deps)
+packages/adapter-utils/ spawnProcess + defineCliAdapter
+packages/adapters/     claude-code · antigravity · codex · opencode · devin
 ```
 
 ## Configuration
 
-Server reads these from env (all optional):
-
 | Variable | Purpose |
 |---|---|
-| `LOOM_PORT` | Server port. Default `3201`. |
-| `LOOM_DATA_DIR` | DB + logs location. Default `./data`. |
-| `LOOM_LOG_LEVEL` | `debug` / `info` / `warn` / `error`. Default `info`. |
-| `LOOM_SMITHERY_API_KEY` | Optional. Enables Smithery MCP marketplace. UI-stored key takes precedence. |
-| `LOOM_SKILLS_SH_API_KEY` | Optional. Enables skills.sh skill marketplace. UI-stored key takes precedence. |
+| `LOOM_PORT` | Server port. Default `3200`. |
+| `LOOM_HOST` | Bind address. Default `127.0.0.1`. |
+| `LOOM_HOME` | Office root (where `office/` and `data/` live). Default: repo root. |
 
-Per-project env vars (passed into every CLI run for that project) live in the **Project → ENV** UI section, not in shell env.
-
-## Scripts
-
-| Command | Action |
-|---|---|
-| `pnpm dev` | Server + Vite together |
-| `pnpm dev:server` | Server only |
-| `pnpm dev:web` | UI only |
-| `pnpm build` | Build all workspaces |
-| `pnpm typecheck` | `tsc --noEmit` across workspaces |
-| `pnpm test` | Run package-local tests |
-
-## Deployment
-
-loom is currently designed for local single-user use. For shared deployment, you'll at minimum need:
-
-- A persistent volume mounted at `LOOM_DATA_DIR` (SQLite + logs + worktrees).
-- The CLI binaries available in the runtime image.
-- Authentication / authorization in front of the HTTP server (loom has no built-in auth).
-
-A turnkey enterprise deploy is on the roadmap but not shipped — treat any current deployment as a **personal workspace exposed to a trusted network**.
+MCP secrets are written as `"${ENV_NAME}"` references in `office/mcp/servers.json` and resolved from the server's environment at spawn time — never stored as literals.
 
 ## Contributing
 
-Read [CLAUDE.md](./CLAUDE.md) before sending a non-trivial PR. It covers naming conventions, abstraction limits, adapter patterns, when to skip tests, and the prompt-injection rules ("automatic injection is a sin").
+Read [CLAUDE.md](./CLAUDE.md) first — naming rules, abstraction limits, adapter patterns, and the constitution above.
 
 ```bash
-pnpm install
 pnpm typecheck   # must be green
-pnpm test        # must be green for packages with tests
+pnpm test        # must be green
 ```
-
-Adapter additions follow the recipe in CLAUDE.md §4 — three files (`index.ts`, `index.test.ts`, `package.json`) of ~30–50 lines each, and registry registration in `apps/server/src/adapters/registry.ts`.
-
-## Design background
-
-- [`SLIM-HARNESS-DESIGN.md`](./SLIM-HARNESS-DESIGN.md) — the original "thin dispatcher" thinking.
-- [`CLAUDE.md`](./CLAUDE.md) — current working rules, including the four-adapter abstraction.
 
 ## License
 

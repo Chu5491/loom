@@ -3,136 +3,87 @@
 </p>
 
 <h1 align="center">loom</h1>
-<p align="center"><strong>여러 CLI 에이전트가 한 워크스페이스에서 같이 일하는 도구.</strong></p>
+<p align="center"><strong>내 CLI 코딩 에이전트들을 한 오피스에.</strong></p>
 
 <p align="center">
   <a href="./README.md"><b>English</b></a> ·
-  <a href="./SLIM-HARNESS-DESIGN.md">설계 노트</a> ·
+  <a href="./docs/V2-PLAN.md">설계 노트</a> ·
   <a href="./CLAUDE.md">작업 규칙</a>
 </p>
 
-> **상태 — alpha.** 로컬 단일 사용자. claude-code 어댑터는 데일리 사용 안정. gemini / codex / opencode 는 와이어드 + 출력 파싱은 되지만 거친 부분 있음.
+> **상태 — alpha, 로컬 단일 사용자.** 어댑터 5종 검증: claude-code · codex · opencode · devin · antigravity.
 
 ---
 
 ## 개요
 
-loom 은 **Claude Code · Gemini CLI · Codex · OpenCode** 같은 CLI 코딩 에이전트를 *한 프로젝트* 안에서 함께 부리기 위한 로컬 Node.js + React 워크스페이스.
+loom 은 **Claude Code · Codex · OpenCode · Devin · Antigravity** 같은 CLI 코딩 에이전트를 *하나의 팀*으로 부리는 로컬 Node.js + React 워크스페이스.
 
-스레드로 대화하고, 파일을 만지는 걸 실시간으로 보고, 모든 run 의 변경을 *side-by-side diff* 로 검토하고, 스테이징/커밋까지 앱을 안 떠나고 한다. CLI 자체는 그대로 — loom 은 그들이 함께 들어가는 *방*.
+팀을 한 번 정의하면(에이전트·규약·스킬·MCP 서버·핸드오프 규칙) 전부 `office/` 디렉토리의 평범한 파일이 되고 git 에 커밋된다. 채팅으로 팀과 대화하면 매 턴 실제 CLI 가 프로젝트 디렉토리에서 spawn 되고, 출력이 구조화된 이벤트로 흘러온다. CLI 는 CLI 그대로 — loom 은 그들이 공유하는 오피스다.
 
-## 왜 만들었나
+## 헌법
 
-CLI 마다 자기 터미널이 따로 있다. 왔다갔다 하고, 컨텍스트 복붙하고, 어떤 thread 에서 누가 뭘 했는지 추적하는 게 금방 지친다. loom 은 이걸 한 워크스페이스에 모은다 + **명시적 prompt 경계** (하네스가 시스템 프롬프트를 몰래 끼워넣지 않음) + 얇은 per-CLI dispatcher.
+1. **CLI 그대로** — 래핑하되 변형하지 않는다.
+2. **자동 주입은 죄** — 내가 적은 프롬프트 + 명시적으로 첨부한 spec 이 입력의 전부.
+3. **CLI root 불가침** — `~/.claude`, `~/.gemini` 등은 절대 안 건드린다. 주입은 run별 loadout/플래그로.
+4. **정의는 git, 기록은 로컬** — `office/`는 커밋, `data/`(sqlite·로그·loadout)는 gitignore.
+5. **Raw 가 진실** — CLI 원본 출력은 항상 디스크 보존, 파싱된 이벤트는 그 위의 뷰.
 
-## 무엇이 들어있나
+## 들어있는 것
 
-| 화면 | 역할 |
+| 화면 | 하는 일 |
 |---|---|
-| **라이브 뷰** | 모든 에이전트의 현재 상태 한눈에 — 편집 중 파일, 사용 중 도구, 소속 thread, 라인 수. 통합 활동 스트림이 모든 에이전트의 도구 호출 + 서브에이전트 위임을 시간순 병합. |
-| **에디터** | Monaco 기반 파일 뷰어 + 그 파일을 만진 *모든 과거 run* 에 대한 **side-by-side diff**. ⌘P 퍼지 팔레트, 활성/비활성 폭 균형 멀티탭. |
-| **Git** | 풀 커밋 그래프 + 브랜치/원격 + 워킹 트리 staging + fetch / pull / push 한 페이지에. 사이드바는 브랜치/스태시 navigation, 메인은 실제 커밋 작업. |
-| **이력** | 과거 모든 run — 상태, 비용, 변경 파일, 메시지로 점프. |
-| **통계** | 비용 / 시간 / 파일 활동, 에이전트별 · 프로젝트별. |
-| **Skills + MCP** | 에이전트별 loadout — 내장 카탈로그 + skills.sh + 공식 MCP Registry (Smithery 등). API 키는 UI 로 DB 저장, env-var fallback. |
-| **Threads** | thread 마다 격리된 git worktree 옵션. 같은 thread 의 다음 run 에 직전 session_id 자동 feed (`--resume <id>` per CLI). |
-| **에이전트 관리** | 라이브 캔버스에서 인라인 추가 / 편집 / 삭제 — 페이지 이동 X. |
-
-🚧 아직 안 됨: PR 생성, 로그 풀텍스트 검색, 멀티 사용자, 하든된 배포, 서브에이전트 Task spawn (Phase 2 — 스키마 + UI 자리는 깔려있음, 어댑터 감지 미구현).
+| **대화** | 아무 에이전트와 채팅. `@` 하나로 에이전트(라우팅)·스킬(이 run에 첨부)·프로젝트 파일(라이브 검색)을 멘션. 마크다운 렌더, 실시간 도구/파일 트레이스, 중지 버튼, 비용 합계, 핸드오프 제안. |
+| **오피스** | 팀을 파일로 정의: 규약(항상 붙는 컨텍스트), 스킬(단일 `.md` 또는 references 딸린 폴더), MCP 서버(폼 에디터), 에이전트(CLI+모델+끌고 갈 것), 하네스 엣지(누가 누구에게, 언제 넘기나). |
+| **연결** | 이 머신의 CLI 발견 · 인증 확인 · 모델 선택 · 연동 테스트. 인증된 CLI 는 헤더에 항상 표시. |
+| **하네스** | `on_success / on_fail / on_changes` 엣지는 다음 에이전트를 자동 발화(루프 가드), `ask / manual` 은 원클릭 제안 버튼. 결과는 명시적으로 마크된 블록으로 전달. |
+| **프로젝트** | 로컬 작업 디렉토리를 등록하면 run 이 거기서 실행. 오피스는 전역 공유("팀"), 프로젝트는 "일할 곳". |
 
 ## 빠른 시작
 
-요구사항:
-- **Node ≥ 22**
-- **pnpm**
-- 부리고 싶은 CLI 가 PATH 에 있어야 함: `claude` · `gemini` · `codex` · `opencode`
+준비물: **Node ≥ 20**, **pnpm**, 그리고 부릴 CLI 가 `PATH` 에 (`claude`, `codex`, `opencode`, `devin`, `agy`).
 
 ```bash
 pnpm install
 pnpm dev
-# 웹 → http://localhost:3201
+# web → http://localhost:3201
 ```
 
-UI 에서:
+1. **연결** — CLI 가 발견·인증됐는지 확인.
+2. **오피스** — 에이전트 생성(CLI + 모델 필수), 필요하면 규약/스킬/MCP.
+3. 헤더에서 **프로젝트**(로컬 디렉토리)를 고르고 대화 시작.
 
-1. 프로젝트 만들기 — 로컬 repo 경로 또는 git URL 붙여넣기 (loom 이 clone).
-2. 에이전트 추가 — CLI + 모델 선택, 스킬/MCP 옵션.
-3. 스레드 열고 대화 시작. `@<파일>` 으로 프로젝트 파일 멘션, `/<skill|mcp>` 로 에이전트의 loadout 에서 추가.
-
-## 한 문단 아키텍처
-
-단일 SQLite 파일 (`./data/loom.db`) 이 프로젝트, 에이전트, 스레드, run, run_changes, delegations, settings, 카탈로그를 보관. 서버 (`apps/server`) 는 Hono 프로세스 — 이 DB + 인메모리 로그 store 를 소유, CLI run 은 `child_process.spawn` 으로 어댑터별 spawn, 출력은 SSE 스트림. UI (`apps/web`) 는 React + Vite SPA — REST 폴링 + run 별 SSE 구독. Git 활동은 *워킹 인덱스 / stash / untracked 를 안 건드리는* 가벼운 before/after `git commit-tree` 스냅샷 으로 캡처.
-
-## 프로젝트 구조
+## 디렉토리 구조
 
 ```
-apps/
-  server/                       Hono 백엔드 — DB, run 라이프사이클, SSE, git
-  web/                          React + Vite UI
-packages/
-  core/                         공유 타입
-  adapter-utils/                spawnProcess + defineCliAdapter
-  adapters/
-    claude-code/
-    gemini/
-    codex/
-    opencode/
-docs/                           설계 노트 + 자산
-.claude/launch.json             dev 서버 config (preview 툴)
+office/                git 커밋되는 정의 (rules / skills / mcp / agents / harness)
+data/                  gitignore 되는 기록 (sqlite 히스토리, raw 로그, run별 loadout)
+apps/server/           Hono — office 로더, 런 엔진, SSE, 하네스
+apps/web/              React + Vite + Tailwind 4 — 대화 / 오피스 / 연결
+packages/core/         공유 타입 (런타임 의존성 0)
+packages/adapter-utils/ spawnProcess + defineCliAdapter
+packages/adapters/     claude-code · antigravity · codex · opencode · devin
 ```
 
-## 환경 변수
-
-서버가 읽는 변수 (모두 옵션):
+## 설정
 
 | 변수 | 용도 |
 |---|---|
-| `LOOM_PORT` | 서버 포트. 기본 `3201`. |
-| `LOOM_DATA_DIR` | DB + 로그 위치. 기본 `./data`. |
-| `LOOM_LOG_LEVEL` | `debug` / `info` / `warn` / `error`. 기본 `info`. |
-| `LOOM_SMITHERY_API_KEY` | 옵션. Smithery MCP 마켓 활성. UI 저장 키가 우선. |
-| `LOOM_SKILLS_SH_API_KEY` | 옵션. skills.sh 스킬 마켓 활성. UI 저장 키가 우선. |
+| `LOOM_PORT` | 서버 포트. 기본 `3200`. |
+| `LOOM_HOST` | 바인드 주소. 기본 `127.0.0.1`. |
+| `LOOM_HOME` | 오피스 루트(`office/`·`data/` 위치). 기본: 리포 루트. |
 
-프로젝트별 env 변수 (그 프로젝트의 모든 run 에 주입) 는 **프로젝트 → ENV** UI 섹션에서 관리. 셸 env 가 아님.
-
-## 스크립트
-
-| 명령 | 동작 |
-|---|---|
-| `pnpm dev` | 서버 + Vite 동시 |
-| `pnpm dev:server` | 서버만 |
-| `pnpm dev:web` | UI 만 |
-| `pnpm build` | 모든 워크스페이스 빌드 |
-| `pnpm typecheck` | 워크스페이스 전반 `tsc --noEmit` |
-| `pnpm test` | 패키지 테스트 |
-
-## 배포
-
-loom 은 현재 *로컬 단일 사용자* 용. 공유 배포 하려면 최소:
-
-- `LOOM_DATA_DIR` 에 영속 볼륨 마운트 (SQLite + 로그 + worktrees).
-- 런타임 이미지에 CLI 바이너리 포함.
-- HTTP 서버 앞에 인증/인가 (loom 자체 인증 없음).
-
-엔터프라이즈 turnkey 배포는 로드맵 — 현재 어떤 배포든 *신뢰할 수 있는 네트워크에 노출된 개인 워크스페이스* 로 봐야.
+MCP secret 은 `office/mcp/servers.json` 에 `"${ENV_NAME}"` 참조로 적고 spawn 시점에 서버 환경변수에서 resolve — 리터럴 저장 금지.
 
 ## 기여
 
-non-trivial PR 보내기 전에 [CLAUDE.md](./CLAUDE.md) 읽을 것. 네이밍 / 추상화 한도 / 어댑터 패턴 / 테스트 스킵 기준 / prompt 주입 규칙 ("자동 주입은 죄") 모두 거기.
+[CLAUDE.md](./CLAUDE.md) 먼저 — 네이밍 규칙, 추상화 한도, 어댑터 패턴, 그리고 위의 헌법.
 
 ```bash
-pnpm install
-pnpm typecheck   # 그린이어야
-pnpm test        # 테스트 있는 패키지는 그린이어야
+pnpm typecheck   # green 필수
+pnpm test        # green 필수
 ```
-
-새 어댑터 추가는 CLAUDE.md §4 의 레시피 따름 — 3개 파일 (`index.ts` · `index.test.ts` · `package.json`) 각 ~30~50줄, registry 에 등록.
-
-## 설계 배경
-
-- [`SLIM-HARNESS-DESIGN.md`](./SLIM-HARNESS-DESIGN.md) — 원래 "얇은 dispatcher" 사고.
-- [`CLAUDE.md`](./CLAUDE.md) — 현재 작업 규칙, 4-어댑터 추상화 포함.
 
 ## 라이선스
 
-MIT — [`LICENSE`](./LICENSE) 참고.
+MIT — [`LICENSE`](./LICENSE).

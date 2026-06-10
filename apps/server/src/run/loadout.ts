@@ -94,6 +94,16 @@ export function materializeLoadout(
     let n = 2;
     while (used.has(cand)) cand = `${safeFilename(s.name, "skill")}-${n++}`;
     used.add(cand);
+
+    // 폴더 스킬(딸린 references/스크립트 보유)은 office 의 원본 폴더를 통째 복사 —
+    // SKILL.md 가 형제 파일을 상대경로로 참조해도 그대로 동작한다.
+    if (s.files?.length) {
+      const src = path.join(paths.office, "skills", s.name);
+      const dst = path.join(dir, "skills", cand);
+      fs.cpSync(src, dst, { recursive: true });
+      return { name: s.name, relPath: `skills/${cand}/SKILL.md`, blurb: extractBlurb(s.body) };
+    }
+
     const relPath = `skills/${cand}.md`;
     fs.writeFileSync(path.join(dir, relPath), s.body);
     return { name: s.name, relPath, blurb: extractBlurb(s.body) };

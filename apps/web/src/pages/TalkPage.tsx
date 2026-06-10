@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, Bot, FileText, Sparkles, Workflow, X } from "lucide-react";
+import { ArrowUp, Bot, FileText, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import type { AgentSpec, HarnessEdge, OfficeEvent, RunInfo, SkillSpec } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
@@ -315,7 +315,7 @@ function AgentBubble({ agent, fromAgent, runId, edges, isLast, onDone }: { agent
   }
 
   return (
-    <div className="flex gap-3">
+    <div className="group flex gap-3">
       <Avatar agent={agent} />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
@@ -333,7 +333,19 @@ function AgentBubble({ agent, fromAgent, runId, edges, isLast, onDone }: { agent
                 {t("talk.cancel")}
               </button>
             </>
-          ) : null}
+          ) : (
+            // hover 시에만 — 이 run(user+agent 버블 한 쌍)을 기록에서 삭제.
+            !isStartError && (
+              <button
+                type="button"
+                aria-label={t("talk.deleteRun")}
+                onClick={() => confirm(t("talk.deleteConfirm")) && void api.deleteRun(runId).then(() => onDone?.()).catch(() => {})}
+                className="text-muted-foreground/50 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )
+          )}
         </div>
 
         {/* 도구·파일·핸드오프 트레이스 */}
