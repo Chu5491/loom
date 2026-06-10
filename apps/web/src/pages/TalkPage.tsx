@@ -29,9 +29,6 @@ interface UserMsg { id: string; role: "user"; agent: string; text: string }
 interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string }
 type Msg = UserMsg | AgentMsg;
 
-let seq = 0;
-const nextId = () => `m${seq++}`;
-
 export function TalkPage({ projectId }: { projectId: string | null }) {
   const { t } = useI18n();
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
@@ -39,7 +36,8 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
   const agents = office.data?.office.agents ?? [];
 
   const [active, setActive] = useState<string>("");
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [pending, setPending] = useState<{ agent: string; text: string } | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 첫 에이전트를 기본 대상으로.
@@ -47,40 +45,28 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     if (!active && agents.length) setActive(agents[0]!.name);
   }, [agents, active]);
 
-  // 프로젝트가 바뀌면 스레드 초기화 — merge 효과가 새 프로젝트 run 으로 다시 채운다.
-  useEffect(() => {
-    setMessages([]);
-  }, [projectId]);
-
-  // runs 가 바뀔 때마다 아직 스레드에 없는 run 을 이어붙인다(멱등 — runId 로 dedup).
-  // 초기 복원 + 하네스 자동발화 자식 run 의 라이브 등장을 한 경로로 처리.
-  // 부모가 있는 run(parentRunId)은 핸드오프 버블만(사용자 입력이 아니므로 user 버블 없음).
-  useEffect(() => {
-    if (!runs.data) return;
-    const byId = new Map(runs.data.runs.map((r) => [r.id, r]));
-    setMessages((prev) => {
-      const known = new Set(
-        prev.filter((m): m is AgentMsg => m.role === "agent").map((m) => m.runId),
-      );
-      const fresh = [...runs.data!.runs]
+  // 스레드 = runs.data 단일 진실에서 파생(이중 경로 제거 — 중복 버블 방지).
+  // 부모 run = user+agent 버블, 하네스 자식(parentRunId) = 핸드오프 agent 버블만.
+  // runs 쿼리는 projectId 로 키잉돼 있어 프로젝트 전환도 자동 반영.
+  const byId = useMemo(() => new Map((runs.data?.runs ?? []).map((r) => [r.id, r])), [runs.data]);
+  const messages = useMemo<Msg[]>(
+    () =>
+      [...(runs.data?.runs ?? [])]
         .sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1))
-        .filter((r) => !known.has(r.id));
-      if (fresh.length === 0) return prev;
-      const add = fresh.flatMap((r): Msg[] =>
-        r.parentRunId
-          ? [{ id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id, fromAgent: byId.get(r.parentRunId)?.agent }]
-          : [
-              { id: `u-${r.id}`, role: "user", agent: r.agent, text: r.prompt },
-              { id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id },
-            ],
-      );
-      return [...prev, ...add];
-    });
-  }, [runs.data]);
+        .flatMap((r): Msg[] =>
+          r.parentRunId
+            ? [{ id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id, fromAgent: byId.get(r.parentRunId)?.agent }]
+            : [
+                { id: `u-${r.id}`, role: "user", agent: r.agent, text: r.prompt },
+                { id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id },
+              ],
+        ),
+    [runs.data, byId],
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+  }, [messages, pending]);
 
   async function send(rawText: string) {
     const text = rawText.trim();
@@ -96,13 +82,16 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     }
     if (!agent || !prompt) return;
 
-    setMessages((prev) => [...prev, { id: nextId(), role: "user", agent, text: prompt }]);
+    // 낙관적 user 버블 하나만(pending). run 이 runs.data 에 들어오면 실제 버블이 대체.
+    setSendError(null);
+    setPending({ agent, text: prompt });
     try {
-      const { run } = await api.startRun({ agent, prompt, projectId });
-      setMessages((prev) => [...prev, { id: nextId(), role: "agent", agent, runId: run.id }]);
+      await api.startRun({ agent, prompt, projectId });
+      await runs.refetch();
+      setPending(null);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      setMessages((prev) => [...prev, { id: nextId(), role: "agent", agent, runId: `err:${message}` }]);
+      setSendError(e instanceof Error ? e.message : String(e));
+      // pending 유지 → 사용자 메시지 + 에러를 같이 보여줌
     }
   }
 
@@ -116,7 +105,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
   return (
     <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-3xl flex-col px-4 sm:px-6">
       <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !pending ? (
           <Welcome activeAgent={agents.find((a) => a.name === active)} />
         ) : (
           <div className="space-y-5">
@@ -133,6 +122,8 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
                 />
               ),
             )}
+            {pending ? <UserBubble key="pending" text={pending.text} /> : null}
+            {sendError ? <ErrorLine text={sendError} /> : null}
           </div>
         )}
       </div>
@@ -323,6 +314,9 @@ function Composer({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // IME(한글/일본어/중국어) 조합 중 Enter 는 글자 확정용 — 전송하면 안 됨.
+    // 안 막으면 조합 완료 Enter + 실제 Enter 가 둘 다 발화해 마지막 글자가 또 전송됨.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (mention) {
