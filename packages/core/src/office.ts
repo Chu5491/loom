@@ -66,3 +66,28 @@ export interface Office {
   agents: AgentSpec[];
   edges: HarnessEdge[];
 }
+
+// ── 런타임 (data/, gitignore) ────────────────────────────────────────────────
+
+/** CLI 별 출력 포맷의 차이를 흡수한 통합 이벤트. parseEvents 가 만들고,
+ *  raw 는 항상 디스크에 보존(Raw는 진실, Parsed는 경험). */
+export type OfficeEvent =
+  | { kind: "text"; text: string }
+  | { kind: "tool"; name: string; target?: string }
+  | { kind: "file"; path: string; action: "edit" | "write" }
+  | { kind: "handoff"; toAgent: string; via: "edge" | "delegation" }
+  | { kind: "result"; text: string; costUsd?: number; sessionId?: string }
+  | { kind: "error"; message: string };
+
+export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
+
+export interface RunInfo {
+  id: string;
+  /** 실행한 에이전트 이름. */
+  agent: string;
+  prompt: string;
+  status: RunStatus;
+  startedAt: string;
+  endedAt: string | null;
+  exitCode: number | null;
+}

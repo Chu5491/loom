@@ -10,6 +10,7 @@ import { ensureOffice } from "./office.js";
 import { adaptersRoute } from "./routes/adapters.js";
 import { healthRoute } from "./routes/health.js";
 import { officeRoute } from "./routes/office.js";
+import { runsRoute } from "./routes/runs.js";
 
 ensureOffice();
 
@@ -18,6 +19,7 @@ const app = new Hono();
 app.route("/api/health", healthRoute);
 app.route("/api/adapters", adaptersRoute);
 app.route("/api/office", officeRoute);
+app.route("/api/runs", runsRoute);
 
 app.onError((err, c) => {
   logger.error({ err }, "unhandled request error");

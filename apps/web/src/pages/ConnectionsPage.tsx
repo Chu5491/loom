@@ -55,7 +55,7 @@ export function ConnectionsPage() {
 
 function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
   const { t } = useI18n();
-  const [showAllModels, setShowAllModels] = useState(false);
+  const [selectedModel, setSelectedModel] = useState("");
   const [testResult, setTestResult] = useState<TestAdapterResult | null>(null);
 
   const probe = useQuery({
@@ -70,8 +70,11 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
   });
 
   const test = useMutation({
+    // 선택한 모델로 검증. 빈 값이면 CLI 자체 기본 모델 사용.
     mutationFn: () =>
-      api.testAdapter(manifest.kind, { config: manifest.defaultConfig }),
+      api.testAdapter(manifest.kind, {
+        config: selectedModel ? { model: selectedModel } : {},
+      }),
     onSuccess: (r) => setTestResult(r.test),
     onError: (err) =>
       setTestResult({
@@ -88,8 +91,14 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
   const auth = probe.data?.probe.auth;
   const ready = !!binary?.available && auth?.state === "authenticated";
   const modelList = models.data?.models.models ?? [];
-  const visibleModels = showAllModels ? modelList : modelList.slice(0, 6);
   const source = models.data?.models.source;
+  // 모델을 카테고리별로 묶어 optgroup 으로.
+  const grouped = new Map<string, typeof modelList>();
+  for (const m of modelList) {
+    const g = m.category ?? "";
+    if (!grouped.has(g)) grouped.set(g, []);
+    grouped.get(g)!.push(m);
+  }
 
   return (
     <section
@@ -178,38 +187,28 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
         </div>
 
         {models.isLoading ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-6 w-24 rounded-md" />
-            ))}
-          </div>
-        ) : modelList.length === 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            {t("conn.models.empty")}
-          </p>
+          <Skeleton className="mt-2 h-9 w-full rounded-md" />
         ) : (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {visibleModels.map((m) => (
-              <span
-                key={m.value}
-                title={m.description ?? m.value}
-                className="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-[11px] text-foreground/80"
-              >
-                {m.value}
-              </span>
-            ))}
-            {modelList.length > 6 ? (
-              <button
-                type="button"
-                onClick={() => setShowAllModels((v) => !v)}
-                className="rounded-md px-2 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/10"
-              >
-                {showAllModels
-                  ? t("conn.models.showLess")
-                  : t("conn.models.showAll", { count: modelList.length })}
-              </button>
-            ) : null}
-          </div>
+          <select
+            className="mt-2 h-9 w-full rounded-md border border-input bg-background px-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+          >
+            <option value="">{t("conn.models.default")}</option>
+            {[...grouped.entries()].map(([g, list]) =>
+              g ? (
+                <optgroup key={g} label={g}>
+                  {list.map((m) => (
+                    <option key={m.value} value={m.value}>{m.value}</option>
+                  ))}
+                </optgroup>
+              ) : (
+                list.map((m) => (
+                  <option key={m.value} value={m.value}>{m.value}</option>
+                ))
+              ),
+            )}
+          </select>
         )}
       </div>
 
@@ -235,7 +234,7 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
               title={testResult.output || testResult.stderr || testResult.error}
             >
               {testResult.ok
-                ? `${t("conn.test.ok", { sec: (testResult.durationMs / 1000).toFixed(1) })} — “${testResult.output.slice(0, 60)}”`
+                ? `${selectedModel ? selectedModel + " · " : ""}${t("conn.test.ok", { sec: (testResult.durationMs / 1000).toFixed(1) })} — “${testResult.output.slice(0, 60)}”`
                 : testResult.timedOut
                   ? t("conn.test.timeout")
                   : `${t("conn.test.fail")}: ${(testResult.error || testResult.stderr || `exit ${testResult.exitCode}`).slice(0, 80)}`}
