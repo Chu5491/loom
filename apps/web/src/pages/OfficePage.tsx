@@ -3,9 +3,10 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Workflow } from "lucide-react";
-import type { AdapterKind, AgentSpec, HarnessEdge, HarnessTrigger, Office } from "@loom/core";
+import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Workflow, ChevronDown } from "lucide-react";
+import type { AdapterKind, AgentSpec, HarnessEdge, HarnessTrigger, McpServer, McpServerKind, Office } from "@loom/core";
 import { api } from "../api/client.js";
+import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Badge, Button } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
@@ -16,21 +17,6 @@ const MCP_UNSUPPORTED: AdapterKind[] = ["antigravity"];
 const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-ring";
 const areaCls = inputCls + " font-mono text-xs leading-relaxed";
-
-// 에이전트 아바타 색 — 이름 해시로 안정적으로 배정.
-const AVATAR = [
-  "from-sky-500/80 to-indigo-500/80",
-  "from-emerald-500/80 to-teal-500/80",
-  "from-fuchsia-500/80 to-purple-500/80",
-  "from-amber-500/80 to-orange-500/80",
-  "from-rose-500/80 to-pink-500/80",
-  "from-cyan-500/80 to-blue-500/80",
-];
-function avatarFor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return AVATAR[h % AVATAR.length]!;
-}
 
 type Section = "agents" | "rules" | "skills" | "mcp" | "harness";
 
@@ -118,6 +104,51 @@ function Card({ children }: { children: React.ReactNode }) {
   return <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">{children}</div>;
 }
 
+// 압축 행 — 헤더만 보이고, 클릭하면 본문이 펼쳐진다(리스트가 길어도 한눈에).
+function CollapsibleCard({
+  open,
+  onToggle,
+  avatar,
+  title,
+  subtitle,
+  meta,
+  onDelete,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  avatar?: React.ReactNode;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  meta?: React.ReactNode;
+  onDelete?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn("overflow-hidden rounded-xl border bg-card transition-colors", open ? "border-primary/30" : "border-border")}>
+      <div className="flex items-center gap-3 px-3.5 py-2.5">
+        <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          {avatar}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span className="truncate font-display text-sm font-semibold">{title}</span>
+              {meta}
+            </span>
+            {subtitle ? <span className="mt-0.5 block truncate text-xs text-muted-foreground">{subtitle}</span> : null}
+          </span>
+          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        </button>
+        {onDelete ? (
+          <button type="button" onClick={onDelete} className="shrink-0 text-muted-foreground transition-colors hover:text-destructive" aria-label="delete">
+            <Trash2 className="size-4" />
+          </button>
+        ) : null}
+      </div>
+      {open ? <div className="border-t border-border p-4">{children}</div> : null}
+    </div>
+  );
+}
+
 function SectionHead({ onAdd, label }: { onAdd: () => void; label: string }) {
   return (
     <div className="mb-4 flex justify-end">
@@ -166,30 +197,34 @@ function AgentsSection({ office }: { office: Office }) {
   const { t } = useI18n();
   const invalidate = useInvalidate();
   const [drafts, setDrafts] = useState<AgentSpec[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: (a: AgentSpec) => api.putAgent(a.name, a),
-    onSuccess: invalidate,
+    onSuccess: (_d, v) => { invalidate(); setDrafts((d) => d.filter((x) => x.name !== v.name)); },
   });
   const del = useMutation({ mutationFn: api.deleteAgent, onSuccess: invalidate });
 
   const items = [...office.agents, ...drafts];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <SectionHead
         label={t("office.new.agent")}
-        onAdd={() => setDrafts((d) => [...d, { name: "", adapter: "claude-code" }])}
+        onAdd={() => { setDrafts((d) => [...d, { name: "", adapter: "claude-code" }]); setOpen(`new-${drafts.length}`); }}
       />
       {items.length === 0 ? <Empty /> : null}
       {items.map((a, i) => {
         const isNew = i >= office.agents.length;
+        const key = isNew ? `new-${i - office.agents.length}` : a.name;
         return (
           <AgentCard
-            key={isNew ? `new-${i}` : a.name}
+            key={key}
             agent={a}
             isNew={isNew}
             office={office}
-            onSave={(next) => next.name.trim() && save.mutate(next)}
+            open={open === key}
+            onToggle={() => setOpen((o) => (o === key ? null : key))}
+            onSave={(next) => save.mutate(next)}
             onDelete={isNew ? undefined : () => confirm(t("office.deleteConfirm", { name: a.name })) && del.mutate(a.name)}
             pending={save.isPending}
           />
@@ -203,6 +238,8 @@ function AgentCard({
   agent,
   isNew,
   office,
+  open,
+  onToggle,
   onSave,
   onDelete,
   pending,
@@ -210,12 +247,15 @@ function AgentCard({
   agent: AgentSpec;
   isNew: boolean;
   office: Office;
+  open: boolean;
+  onToggle: () => void;
   onSave: (a: AgentSpec) => void;
   onDelete?: () => void;
   pending: boolean;
 }) {
   const { t } = useI18n();
   const [a, setA] = useState<AgentSpec>(agent);
+  const [err, setErr] = useState<string | null>(null);
   const toggle = (key: "rules" | "skills" | "mcp", name: string) =>
     setA((p) => {
       const set = new Set(p[key] ?? []);
@@ -226,40 +266,48 @@ function AgentCard({
     setA((p) => ({ ...p, adapter, ...(MCP_UNSUPPORTED.includes(adapter) ? { mcp: [] } : {}) }));
 
   const mcpBlocked = MCP_UNSUPPORTED.includes(a.adapter);
-  const label = (a.name || "?").trim() || "?";
+  // 이름·모델 필수.
+  const submit = () => {
+    if (!a.name.trim()) { setErr(t("office.agent.needName")); return; }
+    if (!a.model) { setErr(t("office.agent.needModel")); return; }
+    setErr(null);
+    onSave(a);
+  };
 
   return (
-    <Card>
-      {/* 헤더: 아바타 + 이름 + 어댑터 배지 + 삭제 */}
-      <div className="flex items-center gap-3">
-        <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br font-display text-base font-semibold text-white shadow-sm", avatarFor(label))}>
-          {label.charAt(0).toUpperCase()}
-        </span>
-        <div className="min-w-0 flex-1">
-          {isNew ? (
-            <input
-              className={cn(inputCls, "max-w-64 font-mono")}
-              value={a.name}
-              autoFocus
-              placeholder={t("office.namePlaceholder")}
-              onChange={(e) => setA((p) => ({ ...p, name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") }))}
-            />
+    <CollapsibleCard
+      open={open}
+      onToggle={onToggle}
+      avatar={<AgentAvatar adapter={a.adapter} size={36} />}
+      title={a.name || t("office.untitled")}
+      meta={
+        <>
+          <Badge tone="neutral">{a.adapter}</Badge>
+          {a.model ? (
+            <span className="truncate font-mono text-[11px] text-muted-foreground">{a.model}</span>
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="font-display text-base font-semibold">{a.name}</span>
-              <Badge tone="neutral">{a.adapter}</Badge>
-            </div>
+            <Badge tone="warn">{t("office.agent.noModel")}</Badge>
           )}
+        </>
+      }
+      onDelete={onDelete}
+    >
+      {/* 이름 (신규만 — 이름이 식별자) */}
+      {isNew ? (
+        <div className="mb-4">
+          <FieldLabel>{t("office.agent.name")}</FieldLabel>
+          <input
+            className={cn(inputCls, "max-w-72 font-mono")}
+            value={a.name}
+            autoFocus
+            placeholder={t("office.namePlaceholder")}
+            onChange={(e) => setA((p) => ({ ...p, name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") }))}
+          />
         </div>
-        {onDelete ? (
-          <button type="button" onClick={onDelete} className="text-muted-foreground transition-colors hover:text-destructive" aria-label="delete">
-            <Trash2 className="size-4" />
-          </button>
-        ) : null}
-      </div>
+      ) : null}
 
       {/* Identity: 어댑터 + 모델 */}
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <FieldLabel>{t("office.agent.adapter")}</FieldLabel>
           <select className={inputCls} value={a.adapter} onChange={(e) => setAdapter(e.target.value as AdapterKind)}>
@@ -332,8 +380,9 @@ function AgentCard({
         )}
       </div>
 
-      <SaveRow onSave={() => onSave(a)} pending={pending} />
-    </Card>
+      {err ? <p className="mt-3 text-xs text-destructive">{err}</p> : null}
+      <SaveRow onSave={submit} pending={pending} />
+    </CollapsibleCard>
   );
 }
 
@@ -430,46 +479,65 @@ function Chips({ label, all, selected, onToggle }: { label: string; all: string[
 }
 
 // ── Rules ────────────────────────────────────────────────────────────────────
+function firstLine(body: string): string {
+  for (const l of body.split(/\r?\n/)) {
+    const t = l.replace(/^#+\s*/, "").trim();
+    if (t) return t.slice(0, 90);
+  }
+  return "";
+}
+
 function RulesSection({ office }: { office: Office }) {
   const { t } = useI18n();
   const invalidate = useInvalidate();
   const [drafts, setDrafts] = useState<{ name: string; body: string }[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: (r: { name: string; body: string }) => api.putRule(r.name, r.body),
-    onSuccess: invalidate,
+    onSuccess: (_d, v) => { invalidate(); setDrafts((d) => d.filter((x) => x.name !== v.name)); },
   });
   const del = useMutation({ mutationFn: api.deleteRule, onSuccess: invalidate });
 
   const items = [...office.rules.map((r) => ({ ...r, isNew: false })), ...drafts.map((d) => ({ ...d, isNew: true }))];
 
   return (
-    <div className="space-y-3">
-      <SectionHead label={t("office.new.rule")} onAdd={() => setDrafts((d) => [...d, { name: "", body: "" }])} />
+    <div className="space-y-2.5">
+      <SectionHead label={t("office.new.rule")} onAdd={() => { setDrafts((d) => [...d, { name: "", body: "" }]); setOpen(`new-${drafts.length}`); }} />
       {items.length === 0 ? <Empty /> : null}
-      {items.map((r, i) => (
-        <Card key={r.isNew ? `new-${i}` : r.name}>
-          <RowHead
-            name={r.name}
-            editable={r.isNew}
-            onName={(v) => r.isNew && setDrafts((d) => d.map((x, j) => (j === i - office.rules.length ? { ...x, name: v } : x)))}
+      {items.map((r, i) => {
+        const di = i - office.rules.length;
+        const key = r.isNew ? `new-${di}` : r.name;
+        return (
+          <CollapsibleCard
+            key={key}
+            open={open === key}
+            onToggle={() => setOpen((o) => (o === key ? null : key))}
+            avatar={<span className="flex size-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground"><FileText className="size-4" /></span>}
+            title={r.name || t("office.untitled")}
+            subtitle={r.isNew ? undefined : firstLine(r.body)}
             onDelete={r.isNew ? undefined : () => confirm(t("office.deleteConfirm", { name: r.name })) && del.mutate(r.name)}
-          />
-          <textarea
-            className={cn(areaCls, "mt-3 min-h-28")}
-            defaultValue={r.body}
-            id={`rule-${i}`}
-            placeholder="# Markdown rule body"
-          />
-          <SaveRow
-            onSave={() => {
-              const name = r.name.trim();
-              const body = (document.getElementById(`rule-${i}`) as HTMLTextAreaElement).value;
-              if (name) save.mutate({ name, body });
-            }}
-            pending={save.isPending}
-          />
-        </Card>
-      ))}
+          >
+            {r.isNew ? (
+              <input
+                className={cn(inputCls, "mb-2 max-w-72 font-mono")}
+                value={r.name}
+                autoFocus
+                placeholder={t("office.namePlaceholder")}
+                onChange={(e) => setDrafts((d) => d.map((x, j) => (j === di ? { ...x, name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") } : x)))}
+              />
+            ) : null}
+            <textarea className={cn(areaCls, "min-h-32")} defaultValue={r.body} id={`rule-${key}`} placeholder="# Markdown rule body" />
+            <SaveRow
+              onSave={() => {
+                const name = r.name.trim();
+                const body = (document.getElementById(`rule-${key}`) as HTMLTextAreaElement).value;
+                if (name) save.mutate({ name, body });
+              }}
+              pending={save.isPending}
+            />
+          </CollapsibleCard>
+        );
+      })}
     </div>
   );
 }
@@ -479,10 +547,11 @@ function SkillsSection({ office }: { office: Office }) {
   const { t } = useI18n();
   const invalidate = useInvalidate();
   const [drafts, setDrafts] = useState<{ name: string }[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: (s: { name: string; description: string; body: string }) =>
       api.putSkill(s.name, s.description, s.body),
-    onSuccess: invalidate,
+    onSuccess: (_d, v) => { invalidate(); setDrafts((d) => d.filter((x) => x.name !== v.name)); },
   });
   const del = useMutation({ mutationFn: api.deleteSkill, onSuccess: invalidate });
 
@@ -492,68 +561,156 @@ function SkillsSection({ office }: { office: Office }) {
   ];
 
   return (
-    <div className="space-y-3">
-      <SectionHead label={t("office.new.skill")} onAdd={() => setDrafts((d) => [...d, { name: "" }])} />
+    <div className="space-y-2.5">
+      <SectionHead label={t("office.new.skill")} onAdd={() => { setDrafts((d) => [...d, { name: "" }]); setOpen(`new-${drafts.length}`); }} />
       {items.length === 0 ? <Empty /> : null}
-      {items.map((s, i) => (
-        <Card key={s.isNew ? `new-${i}` : s.name}>
-          <RowHead
-            name={s.name}
-            editable={s.isNew}
-            onName={(v) => s.isNew && setDrafts((d) => d.map((x, j) => (j === i - office.skills.length ? { name: v } : x)))}
+      {items.map((s, i) => {
+        const di = i - office.skills.length;
+        const key = s.isNew ? `new-${di}` : s.name;
+        return (
+          <CollapsibleCard
+            key={key}
+            open={open === key}
+            onToggle={() => setOpen((o) => (o === key ? null : key))}
+            avatar={<span className="flex size-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground"><Sparkles className="size-4" /></span>}
+            title={s.name || t("office.untitled")}
+            subtitle={s.isNew ? undefined : s.description || undefined}
             onDelete={s.isNew ? undefined : () => confirm(t("office.deleteConfirm", { name: s.name })) && del.mutate(s.name)}
-          />
-          <input className={cn(inputCls, "mt-3")} defaultValue={s.description} id={`skill-desc-${i}`} placeholder={t("office.skill.desc")} />
-          <textarea className={cn(areaCls, "mt-2 min-h-24")} defaultValue={s.body} id={`skill-body-${i}`} placeholder="# Markdown skill body" />
-          <SaveRow
-            onSave={() => {
-              const name = s.name.trim();
-              const description = (document.getElementById(`skill-desc-${i}`) as HTMLInputElement).value;
-              const body = (document.getElementById(`skill-body-${i}`) as HTMLTextAreaElement).value;
-              if (name) save.mutate({ name, description, body });
-            }}
-            pending={save.isPending}
-          />
-        </Card>
-      ))}
+          >
+            {s.isNew ? (
+              <input
+                className={cn(inputCls, "mb-2 max-w-72 font-mono")}
+                value={s.name}
+                autoFocus
+                placeholder={t("office.namePlaceholder")}
+                onChange={(e) => setDrafts((d) => d.map((x, j) => (j === di ? { name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") } : x)))}
+              />
+            ) : null}
+            <input className={inputCls} defaultValue={s.description} id={`skill-desc-${key}`} placeholder={t("office.skill.desc")} />
+            <textarea className={cn(areaCls, "mt-2 min-h-24")} defaultValue={s.body} id={`skill-body-${key}`} placeholder="# Markdown skill body" />
+            <SaveRow
+              onSave={() => {
+                const name = s.name.trim();
+                const description = (document.getElementById(`skill-desc-${key}`) as HTMLInputElement).value;
+                const body = (document.getElementById(`skill-body-${key}`) as HTMLTextAreaElement).value;
+                if (name) save.mutate({ name, description, body });
+              }}
+              pending={save.isPending}
+            />
+          </CollapsibleCard>
+        );
+      })}
     </div>
   );
 }
 
-// ── MCP (raw JSON for v1 — 파워유저 친화, 추후 폼) ─────────────────────────────
+// ── MCP (폼) ──────────────────────────────────────────────────────────────────
+const MCP_KINDS: McpServerKind[] = ["stdio", "http", "sse"];
+function emptyServer(): McpServer {
+  return { name: "", description: null, kind: "stdio", command: null, args: [], env: {}, url: null, headers: {} };
+}
+function kvToText(o: Record<string, string>): string {
+  return Object.entries(o).map(([k, v]) => `${k}=${v}`).join("\n");
+}
+function textToKv(s: string): Record<string, string> {
+  const o: Record<string, string> = {};
+  for (const line of s.split(/\r?\n/)) {
+    const m = line.match(/^([^=]+)=(.*)$/);
+    if (m) o[m[1]!.trim()] = m[2]!;
+  }
+  return o;
+}
+
 function McpSection({ office }: { office: Office }) {
   const { t } = useI18n();
   const invalidate = useInvalidate();
-  const [text, setText] = useState(() => JSON.stringify(office.mcp, null, 2));
+  const [rows, setRows] = useState<McpServer[]>(office.mcp);
+  const [open, setOpen] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const save = useMutation({
-    mutationFn: (servers: Office["mcp"]) => api.putMcp(servers),
+    mutationFn: (servers: McpServer[]) => api.putMcp(servers),
     onSuccess: invalidate,
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
+  const patch = (i: number, next: Partial<McpServer>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...next } : r)));
 
   return (
-    <Card>
-      <p className="text-xs text-muted-foreground">{t("office.mcp.hint")}</p>
-      <textarea
-        className={cn(areaCls, "mt-3 min-h-64")}
-        value={text}
-        onChange={(e) => { setText(e.target.value); setErr(null); }}
-      />
-      {err ? <p className="mt-1 text-xs text-destructive">{err}</p> : null}
+    <div className="space-y-2.5">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => { setRows((rs) => [...rs, emptyServer()]); setOpen(`r${rows.length}`); }}>
+          <Plus className="size-3.5" />
+          {t("office.mcp.add")}
+        </Button>
+      </div>
+      {rows.length === 0 ? <Empty /> : null}
+      {rows.map((s, i) => (
+        <CollapsibleCard
+          key={i}
+          open={open === `r${i}`}
+          onToggle={() => setOpen((o) => (o === `r${i}` ? null : `r${i}`))}
+          avatar={<span className="flex size-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground"><Plug className="size-4" /></span>}
+          title={s.name || t("office.untitled")}
+          subtitle={s.kind === "stdio" ? s.command || undefined : s.url || undefined}
+          meta={<Badge tone="neutral">{s.kind}</Badge>}
+          onDelete={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <FieldLabel>{t("office.mcp.field.name")}</FieldLabel>
+              <input className={cn(inputCls, "font-mono")} value={s.name} placeholder="my-server"
+                onChange={(e) => patch(i, { name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") })} />
+            </div>
+            <div>
+              <FieldLabel>{t("office.mcp.field.kind")}</FieldLabel>
+              <Segmented value={s.kind} onChange={(v) => patch(i, { kind: v })} options={MCP_KINDS.map((k) => ({ value: k, label: k }))} />
+            </div>
+          </div>
+
+          {s.kind === "stdio" ? (
+            <>
+              <div className="mt-4">
+                <FieldLabel>{t("office.mcp.field.command")}</FieldLabel>
+                <input className={cn(inputCls, "font-mono")} value={s.command ?? ""} placeholder="npx" onChange={(e) => patch(i, { command: e.target.value || null })} />
+              </div>
+              <div className="mt-4">
+                <FieldLabel>{t("office.mcp.field.args")}</FieldLabel>
+                <input className={cn(inputCls, "font-mono")} value={s.args.join(" ")} placeholder="-y @scope/server" onChange={(e) => patch(i, { args: e.target.value.split(/\s+/).filter(Boolean) })} />
+              </div>
+              <div className="mt-4">
+                <FieldLabel>{t("office.mcp.field.env")}</FieldLabel>
+                <textarea className={cn(areaCls, "min-h-16")} value={kvToText(s.env)} placeholder={"API_KEY=${MY_KEY}"} onChange={(e) => patch(i, { env: textToKv(e.target.value) })} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mt-4">
+                <FieldLabel>{t("office.mcp.field.url")}</FieldLabel>
+                <input className={cn(inputCls, "font-mono")} value={s.url ?? ""} placeholder="https://…" onChange={(e) => patch(i, { url: e.target.value || null })} />
+              </div>
+              <div className="mt-4">
+                <FieldLabel>{t("office.mcp.field.headers")}</FieldLabel>
+                <textarea className={cn(areaCls, "min-h-16")} value={kvToText(s.headers)} placeholder={"Authorization=Bearer ${TOKEN}"} onChange={(e) => patch(i, { headers: textToKv(e.target.value) })} />
+              </div>
+            </>
+          )}
+
+          <div className="mt-4">
+            <FieldLabel>{t("office.mcp.field.description")}</FieldLabel>
+            <input className={inputCls} value={s.description ?? ""} onChange={(e) => patch(i, { description: e.target.value || null })} />
+          </div>
+        </CollapsibleCard>
+      ))}
+
+      {err ? <p className="text-xs text-destructive">{err}</p> : null}
       <SaveRow
         onSave={() => {
-          try {
-            const parsed = JSON.parse(text);
-            if (!Array.isArray(parsed)) throw new Error("Expected a JSON array of servers");
-            save.mutate(parsed);
-          } catch (e) {
-            setErr(e instanceof Error ? e.message : String(e));
-          }
+          if (rows.some((s) => !s.name.trim())) { setErr(t("office.mcp.invalid")); return; }
+          setErr(null);
+          save.mutate(rows);
         }}
         pending={save.isPending}
       />
-    </Card>
+    </div>
   );
 }
 
@@ -729,29 +886,6 @@ function HarnessGraph({ agents, edges }: { agents: AgentSpec[]; edges: HarnessEd
 }
 
 // ── 공통 작은 조각 ────────────────────────────────────────────────────────────
-function RowHead({ name, editable, onName, onDelete }: { name: string; editable: boolean; onName: (v: string) => void; onDelete?: () => void }) {
-  const { t } = useI18n();
-  return (
-    <div className="flex items-center gap-2">
-      {editable ? (
-        <input
-          className={cn(inputCls, "max-w-56 font-mono")}
-          value={name}
-          autoFocus
-          placeholder={t("office.namePlaceholder")}
-          onChange={(e) => onName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
-        />
-      ) : (
-        <Badge tone="neutral">{name}</Badge>
-      )}
-      {onDelete ? (
-        <button type="button" onClick={onDelete} className="ml-auto text-muted-foreground hover:text-destructive" aria-label="delete">
-          <Trash2 className="size-4" />
-        </button>
-      ) : null}
-    </div>
-  );
-}
 
 function SaveRow({ onSave, pending }: { onSave: () => void; pending: boolean }) {
   const { t } = useI18n();
