@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, Bot, FileText, Sparkles, Trash2, Workflow, X } from "lucide-react";
+import { ArrowUp, Bot, FileText, Sparkles, Trash2, Workflow, X, Zap } from "lucide-react";
 import type { AgentSpec, HarnessEdge, OfficeEvent, RunInfo, SkillSpec } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
@@ -17,6 +17,9 @@ import { cn } from "../lib/utils.js";
 interface UserMsg { id: string; role: "user"; agent: string; text: string }
 interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string }
 type Msg = UserMsg | AgentMsg;
+
+/** 대상 칩의 "자동" 모드 — 서버 디스패치가 적합 에이전트를 고른다. */
+const AUTO = "__auto";
 
 export function TalkPage({ projectId }: { projectId: string | null }) {
   const { t } = useI18n();
@@ -75,7 +78,9 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     setSendError(null);
     setPending({ agent, text: prompt });
     try {
-      await api.startRun({ agent, prompt, projectId, ...(skills.length ? { skills } : {}) });
+      const opts = { prompt, projectId, ...(skills.length ? { skills } : {}) };
+      if (agent === AUTO) await api.dispatchRun(opts); // 서버가 적합 에이전트 선택(라우팅만)
+      else await api.startRun({ ...opts, agent });
       await runs.refetch();
       setPending(null);
     } catch (e) {
@@ -611,6 +616,21 @@ function Composer({
       {/* 대상 에이전트 칩 + 첨부 스킬 칩 */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <span className="text-[11px] text-muted-foreground">{t("talk.talkingTo")}</span>
+        {/* 자동 — 서버 디스패치가 스킬·설명 매칭으로 적합 에이전트 선택 */}
+        <button
+          type="button"
+          onClick={() => onActive(AUTO)}
+          title={t("talk.auto.hint")}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
+            active === AUTO
+              ? "border-primary/50 bg-gradient-accent text-white shadow-[var(--shadow-glow-sm)]"
+              : "border-border text-muted-foreground hover:bg-muted/60",
+          )}
+        >
+          <Zap className="size-3" />
+          {t("talk.auto")}
+        </button>
         {agents.map((a) => {
           const on = a.name === active;
           return (

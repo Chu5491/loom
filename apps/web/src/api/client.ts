@@ -119,6 +119,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  /** 스마트 디스패치 — 작업 설명으로 적합 에이전트를 골라 시작(라우팅만, 주입 없음). */
+  dispatchRun: (body: { prompt: string; projectId?: string | null; skills?: string[] }) =>
+    request<{ run: RunInfo; pick: { agent: string; score: number; matched: string[] } }>("/api/runs/dispatch", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   cancelRun: (id: string) =>
     request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: "POST" }),
 

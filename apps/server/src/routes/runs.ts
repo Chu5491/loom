@@ -4,6 +4,8 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isResponse, parseBody } from "./helpers.js";
+import { readAgents, readSkills } from "../office.js";
+import { pickAgent } from "../run/dispatch.js";
 import { cancelRun, deleteRun, fireManualHandoff, getPersistedRun, getRun, listRuns, startRun, subscribe } from "../run/engine.js";
 
 export const runsRoute = new Hono();
@@ -35,6 +37,23 @@ runsRoute.get("/:id", (c) => {
   const run = getRun(c.req.param("id"));
   if (!run) return c.json({ error: "not_found" }, 404);
   return c.json({ run });
+});
+
+// 스마트 디스패치 — 작업 설명으로 적합 에이전트를 골라 run 시작.
+// 라우팅일 뿐 주입 아님: 프롬프트는 적은 그대로 전달된다.
+const dispatchSchema = z.object({
+  prompt: z.string().min(1),
+  projectId: z.string().optional(),
+  skills: z.array(z.string()).optional(),
+});
+runsRoute.post("/dispatch", async (c) => {
+  const data = await parseBody(c, dispatchSchema);
+  if (isResponse(data)) return data;
+  const pick = pickAgent(data.prompt, readAgents(), readSkills());
+  if (!pick) return c.json({ error: "no_agents" }, 400);
+  const result = await startRun({ ...data, agent: pick.agent });
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json({ run: result.run, pick }, 201);
 });
 
 runsRoute.delete("/:id", (c) => {
