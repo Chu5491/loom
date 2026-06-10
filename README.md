@@ -6,13 +6,6 @@
 <p align="center"><strong>One workspace where your CLI coding agents work side by side.</strong></p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dark-office.png">
-    <img alt="loom — multi-agent workspace" src="docs/assets/light-office.png">
-  </picture>
-</p>
-
-<p align="center">
   <a href="./README.ko.md"><b>한국어</b></a> ·
   <a href="./SLIM-HARNESS-DESIGN.md">Design notes</a> ·
   <a href="./CLAUDE.md">Working rules</a>

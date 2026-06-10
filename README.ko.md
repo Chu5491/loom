@@ -6,13 +6,6 @@
 <p align="center"><strong>여러 CLI 에이전트가 한 워크스페이스에서 같이 일하는 도구.</strong></p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dark-office.png">
-    <img alt="loom — 멀티에이전트 워크스페이스" src="docs/assets/light-office.png">
-  </picture>
-</p>
-
-<p align="center">
   <a href="./README.md"><b>English</b></a> ·
   <a href="./SLIM-HARNESS-DESIGN.md">설계 노트</a> ·
   <a href="./CLAUDE.md">작업 규칙</a>
