@@ -4,9 +4,14 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/loom-logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- 단일 폰트 정책: CommitMonoChu가 sans/serif/mono를 모두 담당. 외부 CDN
-         의존 제거 → 오프라인 동작 + 첫 페인트 빠름. @font-face 정의는
-         styles.css 상단에 있음. -->
+    <!-- UI: Inter, 디스플레이: Space Grotesk (CDN, 네트워크 없으면 system-ui 폴백).
+         코드/모델 id: CommitMonoChu (로컬 번들, preload). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+    />
     <link
       rel="preload"
       href="/fonts/CommitMonoChu-550-Regular.otf"

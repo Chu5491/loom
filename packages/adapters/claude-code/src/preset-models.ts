@@ -9,16 +9,27 @@ import type { AdapterSelectOption } from "@loom/core";
  *
  * The `[1m]` suffix appended to a model id forces the 1M-token context
  * window. Claude Code strips the suffix before sending the model id to the
- * provider. Only Opus 4.7 / Opus 4.6 / Sonnet 4.6 support 1M context.
+ * provider. (Confirmed for Opus 4.7 / Opus 4.6 / Sonnet 4.6 — newer models
+ * are listed without the variant until confirmed.)
  *
  * On Max / Team / Enterprise, regular Opus is auto-upgraded to 1M, so the
  * `[1m]` variant matters most on Pro (extra usage) and API.
  */
 export const CLAUDE_CODE_PRESET_MODELS: AdapterSelectOption[] = [
   {
+    value: "claude-fable-5",
+    label: "Fable 5",
+    description: "Latest flagship — strongest reasoning.",
+  },
+  {
+    value: "claude-opus-4-8",
+    label: "Opus 4.8",
+    description: "Latest Opus.",
+  },
+  {
     value: "claude-opus-4-7",
     label: "Opus 4.7",
-    description: "Most capable.",
+    description: "Previous Opus.",
   },
   {
     value: "claude-opus-4-7[1m]",

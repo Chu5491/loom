@@ -3,22 +3,18 @@
 // 모든 데이터는 /api/adapters 4종에서. 영속 상태 없음 — 보이는 게 전부다.
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Languages, Moon, RefreshCw, Sun, Zap } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Zap } from "lucide-react";
 import type { AdapterManifest, TestAdapterResult } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "../components/AdapterIcon.js";
-import { LoomLogo } from "../components/LoomLogo.js";
 import { Badge, Button } from "../components/ui.js";
 import { Skeleton } from "../components/ui/skeleton.js";
 import { useI18n } from "../context/I18nContext.js";
-import { useTheme } from "../context/ThemeContext.js";
 import { cn } from "../lib/utils.js";
 
 export function ConnectionsPage() {
-  const { t, lang, setLang } = useI18n();
-  const { effective, setMode } = useTheme();
-  const qc = useQueryClient();
+  const { t } = useI18n();
 
   const adapters = useQuery({
     queryKey: ["adapters"],
@@ -26,78 +22,34 @@ export function ConnectionsPage() {
   });
 
   return (
-    <div className="min-h-full bg-background">
-      {/* 헤더 — 글래스 바 + 브랜드 + 토글 */}
-      <header className="sticky top-0 z-10 border-b border-border bg-card/70 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 sm:px-6">
-          <LoomLogo className="size-6 dark:invert" />
-          <span className="font-display text-base font-semibold">
-            {t("app.title")}
-          </span>
-          <span className="hidden text-xs text-muted-foreground sm:inline">
-            {t("app.tagline")}
-          </span>
-          <div className="ml-auto flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="theme"
-              onClick={() => setMode(effective === "dark" ? "light" : "dark")}
-            >
-              {effective === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="language"
-              onClick={() => setLang(lang === "ko" ? "en" : "ko")}
-            >
-              <Languages className="size-4" />
-              <span className="text-xs uppercase">{lang}</span>
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                qc.invalidateQueries();
-              }}
-            >
-              <RefreshCw className="size-3.5" />
-              {t("conn.refreshAll")}
-            </Button>
-          </div>
-        </div>
-      </header>
+    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      <h1 className="font-display text-2xl font-semibold tracking-tight">
+        {t("conn.title")}
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("conn.subtitle")}</p>
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
-          {t("conn.title")}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t("conn.subtitle")}</p>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {adapters.isLoading
-            ? [0, 1, 2, 3].map((i) => (
-                <div key={i} className="rounded-xl border border-border bg-card p-5">
-                  <div className="flex items-center gap-3">
-                    <Skeleton className="size-10 rounded-lg" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-3 w-48" />
-                    </div>
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        {adapters.isLoading
+          ? [0, 1, 2, 3].map((i) => (
+              <div key={i} className="rounded-xl border border-border bg-card p-5">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="size-10 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-48" />
                   </div>
                 </div>
-              ))
-            : (adapters.data?.adapters ?? []).map((m) => (
-                <AdapterCard key={m.kind} manifest={m} />
-              ))}
-        </div>
+              </div>
+            ))
+          : (adapters.data?.adapters ?? []).map((m) => (
+              <AdapterCard key={m.kind} manifest={m} />
+            ))}
+      </div>
 
-        {adapters.isError ? (
-          <p className="mt-6 text-sm text-destructive">{adapters.error.message}</p>
-        ) : null}
-      </main>
-    </div>
+      {adapters.isError ? (
+        <p className="mt-6 text-sm text-destructive">{adapters.error.message}</p>
+      ) : null}
+    </main>
   );
 }
 
@@ -284,7 +236,9 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
             >
               {testResult.ok
                 ? `${t("conn.test.ok", { sec: (testResult.durationMs / 1000).toFixed(1) })} — “${testResult.output.slice(0, 60)}”`
-                : `${t("conn.test.fail")}: ${(testResult.error || testResult.stderr || `exit ${testResult.exitCode}`).slice(0, 80)}`}
+                : testResult.timedOut
+                  ? t("conn.test.timeout")
+                  : `${t("conn.test.fail")}: ${(testResult.error || testResult.stderr || `exit ${testResult.exitCode}`).slice(0, 80)}`}
             </span>
           ) : null}
         </div>

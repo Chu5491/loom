@@ -18,25 +18,20 @@ export const opencodeManifest: AdapterManifest = {
   iconSvg: ICON_SVG,
   docsUrl: "https://github.com/sst/opencode",
   defaultCommand: "opencode",
-  defaultConfig: {
-    model: "anthropic/claude-sonnet-4-5",
-  },
+  // 모델 미지정 = opencode 가 자기 config(~/.config/opencode/opencode.json)의
+  // 기본 모델을 쓴다. 특정 프로바이더를 강제하지 않아 "CLI 그대로" 원칙에 맞고,
+  // 연동 테스트도 사용자가 실제로 인증한 모델로 돈다.
+  defaultConfig: {},
   fields: [
     {
       kind: "select",
       key: "model",
       label: "Model",
-      help: "OpenCode uses provider/model format.",
+      help: "provider/model 형식. 비우면 opencode 설정의 기본 모델을 씀. 라이브 목록은 `opencode models`에서.",
       allowCustom: true,
+      placeholder: "기본 모델 (opencode 설정)",
       group: "basic",
-      options: [
-        { value: "anthropic/claude-sonnet-4-5", label: "Anthropic — Sonnet 4.5" },
-        { value: "anthropic/claude-opus-4-7", label: "Anthropic — Opus 4.7" },
-        { value: "anthropic/claude-haiku-4-5-20251001", label: "Anthropic — Haiku 4.5" },
-        { value: "openai/gpt-5", label: "OpenAI — GPT-5" },
-        { value: "openai/o4-mini", label: "OpenAI — o4-mini" },
-        { value: "google/gemini-2.5-pro", label: "Google — Gemini 2.5 Pro" },
-      ],
+      options: [],
     },
     {
       kind: "string",

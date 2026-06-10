@@ -267,8 +267,9 @@ export async function testAdapter(
 
 /**
  * Pulls the most useful response text out of an adapter's stdout. Recognizes
- * the stream-json `{type:"result", result:"..."}` final event used by Claude
- * Code, Gemini, and Codex; falls back to the tail of raw stdout otherwise.
+ * the stream-json `{type:"result", result:"..."}` final event (Claude Code,
+ * Gemini, Codex) and opencode's `{type:"text", part:{text}}` NDJSON events;
+ * falls back to the tail of raw stdout otherwise.
  */
 function extractResultText(stdout: string): string {
   const lines = stdout.split("\n");
@@ -285,6 +286,11 @@ function extractResultText(stdout: string): string {
         if (parsed.is_error || errStatus) {
           return `[error] ${JSON.stringify(parsed).slice(0, 300)}`;
         }
+      }
+      // opencode: 마지막 text 이벤트가 최종 응답.
+      if (parsed?.type === "text") {
+        const part = parsed.part as { text?: unknown } | undefined;
+        if (typeof part?.text === "string" && part.text) return part.text;
       }
     } catch {
       // not JSON, keep looking

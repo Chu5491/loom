@@ -6,13 +6,18 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
+import { ensureOffice } from "./office.js";
 import { adaptersRoute } from "./routes/adapters.js";
 import { healthRoute } from "./routes/health.js";
+import { officeRoute } from "./routes/office.js";
+
+ensureOffice();
 
 const app = new Hono();
 
 app.route("/api/health", healthRoute);
 app.route("/api/adapters", adaptersRoute);
+app.route("/api/office", officeRoute);
 
 app.onError((err, c) => {
   logger.error({ err }, "unhandled request error");

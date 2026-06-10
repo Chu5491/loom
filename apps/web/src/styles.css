@@ -1,8 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-/* 기하학 sans — UI(Inter) + 디스플레이/헤딩(Space Grotesk). 코드는 CommitMonoChu.
- * 네트워크 없으면 system-ui 폴백. (로컬 우선 앱이라 추후 번들 가능.) */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+/* Inter / Space Grotesk 는 index.html 의 <link> 로 로드 (CSS @import 는
+ * tailwindcss 전개 이후로 밀려 순서 위반이라 여기서 못 씀). */
 
 /* Class-based dark variant: html.dark gates all dark:* utilities. */
 @variant dark (&:where(.dark, .dark *));

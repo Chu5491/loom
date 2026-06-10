@@ -17,9 +17,21 @@ export const DEVIN_PRESET_MODELS: AdapterSelectOption[] = [
     category: "Cognition",
   },
   {
+    value: "swe-1-6",
+    label: "SWE 1.6",
+    description: "Pinned SWE 1.6.",
+    category: "Cognition",
+  },
+  {
     value: "swe-1-6-fast",
     label: "SWE 1.6 Fast",
     description: "Faster SWE variant for quick edits.",
+    category: "Cognition",
+  },
+  {
+    value: "swe-1-6-slow",
+    label: "SWE 1.6 Slow",
+    description: "Deeper-thinking SWE variant.",
     category: "Cognition",
   },
   // ── Anthropic ────────────────────────────────────────────────────────
