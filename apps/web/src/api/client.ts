@@ -12,6 +12,7 @@ import type {
   RunInfo,
   SkillSpec,
   TestAdapterResult,
+  Thread,
 } from "@loom/core";
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -136,19 +137,30 @@ export const api = {
   searchProjectFiles: (projectId: string, q: string) =>
     request<{ files: string[] }>(`/api/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
 
-  // ── runs (Talk) ────────────────────────────────────────────────────────
-  // projectId 없으면 전체, "none" 이면 프로젝트 없는 run, id 면 그 프로젝트.
-  listRuns: (projectId?: string | null) =>
-    request<{ runs: RunInfo[] }>(`/api/runs${projectId === undefined ? "" : `?projectId=${projectId ?? "none"}`}`),
+  // ── threads (대화 단위 — 같은 스레드의 연속 턴은 CLI 세션이 이어진다) ────────
+  listThreads: (projectId: string | null) =>
+    request<{ threads: Thread[] }>(`/api/threads?projectId=${projectId ?? "none"}`),
+  createThread: (name: string, projectId: string | null) =>
+    request<{ thread: Thread }>("/api/threads", {
+      method: "POST",
+      body: JSON.stringify({ name, projectId }),
+    }),
+  deleteThread: (id: string) =>
+    request<{ ok: boolean }>(`/api/threads/${id}`, { method: "DELETE" }),
 
-  startRun: (body: { agent: string; prompt: string; cwd?: string; projectId?: string | null; skills?: string[] }) =>
+  // ── runs (Talk) ────────────────────────────────────────────────────────
+  /** threadId 스코프가 Talk 의 기본. 없으면 빈 스레드로 간주해 호출하지 않는다. */
+  listRuns: (threadId: string) =>
+    request<{ runs: RunInfo[] }>(`/api/runs?threadId=${encodeURIComponent(threadId)}`),
+
+  startRun: (body: { agent: string; prompt: string; cwd?: string; projectId?: string | null; threadId?: string; skills?: string[] }) =>
     request<{ run: RunInfo }>("/api/runs", {
       method: "POST",
       body: JSON.stringify(body),
     }),
 
   /** 스마트 디스패치 — 작업 설명으로 적합 에이전트를 골라 시작(라우팅만, 주입 없음). */
-  dispatchRun: (body: { prompt: string; projectId?: string | null; skills?: string[] }) =>
+  dispatchRun: (body: { prompt: string; projectId?: string | null; threadId?: string; skills?: string[] }) =>
     request<{ run: RunInfo; pick: { agent: string; score: number; matched: string[] } }>("/api/runs/dispatch", {
       method: "POST",
       body: JSON.stringify(body),

@@ -4,8 +4,8 @@
 // 자동주입 없음 — 스킬 첨부는 사용자의 명시적 선택, 파일은 텍스트로 경로만 들어간다.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, Bot, FileText, Sparkles, Trash2, Workflow, X, Zap } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUp, Bot, FileText, MessageSquarePlus, Sparkles, Trash2, Workflow, X, Zap } from "lucide-react";
 import type { AgentSpec, HarnessEdge, OfficeEvent, RunInfo, SkillSpec } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
@@ -23,8 +23,30 @@ const AUTO = "__auto";
 
 export function TalkPage({ projectId }: { projectId: string | null }) {
   const { t } = useI18n();
+  const qc = useQueryClient();
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
-  const runs = useQuery({ queryKey: ["runs", projectId], queryFn: () => api.listRuns(projectId) });
+  const threads = useQuery({ queryKey: ["threads", projectId], queryFn: () => api.listThreads(projectId) });
+  const [threadId, setThreadId] = useState<string | null>(null);
+  // threadId 가 현재 프로젝트의 스레드가 아니면(프로젝트 전환/삭제) 최신 스레드로.
+  // null(새 대화 대기)은 사용자가 명시한 상태라 유지한다.
+  useEffect(() => {
+    const list = threads.data?.threads ?? [];
+    if (threadId && !list.some((th) => th.id === threadId)) setThreadId(list[0]?.id ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads.data]);
+  // 첫 로드: 스레드가 있으면 최신 것을 연다.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => {
+    if (booted || !threads.data) return;
+    setThreadId(threads.data.threads[0]?.id ?? null);
+    setBooted(true);
+  }, [threads.data, booted]);
+
+  const runs = useQuery({
+    queryKey: ["runs", threadId],
+    queryFn: () => api.listRuns(threadId!),
+    enabled: !!threadId,
+  });
   const agents = office.data?.office.agents ?? [];
 
   const [active, setActive] = useState<string>("");
@@ -78,10 +100,18 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     setSendError(null);
     setPending({ agent, text: prompt });
     try {
-      const opts = { prompt, projectId, ...(skills.length ? { skills } : {}) };
+      // 스레드가 없으면(새 대화) 첫 메시지로 자동 생성 — 이름은 프롬프트 머리.
+      let tid = threadId;
+      if (!tid) {
+        const { thread } = await api.createThread(prompt.slice(0, 40), projectId);
+        tid = thread.id;
+        setThreadId(tid);
+        await threads.refetch();
+      }
+      const opts = { prompt, projectId, threadId: tid, ...(skills.length ? { skills } : {}) };
       if (agent === AUTO) await api.dispatchRun(opts); // 서버가 적합 에이전트 선택(라우팅만)
       else await api.startRun({ ...opts, agent });
-      await runs.refetch();
+      await qc.invalidateQueries({ queryKey: ["runs", tid] });
       setPending(null);
     } catch (e) {
       setSendError(e instanceof Error ? e.message : String(e));
@@ -89,7 +119,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     }
   }
 
-  if (!office.data || !runs.data) {
+  if (!office.data || !threads.data || (threadId && !runs.data)) {
     return <Centered>{t("common.checking")}</Centered>;
   }
   if (agents.length === 0) {
@@ -100,6 +130,40 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-6xl gap-6 px-4 sm:px-6">
       {/* 채팅 컬럼 */}
       <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
+        {/* 스레드 바 — 대화 전환·새 대화·삭제. 같은 스레드 안에서 세션이 이어진다. */}
+        <div className="flex items-center gap-2 border-b border-border/60 py-2">
+          <select
+            className="h-8 min-w-0 flex-1 truncate rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72"
+            value={threadId ?? ""}
+            onChange={(e) => setThreadId(e.target.value || null)}
+          >
+            <option value="">{t("talk.thread.new")}</option>
+            {threads.data.threads.map((th) => (
+              <option key={th.id} value={th.id}>{th.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            title={t("talk.thread.new")}
+            onClick={() => setThreadId(null)}
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            <MessageSquarePlus className="size-4" />
+          </button>
+          {threadId ? (
+            <button
+              type="button"
+              title={t("talk.thread.delete")}
+              onClick={() => {
+                if (!confirm(t("talk.thread.deleteConfirm"))) return;
+                void api.deleteThread(threadId).then(() => { setThreadId(null); void threads.refetch(); });
+              }}
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          ) : null}
+        </div>
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
           {messages.length === 0 && !pending ? (
             <Welcome activeAgent={agents.find((a) => a.name === active)} />
@@ -140,7 +204,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
       <TeamPanel
         agents={agents}
         edges={office.data.office.edges}
-        runs={runs.data.runs}
+        runs={runs.data?.runs ?? []}
         active={active}
         onActive={setActive}
       />

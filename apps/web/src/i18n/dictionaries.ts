@@ -36,6 +36,9 @@ const en = {
   "talk.handoffTo": "Hand off to @{name}",
   "talk.deleteRun": "Delete this run",
   "talk.deleteConfirm": "Delete this run from history? (both bubbles disappear)",
+  "talk.thread.new": "New conversation",
+  "talk.thread.delete": "Delete conversation",
+  "talk.thread.deleteConfirm": "Delete this conversation and all its runs?",
   "talk.auto": "Auto",
   "talk.auto.hint": "Pick the best-fitting agent automatically (skill & description match). Routing only — your prompt is sent as written.",
 
@@ -196,6 +199,9 @@ const ko: Dictionary = {
   "talk.handoffTo": "@{name}에게 넘기기",
   "talk.deleteRun": "이 run 삭제",
   "talk.deleteConfirm": "이 run을 기록에서 삭제할까요? (버블 한 쌍이 사라져요)",
+  "talk.thread.new": "새 대화",
+  "talk.thread.delete": "대화 삭제",
+  "talk.thread.deleteConfirm": "이 대화와 모든 run을 삭제할까요?",
   "talk.auto": "자동",
   "talk.auto.hint": "적합한 에이전트를 자동 선택해요(스킬·설명 매칭). 라우팅만 — 프롬프트는 적은 그대로 전달돼요.",
 

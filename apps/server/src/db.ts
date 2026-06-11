@@ -4,7 +4,7 @@
 
 import Database from "better-sqlite3";
 import fs from "node:fs";
-import type { OfficeEvent, Project, RunInfo } from "@loom/core";
+import type { OfficeEvent, Project, RunInfo, Thread } from "@loom/core";
 import { paths } from "./config.js";
 
 export type DB = Database.Database;
@@ -43,6 +43,12 @@ export function getDb(): DB {
       path        TEXT NOT NULL UNIQUE,
       created_at  TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS threads (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      project_id  TEXT,
+      created_at  TEXT NOT NULL
+    );
   `);
   // 이전 버전 db 에 없던 컬럼 자가치유(기록은 disposable이지만 안전하게).
   const cols = db.prepare<[], { name: string }>(`PRAGMA table_info(runs)`).all();
@@ -52,8 +58,25 @@ export function getDb(): DB {
   if (!cols.some((c) => c.name === "project_id")) {
     db.exec(`ALTER TABLE runs ADD COLUMN project_id TEXT`);
   }
+  if (!cols.some((c) => c.name === "thread_id")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN thread_id TEXT`);
+    backfillThreads(db);
+  }
   _db = db;
   return db;
+}
+
+// thread 도입 전의 run 들을 프로젝트별 "이전 대화" 스레드로 묶는다 — 기록 손실 없이.
+function backfillThreads(db: DB): void {
+  const projectIds = db
+    .prepare<[], { project_id: string | null }>(`SELECT DISTINCT project_id FROM runs`)
+    .all();
+  for (const { project_id } of projectIds) {
+    const tid = `legacy-${project_id ?? "home"}`;
+    db.prepare(`INSERT OR IGNORE INTO threads (id, name, project_id, created_at) VALUES (?, ?, ?, ?)`)
+      .run(tid, "이전 대화", project_id, new Date().toISOString());
+    db.prepare(`UPDATE runs SET thread_id = ? WHERE project_id IS ? AND thread_id IS NULL`).run(tid, project_id);
+  }
 }
 
 export function closeDb(): void {
@@ -73,6 +96,7 @@ interface RunRow {
   exit_code: number | null;
   parent_run_id: string | null;
   project_id: string | null;
+  thread_id: string | null;
   cost_usd: number | null;
 }
 function toInfo(r: RunRow): RunInfo {
@@ -86,6 +110,7 @@ function toInfo(r: RunRow): RunInfo {
     exitCode: r.exit_code,
     parentRunId: r.parent_run_id,
     projectId: r.project_id,
+    threadId: r.thread_id,
     costUsd: r.cost_usd,
   };
 }
@@ -93,10 +118,10 @@ function toInfo(r: RunRow): RunInfo {
 export function insertRun(info: RunInfo): void {
   getDb()
     .prepare(
-      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id, project_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id, project_id, thread_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId, info.projectId);
+    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId, info.projectId, info.threadId);
 }
 
 export function appendEvent(runId: string, seq: number, event: OfficeEvent): void {
@@ -117,13 +142,31 @@ export function finishRun(
     .run(info.status, info.endedAt, info.exitCode, meta.costUsd ?? null, meta.sessionId ?? null, info.id);
 }
 
-export function listRunsDb(projectId?: string | null): RunInfo[] {
+export interface RunFilter {
+  projectId?: string | null;
+  threadId?: string;
+}
+export function listRunsDb(filter: RunFilter = {}): RunInfo[] {
   const db = getDb();
   const rows =
-    projectId === undefined
-      ? db.prepare<[], RunRow>(`SELECT * FROM runs ORDER BY started_at DESC`).all()
-      : db.prepare<[string | null], RunRow>(`SELECT * FROM runs WHERE project_id IS ? ORDER BY started_at DESC`).all(projectId);
+    filter.threadId !== undefined
+      ? db.prepare<[string], RunRow>(`SELECT * FROM runs WHERE thread_id = ? ORDER BY started_at DESC`).all(filter.threadId)
+      : filter.projectId !== undefined
+        ? db.prepare<[string | null], RunRow>(`SELECT * FROM runs WHERE project_id IS ? ORDER BY started_at DESC`).all(filter.projectId)
+        : db.prepare<[], RunRow>(`SELECT * FROM runs ORDER BY started_at DESC`).all();
   return rows.map(toInfo);
+}
+
+/** 같은 스레드에서 이 에이전트가 마지막으로 남긴 CLI 세션 id — resume 용. */
+export function lastSessionId(threadId: string, agent: string): string | null {
+  const row = getDb()
+    .prepare<[string, string], { session_id: string }>(
+      `SELECT session_id FROM runs
+       WHERE thread_id = ? AND agent = ? AND session_id IS NOT NULL
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .get(threadId, agent);
+  return row?.session_id ?? null;
 }
 
 export function getRunDb(id: string): RunInfo | null {
@@ -144,6 +187,36 @@ export function deleteRunDb(id: string): void {
   const db = getDb();
   db.prepare(`DELETE FROM run_events WHERE run_id = ?`).run(id);
   db.prepare(`DELETE FROM runs WHERE id = ?`).run(id);
+}
+
+// ── threads ───────────────────────────────────────────────────────────────────
+interface ThreadRow { id: string; name: string; project_id: string | null; created_at: string }
+const toThread = (r: ThreadRow): Thread => ({ id: r.id, name: r.name, projectId: r.project_id, createdAt: r.created_at });
+
+export function listThreadsDb(projectId: string | null): Thread[] {
+  return getDb()
+    .prepare<[string | null], ThreadRow>(`SELECT * FROM threads WHERE project_id IS ? ORDER BY created_at DESC`)
+    .all(projectId)
+    .map(toThread);
+}
+
+export function getThreadDb(id: string): Thread | null {
+  const r = getDb().prepare<[string], ThreadRow>(`SELECT * FROM threads WHERE id = ?`).get(id);
+  return r ? toThread(r) : null;
+}
+
+export function insertThread(t: Thread): void {
+  getDb()
+    .prepare(`INSERT INTO threads (id, name, project_id, created_at) VALUES (?, ?, ?, ?)`)
+    .run(t.id, t.name, t.projectId, t.createdAt);
+}
+
+/** 스레드 + 그 안의 run·이벤트까지 삭제(대화 전체 정리). */
+export function deleteThreadDb(id: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM run_events WHERE run_id IN (SELECT id FROM runs WHERE thread_id = ?)`).run(id);
+  db.prepare(`DELETE FROM runs WHERE thread_id = ?`).run(id);
+  db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
 }
 
 // ── projects ──────────────────────────────────────────────────────────────────

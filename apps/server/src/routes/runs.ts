@@ -15,14 +15,17 @@ const startSchema = z.object({
   prompt: z.string().min(1),
   cwd: z.string().optional(),
   projectId: z.string().optional(),
+  threadId: z.string().optional(),
   skills: z.array(z.string()).optional(),
 });
 
-// ?projectId=<id> 로 스코프, ?projectId=none 으로 프로젝트 없는 run 만, 없으면 전체.
+// ?threadId=<id>(스레드 스코프 — Talk 의 기본) 또는 ?projectId=<id|none>, 없으면 전체.
 runsRoute.get("/", (c) => {
+  const threadId = c.req.query("threadId");
+  if (threadId !== undefined) return c.json({ runs: listRuns({ threadId }) });
   const q = c.req.query("projectId");
-  const filter = q === undefined ? undefined : q === "none" ? null : q;
-  return c.json({ runs: listRuns(filter) });
+  if (q !== undefined) return c.json({ runs: listRuns({ projectId: q === "none" ? null : q }) });
+  return c.json({ runs: listRuns() });
 });
 
 runsRoute.post("/", async (c) => {
@@ -44,6 +47,7 @@ runsRoute.get("/:id", (c) => {
 const dispatchSchema = z.object({
   prompt: z.string().min(1),
   projectId: z.string().optional(),
+  threadId: z.string().optional(),
   skills: z.array(z.string()).optional(),
 });
 runsRoute.post("/dispatch", async (c) => {

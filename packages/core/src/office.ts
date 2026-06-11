@@ -95,6 +95,15 @@ export interface Project {
   createdAt: string;
 }
 
+/** 대화 스레드 — 같은 스레드의 연속 턴은 CLI 세션을 resume 해 맥락이 이어진다.
+ *  기록이므로 data/(sqlite)에. 이름은 첫 프롬프트에서 파생. */
+export interface Thread {
+  id: string;
+  name: string;
+  projectId: string | null;
+  createdAt: string;
+}
+
 export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
 
 export interface RunInfo {
@@ -111,6 +120,8 @@ export interface RunInfo {
   parentRunId: string | null;
   /** 어느 프로젝트(작업 디렉토리)에서 돌았나. 미지정이면 null(office 홈). */
   projectId: string | null;
+  /** 어느 대화 스레드에 속하나. 스레드 안에서 세션이 이어진다. */
+  threadId: string | null;
   /** 이 run 의 비용(USD). CLI 가 보고할 때만(claude 등), 아니면 null. */
   costUsd: number | null;
 }

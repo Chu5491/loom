@@ -8,7 +8,7 @@ import path from "node:path";
 import type { AdapterConfig, McpServer, OfficeEvent, RunInfo } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { config, paths } from "../config.js";
-import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEventsDb, insertRun, listRunsDb } from "../db.js";
+import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEventsDb, getThreadDb, insertRun, lastSessionId, listRunsDb, type RunFilter } from "../db.js";
 import { logger } from "../logger.js";
 import {
   readAgents,
@@ -28,6 +28,8 @@ export interface StartRunInput {
   cwd?: string;
   /** 실행할 프로젝트(작업 디렉토리) id. 있으면 그 경로가 cwd. */
   projectId?: string | null;
+  /** 대화 스레드 id. 같은 스레드의 같은 에이전트 직전 세션을 resume 한다. */
+  threadId?: string | null;
   /** 하네스 자동발화로 만든 자식이면 부모 run id. 사용자 시작이면 생략. */
   parentRunId?: string | null;
   /** 이 run 에만 추가로 실을 스킬 이름들 — 사용자가 컴포저에서 명시적으로 첨부.
@@ -60,8 +62,8 @@ const runs = new Map<string, RunState>();
 export function getRun(id: string): RunInfo | null {
   return runs.get(id)?.info ?? getRunDb(id);
 }
-export function listRuns(projectId?: string | null): RunInfo[] {
-  return listRunsDb(projectId);
+export function listRuns(filter?: RunFilter): RunInfo[] {
+  return listRunsDb(filter);
 }
 
 export function subscribe(id: string, fn: Listener): { replay: OfficeEvent[]; done: RunInfo | null; off: () => void } | null {
@@ -123,6 +125,13 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   if (input.projectId && !project) return { ok: false, status: 404, error: "project_not_found" };
   const cwd = project?.path ?? input.cwd ?? config.home;
 
+  if (input.threadId && !getThreadDb(input.threadId)) {
+    return { ok: false, status: 404, error: "thread_not_found" };
+  }
+  // 대화 연속성 — 같은 스레드에서 이 에이전트의 직전 CLI 세션을 resume.
+  // 어댑터가 resume 을 모르면 조용히 무시된다(adapter-utils 의 opt-in 설계).
+  const resumeSessionId = input.threadId ? lastSessionId(input.threadId, agent.name) : null;
+
   // office 에서 이 에이전트가 끌어올 rules·skills·mcp 만 추린다.
   const allRules = readRules();
   const allSkills = readSkills();
@@ -147,6 +156,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     exitCode: null,
     parentRunId: input.parentRunId ?? null,
     projectId: input.projectId ?? null,
+    threadId: input.threadId ?? null,
     costUsd: null,
   };
   fs.mkdirSync(paths.logs, { recursive: true });
@@ -181,7 +191,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     ...(cfg.env ? { env: resolveRefs(cfg.env as Record<string, string>) } : {}),
   };
 
-  void run(state, adapter, adapterConfig, prompt, mcp, loadout, cwd);
+  void run(state, adapter, adapterConfig, prompt, mcp, loadout, cwd, resumeSessionId);
   return { ok: true, run: info };
 }
 
@@ -221,9 +231,10 @@ async function run(
   mcp: McpServer[],
   loadout: { dir: string; mcpConfigPath: string | null },
   cwd: string,
+  resumeSessionId: string | null,
 ): Promise<void> {
   const log = logger.child({ runId: state.info.id, agent: state.info.agent });
-  log.info({ cwd }, "run start");
+  log.info({ cwd, resume: !!resumeSessionId }, "run start");
   try {
     const handle = await adapter.spawn(
       {
@@ -234,6 +245,7 @@ async function run(
         loadoutDir: loadout.dir,
         mcpConfigPath: loadout.mcpConfigPath ?? undefined,
         mcpServers: mcp,
+        resumeSessionId: resumeSessionId ?? undefined,
         onStdout: (c) => consume(state, c),
         onStderr: (c) => fs.writeSync(state.rawFd, c),
       },
@@ -326,7 +338,7 @@ export async function fireManualHandoff(runId: string, to: string): Promise<Star
     fromRunId: run.id,
     resultText: last?.text ?? null,
   });
-  return startRun({ agent: to, prompt, parentRunId: run.id, projectId: run.projectId });
+  return startRun({ agent: to, prompt, parentRunId: run.id, projectId: run.projectId, threadId: run.threadId });
 }
 
 function spawnHarnessChildren(state: RunState, fired: import("@loom/core").HarnessEdge[]): void {
@@ -344,7 +356,7 @@ function spawnHarnessChildren(state: RunState, fired: import("@loom/core").Harne
       fromRunId: state.info.id,
       resultText,
     });
-    void startRun({ agent: edge.to, prompt, parentRunId: state.info.id, projectId: state.info.projectId })
+    void startRun({ agent: edge.to, prompt, parentRunId: state.info.id, projectId: state.info.projectId, threadId: state.info.threadId })
       .then((r) => {
         if (!r.ok) log.warn({ to: edge.to, error: r.error }, "harness child did not start");
       })
