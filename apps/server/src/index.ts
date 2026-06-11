@@ -11,6 +11,7 @@ import { adaptersRoute } from "./routes/adapters.js";
 import { healthRoute } from "./routes/health.js";
 import { officeRoute } from "./routes/office.js";
 import { fsRoute } from "./routes/fs.js";
+import { projectFilesRoute } from "./routes/project-files.js";
 import { projectsRoute } from "./routes/projects.js";
 import { runsRoute } from "./routes/runs.js";
 import { threadsRoute } from "./routes/threads.js";
@@ -24,6 +25,7 @@ app.route("/api/adapters", adaptersRoute);
 app.route("/api/office", officeRoute);
 app.route("/api/fs", fsRoute);
 app.route("/api/projects", projectsRoute);
+app.route("/api/projects", projectFilesRoute);
 app.route("/api/threads", threadsRoute);
 app.route("/api/runs", runsRoute);
 

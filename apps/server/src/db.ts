@@ -189,6 +189,38 @@ export function deleteRunDb(id: string): void {
   db.prepare(`DELETE FROM runs WHERE id = ?`).run(id);
 }
 
+/** 에이전트 파일 활동 — 이 프로젝트에서 file 이벤트를 남긴 run 들의 요약(최신순). */
+export interface AgentFileActivity {
+  runId: string;
+  agent: string;
+  startedAt: string;
+  files: { path: string; action: "edit" | "write" }[];
+}
+export function listAgentFileActivity(projectId: string): AgentFileActivity[] {
+  const rows = getDb()
+    .prepare<[string], { id: string; agent: string; started_at: string; event: string }>(
+      `SELECT r.id, r.agent, r.started_at, e.event
+       FROM runs r JOIN run_events e ON e.run_id = r.id
+       WHERE r.project_id = ? AND e.event LIKE '%"kind":"file"%'
+       ORDER BY r.started_at DESC, e.seq ASC LIMIT 500`,
+    )
+    .all(projectId);
+  const byRun = new Map<string, AgentFileActivity>();
+  for (const r of rows) {
+    const ev = JSON.parse(r.event) as OfficeEvent;
+    if (ev.kind !== "file") continue;
+    let entry = byRun.get(r.id);
+    if (!entry) {
+      entry = { runId: r.id, agent: r.agent, startedAt: r.started_at, files: [] };
+      byRun.set(r.id, entry);
+    }
+    if (!entry.files.some((f) => f.path === ev.path && f.action === ev.action)) {
+      entry.files.push({ path: ev.path, action: ev.action });
+    }
+  }
+  return [...byRun.values()];
+}
+
 // ── threads ───────────────────────────────────────────────────────────────────
 interface ThreadRow { id: string; name: string; project_id: string | null; created_at: string }
 const toThread = (r: ThreadRow): Thread => ({ id: r.id, name: r.name, projectId: r.project_id, createdAt: r.created_at });

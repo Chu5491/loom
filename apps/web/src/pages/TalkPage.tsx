@@ -7,11 +7,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp, Bot, ChevronDown, ChevronLeft, ChevronRight, FilePen, FilePlus2, FileSearch, FileText,
-  FolderGit2, Globe, MessageSquarePlus, Pencil, Plug, Sparkles, Terminal, Trash2, Workflow, Wrench, X, Zap,
+  FolderGit2, FolderOpen, GitBranch, Globe, MessagesSquare, MessageSquarePlus, Pencil, Plug, Sparkles,
+  Terminal, Trash2, Workflow, Wrench, X, Zap,
 } from "lucide-react";
 import type { AgentSpec, HarnessEdge, OfficeEvent, Project, RunInfo, SkillSpec, Thread } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
+import { FilesView } from "../components/FilesView.js";
+import { GitView } from "../components/GitView.js";
 import { Markdown } from "../components/Markdown.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
@@ -23,6 +26,9 @@ type Msg = UserMsg | AgentMsg;
 
 /** 대상 칩의 "자동" 모드 — 서버 디스패치가 적합 에이전트를 고른다. */
 const AUTO = "__auto";
+
+/** 워크스페이스 내부 뷰 — 대화 / 파일(Monaco) / Git(diff·commit·에이전트 활동). */
+type WsView = "talk" | "files" | "git";
 
 export function TalkPage({ project, onBack }: { project: Project; onBack: () => void }) {
   const { t } = useI18n();
@@ -57,6 +63,7 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
   const [pending, setPending] = useState<{ agent: string; text: string } | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const [view, setView] = useState<WsView>("talk");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 라이브 활동 집계 — 각 버블(run)이 보고하는 "지금 하는 일"을 팀 패널에 흘린다.
@@ -163,6 +170,8 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
       {/* 프로젝트 사이드바 — "이 프로젝트에 들어와 있다"는 공간의 축 (lg+) */}
       <ProjectSidebar
         project={project}
+        view={view}
+        onView={setView}
         threads={threads.data.threads}
         threadId={threadId}
         onSelect={setThreadId}
@@ -177,6 +186,12 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
         }}
       />
 
+      {view === "files" ? (
+        <FilesView project={project} />
+      ) : view === "git" ? (
+        <GitView project={project} />
+      ) : (
+        <>
       {/* 채팅 컬럼 */}
       <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
         {/* 스레드 바(모바일 폴백) — lg 이상에선 사이드바가 대신한다. */}
@@ -295,6 +310,8 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
         active={active}
         onActive={setActive}
       />
+        </>
+      )}
     </div>
   );
 }
@@ -338,6 +355,8 @@ function Welcome({ activeAgent }: { activeAgent?: AgentSpec }) {
 // ── 프로젝트 사이드바 — 정체성 블록 + 대화 목록. "이 공간에서 일한다"의 축 ────────
 function ProjectSidebar({
   project,
+  view,
+  onView,
   threads,
   threadId,
   onSelect,
@@ -346,6 +365,8 @@ function ProjectSidebar({
   onDelete,
 }: {
   project: Project;
+  view: WsView;
+  onView: (v: WsView) => void;
   threads: Thread[];
   threadId: string | null;
   onSelect: (id: string | null) => void;
@@ -355,6 +376,12 @@ function ProjectSidebar({
 }) {
   const { t } = useI18n();
   const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  const views: { key: WsView; label: string; icon: React.ReactNode }[] = [
+    { key: "talk", label: t("ws.talk"), icon: <MessagesSquare className="size-4" /> },
+    { key: "files", label: t("ws.files"), icon: <FolderOpen className="size-4" /> },
+    { key: "git", label: t("ws.git"), icon: <GitBranch className="size-4" /> },
+  ];
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-5 pr-4 lg:flex">
@@ -377,6 +404,28 @@ function ProjectSidebar({
         {t("nav.backHome")}
       </button>
 
+      {/* 워크스페이스 뷰 — 대화 / 파일 / Git */}
+      <nav className="mt-4 space-y-0.5">
+        {views.map((v) => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => onView(v.key)}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-all",
+              view === v.key
+                ? "bg-primary/15 font-medium text-foreground shadow-[var(--shadow-glow-sm)]"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            <span className={cn(view === v.key && "text-primary")}>{v.icon}</span>
+            {v.label}
+          </button>
+        ))}
+      </nav>
+
+      {view !== "talk" ? null : (
+        <>
       {/* 대화 목록 */}
       <div className="mt-5 flex items-center justify-between">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.sidebar.threads")}</h3>
@@ -451,6 +500,8 @@ function ProjectSidebar({
           ),
         )}
       </div>
+        </>
+      )}
     </aside>
   );
 }

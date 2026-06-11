@@ -139,6 +139,35 @@ export const api = {
       `/api/fs/dirs${path ? `?path=${encodeURIComponent(path)}` : ""}`,
     ),
 
+  // ── 프로젝트 파일·Git (워크스페이스 파일/Git 뷰) ─────────────────────────
+  projectTree: (id: string, path = ".") =>
+    request<{ dirs: { name: string; path: string }[]; files: { name: string; path: string }[] }>(
+      `/api/projects/${id}/tree?path=${encodeURIComponent(path)}`,
+    ),
+  projectFile: (id: string, path: string) =>
+    request<{ content: string }>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
+  gitStatus: (id: string) =>
+    request<{ git: boolean; branch: string | null; files: { staged: boolean; status: string; path: string }[] }>(
+      `/api/projects/${id}/git/status`,
+    ),
+  gitVersions: (id: string, path: string) =>
+    request<{ head: string | null; working: string | null }>(
+      `/api/projects/${id}/git/versions?path=${encodeURIComponent(path)}`,
+    ),
+  gitStage: (id: string, paths: string[]) =>
+    request<{ ok: boolean }>(`/api/projects/${id}/git/stage`, { method: "POST", body: JSON.stringify({ paths }) }),
+  gitUnstage: (id: string, paths: string[]) =>
+    request<{ ok: boolean }>(`/api/projects/${id}/git/unstage`, { method: "POST", body: JSON.stringify({ paths }) }),
+  gitCommit: (id: string, message: string) =>
+    request<{ ok: boolean; output: string }>(`/api/projects/${id}/git/commit`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+  agentActivity: (id: string) =>
+    request<{ activity: { runId: string; agent: string; startedAt: string; files: { path: string; action: "edit" | "write" }[] }[] }>(
+      `/api/projects/${id}/agent-activity`,
+    ),
+
   /** Talk 컴포저 @file 멘션 — 프로젝트 디렉토리 파일 검색(상대경로 최대 20개). */
   searchProjectFiles: (projectId: string, q: string) =>
     request<{ files: string[] }>(`/api/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
