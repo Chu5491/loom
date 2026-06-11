@@ -8,8 +8,25 @@ const en = {
   "app.tagline": "Your CLI agents, one office.",
 
   "nav.talk": "Talk",
+  "nav.home": "Home",
+  "nav.backHome": "Back to projects",
   "nav.connections": "Connections",
   "nav.office": "Office",
+
+  "home.title": "Projects",
+  "home.subtitle": "Your team works inside a project. Pick one, or register a local folder.",
+  "home.add": "Add project",
+  "home.emptyTitle": "No projects yet",
+  "home.emptySub": "Register a local folder — your agents will run inside it.",
+  "home.threads": "{n} conversations",
+  "home.unregister": "Unregister",
+  "home.repick": "Change",
+
+  "picker.select": "Use this folder",
+  "picker.up": "Up one level",
+  "picker.homeDir": "Home directory",
+  "picker.empty": "No subfolders here.",
+  "picker.hint": "Click a folder to enter it, then \"Use this folder\".",
 
   "project.home": "Office home",
   "project.add": "Add a project",
@@ -171,8 +188,25 @@ const ko: Dictionary = {
   "app.tagline": "내 CLI 에이전트들을 한 오피스에.",
 
   "nav.talk": "대화",
+  "nav.home": "홈",
+  "nav.backHome": "프로젝트 목록으로",
   "nav.connections": "연결",
   "nav.office": "오피스",
+
+  "home.title": "프로젝트",
+  "home.subtitle": "팀은 프로젝트 안에서 일해요. 하나를 고르거나 로컬 폴더를 등록하세요.",
+  "home.add": "프로젝트 추가",
+  "home.emptyTitle": "아직 프로젝트가 없어요",
+  "home.emptySub": "로컬 폴더를 등록하면 에이전트가 그 안에서 작업해요.",
+  "home.threads": "대화 {n}개",
+  "home.unregister": "등록 해제",
+  "home.repick": "변경",
+
+  "picker.select": "이 폴더 사용",
+  "picker.up": "상위 폴더",
+  "picker.homeDir": "홈 디렉토리",
+  "picker.empty": "하위 폴더가 없어요.",
+  "picker.hint": "폴더를 클릭해 들어가고, \"이 폴더 사용\"으로 지정하세요.",
 
   "project.home": "오피스 홈",
   "project.add": "프로젝트 추가",

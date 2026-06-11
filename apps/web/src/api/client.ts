@@ -133,6 +133,12 @@ export const api = {
   deleteProject: (id: string) =>
     request<{ ok: boolean }>(`/api/projects/${id}`, { method: "DELETE" }),
 
+  /** 폴더 피커 — 로컬 디렉토리 탐색(디렉토리만, 숨김 제외). path 없으면 홈. */
+  listDirs: (path?: string) =>
+    request<{ path: string; parent: string | null; home: string; dirs: { name: string; path: string }[] }>(
+      `/api/fs/dirs${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+    ),
+
   /** Talk 컴포저 @file 멘션 — 프로젝트 디렉토리 파일 검색(상대경로 최대 20개). */
   searchProjectFiles: (projectId: string, q: string) =>
     request<{ files: string[] }>(`/api/projects/${projectId}/files?q=${encodeURIComponent(q)}`),

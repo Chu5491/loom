@@ -224,7 +224,17 @@ interface ProjectRow { id: string; name: string; path: string; created_at: strin
 const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, path: r.path, createdAt: r.created_at });
 
 export function listProjectsDb(): Project[] {
-  return getDb().prepare<[], ProjectRow>(`SELECT * FROM projects ORDER BY created_at ASC`).all().map(toProject);
+  // 대시보드용 통계 동봉 — 최근 활동 순(활동 없는 프로젝트는 뒤로).
+  return getDb()
+    .prepare<[], ProjectRow & { thread_count: number; last_run_at: string | null }>(
+      `SELECT p.*,
+         (SELECT COUNT(*) FROM threads t WHERE t.project_id = p.id) AS thread_count,
+         (SELECT MAX(r.started_at) FROM runs r WHERE r.project_id = p.id) AS last_run_at
+       FROM projects p
+       ORDER BY last_run_at IS NULL, last_run_at DESC, p.created_at DESC`,
+    )
+    .all()
+    .map((r) => ({ ...toProject(r), threadCount: r.thread_count, lastRunAt: r.last_run_at }));
 }
 
 export function getProjectDb(id: string): Project | null {

@@ -93,6 +93,9 @@ export interface Project {
   name: string;
   path: string;
   createdAt: string;
+  /** 대시보드 통계 — 목록 API 가 채워줌(단건/생성 응답엔 없을 수 있음). */
+  threadCount?: number;
+  lastRunAt?: string | null;
 }
 
 /** 대화 스레드 — 같은 스레드의 연속 턴은 CLI 세션을 resume 해 맥락이 이어진다.
