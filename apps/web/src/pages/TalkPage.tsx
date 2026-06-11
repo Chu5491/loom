@@ -3,7 +3,7 @@
 // @ 멘션 하나로 에이전트(라우팅)·스킬(이 run 에 첨부)·프로젝트 파일(경로 삽입)을 찾는다.
 // 자동주입 없음 — 스킬 첨부는 사용자의 명시적 선택, 파일은 텍스트로 경로만 들어간다.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp, Bot, ChevronDown, ChevronRight, FilePen, FilePlus2, FileSearch, FileText, Globe,
@@ -58,6 +58,20 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
   const [renaming, setRenaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // 라이브 활동 집계 — 각 버블(run)이 보고하는 "지금 하는 일"을 팀 패널에 흘린다.
+  const [activities, setActivities] = useState<Record<string, { agent: string; item: TraceItem | null }>>({});
+  const reportActivity = useCallback((runId: string, agent: string, item: TraceItem | null, running: boolean) => {
+    setActivities((prev) => {
+      if (!running) {
+        if (!(runId in prev)) return prev;
+        const next = { ...prev };
+        delete next[runId];
+        return next;
+      }
+      return { ...prev, [runId]: { agent, item } };
+    });
+  }, []);
+
   // 첫 에이전트를 기본 대상으로.
   useEffect(() => {
     if (!active && agents.length) setActive(agents[0]!.name);
@@ -85,6 +99,19 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, pending]);
+
+  // 스트리밍으로 버블이 자라는 동안에도 바닥을 따라간다(메시지 수 변화 없이 높이만
+  // 변하는 경우). 사용자가 위로 한참 스크롤했으면(>200px) 강제하지 않는다.
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = el?.firstElementChild;
+    if (!el || !content) return;
+    const ro = new ResizeObserver(() => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [threadId]);
 
   async function send(rawText: string, skills: string[]) {
     const text = rawText.trim();
@@ -209,16 +236,20 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
                 msg.role === "user" ? (
                   <UserBubble key={msg.id} text={msg.text} />
                 ) : (
-                  <AgentBubble
-                    key={msg.id}
-                    agent={agents.find((a) => a.name === msg.agent)}
-                    fromAgent={msg.fromAgent}
-                    runId={msg.runId}
-                    startedAt={msg.startedAt}
-                    edges={office.data.office.edges}
-                    isLast={i === messages.length - 1}
-                    onDone={() => void runs.refetch()}
-                  />
+                  <div key={msg.id}>
+                    {/* 에이전트 간 핸드오프 커넥터 — 누가 누구에게 넘겼는지 한눈에 */}
+                    {msg.fromAgent ? <HandoffDivider from={msg.fromAgent} to={msg.agent} /> : null}
+                    <AgentBubble
+                      agent={agents.find((a) => a.name === msg.agent)}
+                      fromAgent={msg.fromAgent}
+                      runId={msg.runId}
+                      startedAt={msg.startedAt}
+                      edges={office.data.office.edges}
+                      isLast={i === messages.length - 1}
+                      onDone={() => void runs.refetch()}
+                      onActivity={reportActivity}
+                    />
+                  </div>
                 ),
               )}
               {pending ? <UserBubble key="pending" text={pending.text} /> : null}
@@ -242,6 +273,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
         agents={agents}
         edges={office.data.office.edges}
         runs={runs.data?.runs ?? []}
+        activities={activities}
         active={active}
         onActive={setActive}
       />
@@ -290,12 +322,14 @@ function TeamPanel({
   agents,
   edges,
   runs,
+  activities,
   active,
   onActive,
 }: {
   agents: AgentSpec[];
   edges: HarnessEdge[];
   runs: RunInfo[];
+  activities: Record<string, { agent: string; item: TraceItem | null }>;
   active: string;
   onActive: (name: string) => void;
 }) {
@@ -305,6 +339,20 @@ function TeamPanel({
     [runs],
   );
   const totalCost = useMemo(() => runs.reduce((sum, r) => sum + (r.costUsd ?? 0), 0), [runs]);
+  // 에이전트별 라이브 활동(여러 run 이면 아무거나 최신) — 카드에 "지금 하는 일" 표시.
+  const liveByAgent = useMemo(() => {
+    const m = new Map<string, TraceItem | null>();
+    for (const a of Object.values(activities)) m.set(a.agent, a.item);
+    return m;
+  }, [activities]);
+  // 지금 일어나고 있는 핸드오프 — running 자식 run 의 부모 에이전트 → 자식 에이전트.
+  const liveHandoffs = useMemo(() => {
+    const byId = new Map(runs.map((r) => [r.id, r]));
+    return runs
+      .filter((r) => r.status === "running" && r.parentRunId)
+      .map((r) => ({ from: byId.get(r.parentRunId!)?.agent, to: r.agent }))
+      .filter((h): h is { from: string; to: string } => !!h.from);
+  }, [runs]);
 
   return (
     <aside className="hidden w-60 shrink-0 overflow-y-auto py-6 xl:block">
@@ -313,31 +361,55 @@ function TeamPanel({
         {agents.map((a) => {
           const working = workingAgents.has(a.name);
           const on = a.name === active;
+          const act = liveByAgent.get(a.name);
+          const ActIcon = act ? traceIcon(act) : null;
           return (
             <button
               key={a.name}
               type="button"
               onClick={() => onActive(a.name)}
               className={cn(
-                "flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors",
+                "flex w-full flex-col gap-1 rounded-xl border px-2.5 py-2 text-left transition-all",
                 on ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-muted/50",
+                working && "border-primary/30 shadow-[var(--shadow-glow-sm)]",
               )}
             >
-              <Avatar agent={a} size={28} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{a.label || a.name}</span>
-                <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+              <span className="flex w-full items-center gap-2.5">
+                <Avatar agent={a} size={28} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{a.label || a.name}</span>
+                  <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+                </span>
+                {working ? (
+                  <span className="flex items-center gap-1 text-[10px] font-medium text-primary">
+                    <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                    {t("talk.team.working")}
+                  </span>
+                ) : null}
               </span>
-              {working ? (
-                <span className="flex items-center gap-1 text-[10px] font-medium text-primary">
-                  <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-                  {t("talk.team.working")}
+              {/* 라이브 — 지금 어떤 도구로 뭘 하는지 */}
+              {working && act && ActIcon ? (
+                <span className="flex w-full items-center gap-1 rounded-md bg-primary/5 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <ActIcon className="size-2.5 shrink-0 text-primary" />
+                  <span className="shrink-0">{act.name}</span>
+                  {act.target ? <span className="truncate font-mono opacity-75">{act.target.split("/").pop()}</span> : null}
                 </span>
               ) : null}
             </button>
           );
         })}
       </div>
+
+      {/* 진행 중인 핸드오프 — 에이전트끼리 일을 넘기는 순간 */}
+      {liveHandoffs.map((h, i) => (
+        <div key={i} className="mt-2 flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-xs shadow-[var(--shadow-glow-sm)]">
+          <Workflow className="size-3.5 shrink-0 animate-pulse text-primary" />
+          <span className="font-medium">@{h.from}</span>
+          <span className="text-primary">→</span>
+          <span className="font-medium">@{h.to}</span>
+          <span className="ml-auto text-[10px] text-muted-foreground">{t("talk.team.handing")}</span>
+        </div>
+      ))}
 
       {edges.length > 0 ? (
         <>
@@ -371,6 +443,22 @@ function TeamPanel({
   );
 }
 
+// 핸드오프 커넥터 — 버블 사이에 "누가 → 누구" 흐름을 그린다.
+function HandoffDivider({ from, to }: { from: string; to: string }) {
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <span className="h-px flex-1 bg-gradient-to-r from-transparent to-primary/40" />
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+        <Workflow className="size-3 text-primary" />
+        <span className="font-medium text-foreground">@{from}</span>
+        <span className="text-primary">→</span>
+        <span className="font-medium text-foreground">@{to}</span>
+      </span>
+      <span className="h-px flex-1 bg-gradient-to-l from-transparent to-primary/40" />
+    </div>
+  );
+}
+
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
@@ -382,7 +470,7 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
-function AgentBubble({ agent, fromAgent, runId, startedAt, edges, isLast, onDone }: { agent?: AgentSpec; fromAgent?: string; runId: string; startedAt?: string; edges: HarnessEdge[]; isLast?: boolean; onDone?: () => void }) {
+function AgentBubble({ agent, fromAgent, runId, startedAt, edges, isLast, onDone, onActivity }: { agent?: AgentSpec; fromAgent?: string; runId: string; startedAt?: string; edges: HarnessEdge[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void }) {
   const { t } = useI18n();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
@@ -397,6 +485,14 @@ function AgentBubble({ agent, fromAgent, runId, startedAt, edges, isLast, onDone
     if (!isStartError && stream.status !== "running") onDone?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.status, isStartError]);
+
+  // 라이브 활동을 팀 패널로 — 지금 어떤 도구로 뭘 하는지. 끝나면 거둔다.
+  useEffect(() => {
+    if (isStartError || !agent || !onActivity) return;
+    const last = [...view.trace].reverse().find((it) => it.kind !== "handoff") ?? null;
+    onActivity(runId, agent.name, last, running);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.trace.length, running]);
 
   // 수동 발화 제안 — 자동발화로 이미 자식이 생긴 핸드오프(view.trace 의 →)는 제외.
   const autoFired = useMemo(

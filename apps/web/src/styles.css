@@ -182,6 +182,12 @@ body {
 }
 
 /* 슬림 스크롤바 — 패널에 녹아드는 얇은 thumb. */
+/* 페이지마다 스크롤바가 생겼다 사라지며 가운데 정렬이 흔들리는 것 방지 —
+   스크롤바 자리를 항상 확보해 헤더/본문이 픽셀 단위로 고정된다. */
+html {
+  scrollbar-gutter: stable;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--muted-foreground) transparent;

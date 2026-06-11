@@ -22,7 +22,7 @@ export function HomePage({ onOpen }: { onOpen: (projectId: string) => void }) {
   const list = projects.data?.projects ?? [];
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <header className="flex items-end justify-between">
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">{t("home.title")}</h1>

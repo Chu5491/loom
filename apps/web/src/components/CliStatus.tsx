@@ -25,6 +25,11 @@ export function CliStatus({ onOpenConnections }: { onOpenConnections: () => void
     return p?.binary?.available && p.auth?.state === "authenticated";
   });
 
+  // 로딩 중에도 같은 높이의 자리를 잡아 헤더가 출렁이지 않게.
+  const loading = adapters.isLoading || probes.some((p) => p.isLoading);
+  if (loading) {
+    return <span className="hidden h-7 w-28 animate-pulse rounded-md border border-border bg-muted/40 sm:block" />;
+  }
   if (ready.length === 0) return null;
 
   return (
