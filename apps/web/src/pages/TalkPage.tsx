@@ -5,7 +5,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, Bot, FileText, MessageSquarePlus, Sparkles, Trash2, Workflow, X, Zap } from "lucide-react";
+import {
+  ArrowUp, Bot, ChevronDown, ChevronRight, FilePen, FilePlus2, FileSearch, FileText, Globe,
+  MessageSquarePlus, Pencil, Plug, Sparkles, Terminal, Trash2, Workflow, Wrench, X, Zap,
+} from "lucide-react";
 import type { AgentSpec, HarnessEdge, OfficeEvent, RunInfo, SkillSpec } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
@@ -15,7 +18,7 @@ import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
 
 interface UserMsg { id: string; role: "user"; agent: string; text: string }
-interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string }
+interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string; startedAt?: string }
 type Msg = UserMsg | AgentMsg;
 
 /** 대상 칩의 "자동" 모드 — 서버 디스패치가 적합 에이전트를 고른다. */
@@ -52,6 +55,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
   const [active, setActive] = useState<string>("");
   const [pending, setPending] = useState<{ agent: string; text: string } | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 첫 에이전트를 기본 대상으로.
@@ -69,10 +73,10 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
         .sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1))
         .flatMap((r): Msg[] =>
           r.parentRunId
-            ? [{ id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id, fromAgent: byId.get(r.parentRunId)?.agent }]
+            ? [{ id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id, fromAgent: byId.get(r.parentRunId)?.agent, startedAt: r.startedAt }]
             : [
                 { id: `u-${r.id}`, role: "user", agent: r.agent, text: r.prompt },
-                { id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id },
+                { id: `a-${r.id}`, role: "agent", agent: r.agent, runId: r.id, startedAt: r.startedAt },
               ],
         ),
     [runs.data, byId],
@@ -130,18 +134,50 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
     <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-6xl gap-6 px-4 sm:px-6">
       {/* 채팅 컬럼 */}
       <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
-        {/* 스레드 바 — 대화 전환·새 대화·삭제. 같은 스레드 안에서 세션이 이어진다. */}
+        {/* 스레드 바 — 대화 전환·이름변경·새 대화·삭제. 같은 스레드 안에서 세션이 이어진다. */}
         <div className="flex items-center gap-2 border-b border-border/60 py-2">
-          <select
-            className="h-8 min-w-0 flex-1 truncate rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72"
-            value={threadId ?? ""}
-            onChange={(e) => setThreadId(e.target.value || null)}
-          >
-            <option value="">{t("talk.thread.new")}</option>
-            {threads.data.threads.map((th) => (
-              <option key={th.id} value={th.id}>{th.name}</option>
-            ))}
-          </select>
+          {renaming && threadId ? (
+            <input
+              className="h-8 min-w-0 flex-1 rounded-md border border-primary/50 bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72"
+              defaultValue={threads.data.threads.find((th) => th.id === threadId)?.name ?? ""}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === "Escape") setRenaming(false);
+                if (e.key === "Enter") {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  if (v) void api.renameThread(threadId, v).then(() => threads.refetch());
+                  setRenaming(false);
+                }
+              }}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v) void api.renameThread(threadId, v).then(() => threads.refetch());
+                setRenaming(false);
+              }}
+            />
+          ) : (
+            <select
+              className="h-8 min-w-0 flex-1 truncate rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72"
+              value={threadId ?? ""}
+              onChange={(e) => setThreadId(e.target.value || null)}
+            >
+              <option value="">{t("talk.thread.new")}</option>
+              {threads.data.threads.map((th) => (
+                <option key={th.id} value={th.id}>{th.name}</option>
+              ))}
+            </select>
+          )}
+          {threadId ? (
+            <button
+              type="button"
+              title={t("talk.thread.rename")}
+              onClick={() => setRenaming(true)}
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              <Pencil className="size-4" />
+            </button>
+          ) : null}
           <button
             type="button"
             title={t("talk.thread.new")}
@@ -178,6 +214,7 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
                     agent={agents.find((a) => a.name === msg.agent)}
                     fromAgent={msg.fromAgent}
                     runId={msg.runId}
+                    startedAt={msg.startedAt}
                     edges={office.data.office.edges}
                     isLast={i === messages.length - 1}
                     onDone={() => void runs.refetch()}
@@ -345,7 +382,7 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
-function AgentBubble({ agent, fromAgent, runId, edges, isLast, onDone }: { agent?: AgentSpec; fromAgent?: string; runId: string; edges: HarnessEdge[]; isLast?: boolean; onDone?: () => void }) {
+function AgentBubble({ agent, fromAgent, runId, startedAt, edges, isLast, onDone }: { agent?: AgentSpec; fromAgent?: string; runId: string; startedAt?: string; edges: HarnessEdge[]; isLast?: boolean; onDone?: () => void }) {
   const { t } = useI18n();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
@@ -417,16 +454,11 @@ function AgentBubble({ agent, fromAgent, runId, edges, isLast, onDone }: { agent
           )}
         </div>
 
-        {/* 도구·파일·핸드오프 트레이스 */}
-        {view.trace.length > 0 ? (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {view.trace.map((tr, i) => (
-              <span key={i} className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                {tr}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {/* 실행 중 — 현재 작업 + 경과 시간 */}
+        {running ? <WorkingLine trace={view.trace} startedAt={startedAt} /> : null}
+
+        {/* 작업 타임라인 — 도구·파일·핸드오프를 순서대로 */}
+        <TraceTimeline items={view.trace} running={running} />
 
         {/* 본문 텍스트 */}
         {isStartError ? (
@@ -485,32 +517,148 @@ function ErrorLine({ text }: { text: string }) {
   );
 }
 
+interface TraceItem {
+  kind: "tool" | "file" | "handoff";
+  name: string; // 도구명 / 파일 action / 대상 에이전트
+  target?: string;
+  action?: "edit" | "write";
+}
 interface DerivedView {
-  trace: string[];
+  trace: TraceItem[];
   body: string;
   result?: Extract<OfficeEvent, { kind: "result" }>;
   errors: string[];
   changedFiles: number;
 }
 function deriveView(events: OfficeEvent[]): DerivedView {
-  const trace: string[] = [];
+  const trace: TraceItem[] = [];
   const texts: string[] = [];
   const errors: string[] = [];
   let result: Extract<OfficeEvent, { kind: "result" }> | undefined;
   let changedFiles = 0;
   for (const e of events) {
     if (e.kind === "text") texts.push(e.text);
-    else if (e.kind === "tool") trace.push(`⚙ ${e.name}${e.target ? ` ${e.target}` : ""}`);
+    else if (e.kind === "tool") trace.push({ kind: "tool", name: e.name, target: e.target });
     else if (e.kind === "file") {
-      trace.push(`${e.action === "edit" ? "✎" : "+"} ${e.path}`);
+      trace.push({ kind: "file", name: e.action === "edit" ? "Edit" : "Write", target: e.path, action: e.action });
       changedFiles++;
-    } else if (e.kind === "handoff") trace.push(`→ @${e.toAgent}`);
+    } else if (e.kind === "handoff") trace.push({ kind: "handoff", name: `@${e.toAgent}` });
     else if (e.kind === "result") result = e;
     else if (e.kind === "error") errors.push(e.message);
   }
   // result 가 오면 그게 최종 전체 텍스트 — 누적 text 보다 우선.
   const body = result?.text ?? texts.join("");
   return { trace, body, result, errors, changedFiles };
+}
+
+// 도구 이름 → 아이콘. CLI마다 이름이 달라 휴리스틱 매칭(모르면 렌치).
+function traceIcon(it: TraceItem) {
+  if (it.kind === "handoff") return Workflow;
+  if (it.kind === "file") return it.action === "edit" ? FilePen : FilePlus2;
+  const n = it.name.toLowerCase();
+  if (n.startsWith("mcp__")) return Plug;
+  if (/(^|_)(read|glob|grep|search|ls|cat)/.test(n)) return FileSearch;
+  if (/(edit|write|notebook|apply)/.test(n)) return Pencil;
+  if (/(bash|shell|terminal|exec|command)/.test(n)) return Terminal;
+  if (/(web|fetch|http|browser)/.test(n)) return Globe;
+  if (/(task|agent|subagent)/.test(n)) return Bot;
+  return Wrench;
+}
+
+// ── 작업 타임라인 — 에이전트가 지금 뭘 하는지 눈으로 따라간다 ───────────────────
+// running: 라이브 스트림(최근 8개 + 마지막 항목 펄스). done: "도구 N · 파일 M" 요약으로
+// 접히고 클릭하면 전체 기록 펼침.
+function TraceTimeline({ items, running }: { items: TraceItem[]; running: boolean }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+
+  const tools = items.filter((i) => i.kind === "tool").length;
+  const files = items.filter((i) => i.kind === "file").length;
+
+  if (!running && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+      >
+        <ChevronRight className="size-3" />
+        <Wrench className="size-3" />
+        {t("talk.trace.summary", { tools: String(tools), files: String(files) })}
+      </button>
+    );
+  }
+
+  const visible = running ? items.slice(-8) : items;
+  const hidden = items.length - visible.length;
+
+  return (
+    <div className="mb-2">
+      {!running ? (
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="mb-1 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronDown className="size-3" />
+          {t("talk.trace.summary", { tools: String(tools), files: String(files) })}
+        </button>
+      ) : null}
+      <div className="space-y-1 border-l-2 border-primary/25 pl-3">
+        {hidden > 0 ? <p className="text-[10px] text-muted-foreground/60">… +{hidden}</p> : null}
+        {visible.map((it, i) => {
+          const Icon = traceIcon(it);
+          const isLive = running && i === visible.length - 1;
+          return (
+            <div
+              key={`${items.length - visible.length + i}`}
+              className={cn(
+                "flex items-center gap-1.5 text-[11px]",
+                isLive ? "text-foreground" : "text-muted-foreground",
+                it.kind === "file" && "text-warning",
+              )}
+            >
+              <Icon className={cn("size-3 shrink-0", isLive && "text-primary")} />
+              <span className="shrink-0 font-medium">{it.name}</span>
+              {it.target ? <span className="truncate font-mono text-[10px] opacity-80">{it.target}</span> : null}
+              {isLive ? <span className="size-1 shrink-0 animate-pulse rounded-full bg-primary" /> : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// 실행 중 상태선 — 지금 뭘 하는지 + 경과 시간. "같이 일하는" 감각의 핵심.
+function WorkingLine({ trace, startedAt }: { trace: TraceItem[]; startedAt?: string }) {
+  const { t } = useI18n();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const sec = startedAt ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)) : null;
+  const last = [...trace].reverse().find((it) => it.kind !== "handoff");
+  const Icon = last ? traceIcon(last) : Wrench;
+
+  return (
+    <div className="mb-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px]">
+      <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+      <span className="shrink-0 font-medium text-primary">{t("talk.workingOn")}</span>
+      {last ? (
+        <>
+          <Icon className="size-3 shrink-0 text-muted-foreground" />
+          <span className="shrink-0">{last.name}</span>
+          {last.target ? <span className="truncate font-mono text-[10px] text-muted-foreground">{last.target}</span> : null}
+        </>
+      ) : (
+        <span className="text-muted-foreground">{t("talk.thinking")}</span>
+      )}
+      {sec !== null ? <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{sec}s</span> : null}
+    </div>
+  );
 }
 
 // 완료된 run 에서 수동 발화를 제안할 엣지 — manual 트리거는 항상,

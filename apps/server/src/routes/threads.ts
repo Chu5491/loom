@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
-import { deleteThreadDb, getThreadDb, insertThread, listThreadsDb } from "../db.js";
+import { deleteThreadDb, getThreadDb, insertThread, listThreadsDb, renameThreadDb } from "../db.js";
 import { isResponse, parseBody } from "./helpers.js";
 
 export const threadsRoute = new Hono();
@@ -29,6 +29,14 @@ threadsRoute.post("/", async (c) => {
   };
   insertThread(thread);
   return c.json({ thread }, 201);
+});
+
+threadsRoute.patch("/:id", async (c) => {
+  const data = await parseBody(c, z.object({ name: z.string().trim().min(1).max(80) }));
+  if (isResponse(data)) return data;
+  if (!getThreadDb(c.req.param("id"))) return c.json({ error: "not_found" }, 404);
+  renameThreadDb(c.req.param("id"), data.name);
+  return c.json({ ok: true });
 });
 
 threadsRoute.delete("/:id", (c) => {

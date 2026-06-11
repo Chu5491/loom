@@ -151,6 +151,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name, projectId }),
     }),
+  renameThread: (id: string, name: string) =>
+    request<{ ok: boolean }>(`/api/threads/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
   deleteThread: (id: string) =>
     request<{ ok: boolean }>(`/api/threads/${id}`, { method: "DELETE" }),
 

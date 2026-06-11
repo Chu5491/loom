@@ -211,6 +211,10 @@ export function insertThread(t: Thread): void {
     .run(t.id, t.name, t.projectId, t.createdAt);
 }
 
+export function renameThreadDb(id: string, name: string): void {
+  getDb().prepare(`UPDATE threads SET name = ? WHERE id = ?`).run(name, id);
+}
+
 /** 스레드 + 그 안의 run·이벤트까지 삭제(대화 전체 정리). */
 export function deleteThreadDb(id: string): void {
   const db = getDb();
