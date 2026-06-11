@@ -1260,29 +1260,6 @@ function Composer({
             </button>
           );
         })}
-        {attached.map((s) => (
-          <span key={s} className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 text-xs font-medium text-primary">
-            <Sparkles className="size-3" />
-            {s}
-            <button type="button" aria-label={`detach ${s}`} onClick={() => setAttached((prev) => prev.filter((x) => x !== s))} className="rounded-full p-0.5 hover:bg-primary/20">
-              <X className="size-3" />
-            </button>
-          </span>
-        ))}
-        {/* 첨부 파일 — 멘션에서 고른 파일은 텍스트가 아닌 "선택된" 칩 */}
-        {attachedFiles.map((f) => {
-          const isImage = /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(f);
-          const Icon = isImage ? ImageIcon : FileText;
-          return (
-            <span key={f} title={f} className="inline-flex max-w-56 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 font-mono text-[11px] text-foreground">
-              <Icon className="size-3 shrink-0 text-primary" />
-              <span className="truncate">{f.split("/").pop()}</span>
-              <button type="button" aria-label={`detach ${f}`} onClick={() => setAttachedFiles((prev) => prev.filter((x) => x !== f))} className="shrink-0 rounded-full p-0.5 hover:bg-primary/20">
-                <X className="size-3" />
-              </button>
-            </span>
-          );
-        })}
       </div>
 
       {/* 입력 — 파일/이미지를 끌어다 놓거나(드롭) 붙여넣으면 첨부된다 */}
@@ -1295,7 +1272,7 @@ function Composer({
           void addFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "relative flex items-end gap-2 rounded-2xl border bg-card p-2 shadow-sm transition-colors focus-within:ring-2 focus-within:ring-ring",
+          "relative flex flex-col rounded-2xl border bg-card p-2 shadow-sm transition-colors focus-within:ring-2 focus-within:ring-ring",
           dragOver ? "border-primary border-dashed bg-primary/5" : "border-border",
         )}
       >
@@ -1307,6 +1284,36 @@ function Composer({
             </span>
           </div>
         ) : null}
+
+        {/* 선택된 스킬·파일 — 입력창 안에서 메시지의 일부처럼 */}
+        {attached.length > 0 || attachedFiles.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5 px-1 pb-1.5">
+            {attached.map((s) => (
+              <span key={s} className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 text-xs font-medium text-primary">
+                <Sparkles className="size-3" />
+                {s}
+                <button type="button" aria-label={`detach ${s}`} onClick={() => setAttached((prev) => prev.filter((x) => x !== s))} className="rounded-full p-0.5 hover:bg-primary/20">
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+            {attachedFiles.map((f) => {
+              const isImage = /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(f);
+              const Icon = isImage ? ImageIcon : FileText;
+              return (
+                <span key={f} title={f} className="inline-flex max-w-56 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 font-mono text-[11px] text-foreground">
+                  <Icon className="size-3 shrink-0 text-primary" />
+                  <span className="truncate">{f.split("/").pop()}</span>
+                  <button type="button" aria-label={`detach ${f}`} onClick={() => setAttachedFiles((prev) => prev.filter((x) => x !== f))} className="shrink-0 rounded-full p-0.5 hover:bg-primary/20">
+                    <X className="size-3" />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className="flex items-end gap-2">
         {/* 파일 선택 폴백 */}
         <input
           ref={fileRef}
@@ -1351,6 +1358,7 @@ function Composer({
         >
           <ArrowUp className="size-4" />
         </button>
+        </div>
       </div>
     </div>
   );
