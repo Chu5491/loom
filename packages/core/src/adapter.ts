@@ -10,6 +10,10 @@ export interface SpawnArgs {
    *  Adapters that support session resume use it to continue the prior
    *  conversation; adapters that don't ignore it. */
   resumeSessionId?: string;
+  /** Tool names to auto-approve (e.g. loom's delegate — part of the explicit
+   *  delegation opt-in). Adapters that support it splice the flag in
+   *  (claude `--allowedTools`); others ignore it. */
+  allowedTools?: string[];
   /** Filesystem path to a JSON file in claude-code `.mcp.json` format.
    *  Adapters whose CLI supports `--mcp-config` (claude-code) splice this
    *  in. Others may write their own format from `mcpServers` instead. */

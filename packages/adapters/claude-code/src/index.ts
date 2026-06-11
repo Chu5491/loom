@@ -258,6 +258,9 @@ export const claudeCodeAdapter = defineCliAdapter<ClaudeCodeConfig>({
   prompt: { via: "stdin" },
   resolveEnv: (cfg) => cfg.env ?? {},
   applyResume: (args, sessionId) => ["--resume", sessionId, ...args],
+  // headless 도구별 자동 승인 — loom delegate 등 명시적 opt-in 도구만 온다.
+  // variadic 플래그가 뒤따르는 인자/stdin 을 삼키지 않게 `--flag=a,b` 단일 인자로.
+  applyAllowedTools: (args, tools) => [...args, `--allowedTools=${tools.join(",")}`],
   extractSessionId: extractClaudeSessionId,
   extractTouchedPaths: extractClaudeTouchedPaths,
   extractTouchedEdits: extractClaudeTouchedEdits,

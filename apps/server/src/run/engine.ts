@@ -142,10 +142,25 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const skills = skillNames.map((n) => allSkills.find((s) => s.name === n)).filter(Boolean).map((s) => s!);
   const mcp = (agent.mcp ?? []).map((n) => allMcp.find((m) => m.name === n)).filter(Boolean).map((m) => resolveServer(m!));
 
+  const id = randomUUID();
+
+  // 팀원 위임(opt-in) — loom 의 delegate MCP 도구를 이 run 의 loadout 에 싣는다.
+  // URL 의 runId 로 "누가 위임하는지"를 알아 부모/스레드/프로젝트를 상속시킨다.
+  if (agent.delegate) {
+    mcp.push({
+      name: "loom",
+      description: "Delegate a task to a teammate agent",
+      kind: "http",
+      command: null,
+      args: [],
+      env: {},
+      url: `http://${config.host}:${config.port}/api/mcp?runId=${id}`,
+      headers: {},
+    });
+  }
+
   const loadout = materializeLoadout(agent, skills, mcp);
   const prompt = composePrompt({ userPrompt: input.prompt, rules, agentPrompt: agent.prompt, loadout });
-
-  const id = randomUUID();
   const info: RunInfo = {
     id,
     agent: agent.name,
@@ -246,6 +261,8 @@ async function run(
         mcpConfigPath: loadout.mcpConfigPath ?? undefined,
         mcpServers: mcp,
         resumeSessionId: resumeSessionId ?? undefined,
+        // 위임 opt-in 의 일부 — delegate 도구는 권한 프롬프트 없이 호출돼야 한다.
+        allowedTools: mcp.some((m) => m.name === "loom") ? ["mcp__loom__delegate"] : undefined,
         onStdout: (c) => consume(state, c),
         onStderr: (c) => fs.writeSync(state.rawFd, c),
       },
@@ -314,6 +331,72 @@ function evaluateFiredEdges(state: RunState, status: RunInfo["status"]): import(
   } catch (err) {
     logger.error({ err, runId: state.info.id }, "harness edge eval failed");
     return [];
+  }
+}
+
+// run 완료를 기다린다 — 위임(delegate)이 자식 결과를 동기적으로 돌려줄 때 사용.
+function waitForRun(id: string, timeoutMs: number): Promise<RunInfo> {
+  return new Promise((resolve, reject) => {
+    const sub = subscribe(id, (msg) => {
+      if (msg.kind === "done") {
+        clearTimeout(timer);
+        sub?.off();
+        resolve(msg.run as RunInfo);
+      }
+    });
+    if (!sub) return reject(new Error("run_not_found"));
+    if (sub.done) {
+      sub.off();
+      return resolve(sub.done);
+    }
+    const timer = setTimeout(() => {
+      sub.off();
+      reject(new Error("delegation_timeout"));
+    }, timeoutMs);
+  });
+}
+
+const DELEGATE_TIMEOUT_MS = 10 * 60_000;
+
+/** 에이전트 주도 위임 — run 도중 MCP delegate 도구가 호출. 자식 run 을 띄우고
+ *  완료까지 기다려 결과 텍스트를 돌려준다. 부모의 프로젝트/스레드 상속,
+ *  parentRunId 체인으로 hop 가드(무한 위임 방어). */
+export async function delegateFromRun(
+  parentRunId: string,
+  toAgent: string,
+  task: string,
+): Promise<{ ok: true; result: string; childRunId: string } | { ok: false; error: string }> {
+  const parent = runs.get(parentRunId);
+  if (!parent) return { ok: false, error: "parent_run_not_found" };
+  if (parent.info.agent === toAgent) return { ok: false, error: "cannot_delegate_to_self" };
+  if (harnessHops(parent.info) >= MAX_HARNESS_HOPS) {
+    return { ok: false, error: `delegation depth limit (${MAX_HARNESS_HOPS}) reached` };
+  }
+
+  // 부모 스트림에 위임 이벤트 — UI 가 "→ @x (위임)" 을 라이브로 그린다.
+  emit(parent, [{ kind: "handoff", toAgent, via: "delegation" }]);
+
+  const started = await startRun({
+    agent: toAgent,
+    prompt: task,
+    parentRunId,
+    projectId: parent.info.projectId,
+    threadId: parent.info.threadId,
+  });
+  if (!started.ok) return { ok: false, error: started.error };
+
+  try {
+    const done = await waitForRun(started.run.id, DELEGATE_TIMEOUT_MS);
+    const events = runs.get(started.run.id)?.events ?? getRunEventsDb(started.run.id);
+    const result = [...events].reverse().find(
+      (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",
+    );
+    if (done.status !== "succeeded") {
+      return { ok: false, error: `delegate run ${done.status}: ${result?.text?.slice(0, 500) ?? "no output"}` };
+    }
+    return { ok: true, result: result?.text ?? "(no output)", childRunId: started.run.id };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
   }
 }
 

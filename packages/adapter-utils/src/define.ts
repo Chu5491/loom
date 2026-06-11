@@ -29,6 +29,10 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
    *  support session resume leave this undefined and the session id
    *  is silently ignored. */
   applyResume?(args: string[], sessionId: string): string[];
+  /** Optional: auto-approve the given tool names (claude `--allowedTools`).
+   *  Carried by spawnArgs.allowedTools — part of an explicit per-agent
+   *  opt-in (e.g. delegation), never injected silently. */
+  applyAllowedTools?(args: string[], tools: string[]): string[];
   /** Optional: scan a stdout chunk and return the session id the CLI
    *  emitted, or null if the chunk doesn't contain one. */
   extractSessionId?(chunk: string): string | null;
@@ -94,10 +98,13 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
       // Resume support is opt-in per adapter — if the caller passed a
       // session id and the adapter knows how to resume, splice the
       // resume flag into the args before the prompt is applied.
-      const baseArgs =
+      let baseArgs =
         spawnArgs.resumeSessionId && def.applyResume
           ? def.applyResume(built.args, spawnArgs.resumeSessionId)
           : built.args;
+      if (spawnArgs.allowedTools?.length && def.applyAllowedTools) {
+        baseArgs = def.applyAllowedTools(baseArgs, spawnArgs.allowedTools);
+      }
       // 로드아웃/MCP 적용은 prompt 적용 *전에* — 프롬프트가 argv 마지막에 박히는
       // 어댑터(opencode trailing positional, gemini --prompt)에선 그 뒤에 더
       // 못 넣음. servers가 비어도 loadoutDir만으로 호출 — claude-code의 --add-dir

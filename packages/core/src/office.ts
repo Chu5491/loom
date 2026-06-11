@@ -38,6 +38,9 @@ export interface AgentSpec {
   reasoning?: "high" | "medium" | "low";
   /** 권한 모드. default=매번 확인, acceptEdits=편집 자동승인, bypass=전부 건너뜀(위험). */
   permission?: "default" | "acceptEdits" | "bypass";
+  /** 팀원 위임 허용 — run 에 loom 의 delegate MCP 도구가 실려, 에이전트가 작업 중
+   *  다른 office 에이전트를 서브에이전트로 직접 호출할 수 있다(opt-in). */
+  delegate?: boolean;
   /** 시스템/지시 프롬프트 — 매 run 의 user 입력 앞에 붙는다. */
   prompt?: string;
   /** 포함할 rule 이름들. */

@@ -374,6 +374,20 @@ function AgentCard({
         </div>
       </div>
 
+      {/* 팀원 위임 — run 도중 다른 에이전트를 서브에이전트로 호출(delegate MCP 도구) */}
+      <label className="mt-4 flex items-start gap-2 text-xs">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={!!a.delegate}
+          onChange={(e) => setA((p) => ({ ...p, delegate: e.target.checked || undefined }))}
+        />
+        <span>
+          <span className="font-medium">{t("office.agent.delegate")}</span>
+          <span className="block text-[11px] text-muted-foreground">{t("office.agent.delegate.hint")}</span>
+        </span>
+      </label>
+
       {/* 지시 프롬프트 */}
       <div className="mt-4">
         <FieldLabel>{t("office.agent.prompt")}</FieldLabel>
