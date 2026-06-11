@@ -210,6 +210,13 @@ html {
   background: transparent;
 }
 
+/* 프로젝트 워크스페이스 진입 — "공간으로 이동했다"는 감각의 전환 모션. */
+@keyframes ws-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.995); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.workspace-enter { animation: ws-enter 0.3s ease-out; }
+
 /* ── 마크다운(.md) — LLM 응답·spec 문서 렌더 ──────────────────────────────── */
 .md {
   font-size: 0.875rem;

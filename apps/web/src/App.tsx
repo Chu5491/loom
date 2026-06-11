@@ -117,7 +117,7 @@ export function App() {
       ) : tab === "connections" ? (
         <ConnectionsPage />
       ) : project ? (
-        <TalkPage projectId={project.id} />
+        <TalkPage project={project} onBack={() => setProject(null)} />
       ) : (
         <HomePage onOpen={setProject} />
       )}

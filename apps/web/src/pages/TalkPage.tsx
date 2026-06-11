@@ -6,10 +6,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowUp, Bot, ChevronDown, ChevronRight, FilePen, FilePlus2, FileSearch, FileText, Globe,
-  MessageSquarePlus, Pencil, Plug, Sparkles, Terminal, Trash2, Workflow, Wrench, X, Zap,
+  ArrowUp, Bot, ChevronDown, ChevronLeft, ChevronRight, FilePen, FilePlus2, FileSearch, FileText,
+  FolderGit2, Globe, MessageSquarePlus, Pencil, Plug, Sparkles, Terminal, Trash2, Workflow, Wrench, X, Zap,
 } from "lucide-react";
-import type { AgentSpec, HarnessEdge, OfficeEvent, RunInfo, SkillSpec } from "@loom/core";
+import type { AgentSpec, HarnessEdge, OfficeEvent, Project, RunInfo, SkillSpec, Thread } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Markdown } from "../components/Markdown.js";
@@ -24,9 +24,10 @@ type Msg = UserMsg | AgentMsg;
 /** 대상 칩의 "자동" 모드 — 서버 디스패치가 적합 에이전트를 고른다. */
 const AUTO = "__auto";
 
-export function TalkPage({ projectId }: { projectId: string | null }) {
+export function TalkPage({ project, onBack }: { project: Project; onBack: () => void }) {
   const { t } = useI18n();
   const qc = useQueryClient();
+  const projectId = project.id;
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
   const threads = useQuery({ queryKey: ["threads", projectId], queryFn: () => api.listThreads(projectId) });
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -158,11 +159,28 @@ export function TalkPage({ projectId }: { projectId: string | null }) {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-6xl gap-6 px-4 sm:px-6">
+    <div className="workspace-enter mx-auto flex h-[calc(100vh-3.5rem)] max-w-7xl gap-6 px-4 sm:px-6">
+      {/* 프로젝트 사이드바 — "이 프로젝트에 들어와 있다"는 공간의 축 (lg+) */}
+      <ProjectSidebar
+        project={project}
+        threads={threads.data.threads}
+        threadId={threadId}
+        onSelect={setThreadId}
+        onBack={onBack}
+        onRename={(id, name) => void api.renameThread(id, name).then(() => threads.refetch())}
+        onDelete={(id) => {
+          if (!confirm(t("talk.thread.deleteConfirm"))) return;
+          void api.deleteThread(id).then(() => {
+            if (threadId === id) setThreadId(null);
+            void threads.refetch();
+          });
+        }}
+      />
+
       {/* 채팅 컬럼 */}
       <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
-        {/* 스레드 바 — 대화 전환·이름변경·새 대화·삭제. 같은 스레드 안에서 세션이 이어진다. */}
-        <div className="flex items-center gap-2 border-b border-border/60 py-2">
+        {/* 스레드 바(모바일 폴백) — lg 이상에선 사이드바가 대신한다. */}
+        <div className="flex items-center gap-2 border-b border-border/60 py-2 lg:hidden">
           {renaming && threadId ? (
             <input
               className="h-8 min-w-0 flex-1 rounded-md border border-primary/50 bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72"
@@ -314,6 +332,126 @@ function Welcome({ activeAgent }: { activeAgent?: AgentSpec }) {
         {activeAgent ? t("talk.welcomeWith", { name: activeAgent.label || activeAgent.name }) : t("talk.welcomeSub")}
       </p>
     </div>
+  );
+}
+
+// ── 프로젝트 사이드바 — 정체성 블록 + 대화 목록. "이 공간에서 일한다"의 축 ────────
+function ProjectSidebar({
+  project,
+  threads,
+  threadId,
+  onSelect,
+  onBack,
+  onRename,
+  onDelete,
+}: {
+  project: Project;
+  threads: Thread[];
+  threadId: string | null;
+  onSelect: (id: string | null) => void;
+  onBack: () => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  return (
+    <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-5 pr-4 lg:flex">
+      {/* 프로젝트 정체성 */}
+      <div className="flex items-center gap-2.5">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-[var(--shadow-glow-sm)]">
+          <FolderGit2 className="size-5" />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate font-display text-base font-semibold">{project.name}</span>
+          <span className="block truncate font-mono text-[10px] text-muted-foreground">{project.path}</span>
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mt-2.5 inline-flex items-center gap-1 self-start rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+      >
+        <ChevronLeft className="size-3" />
+        {t("nav.backHome")}
+      </button>
+
+      {/* 대화 목록 */}
+      <div className="mt-5 flex items-center justify-between">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.sidebar.threads")}</h3>
+        <button
+          type="button"
+          title={t("talk.thread.new")}
+          onClick={() => onSelect(null)}
+          className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+        >
+          <MessageSquarePlus className="size-3.5" />
+        </button>
+      </div>
+      <div className="mt-1.5 space-y-0.5">
+        {threadId === null ? (
+          <div className="flex items-center gap-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-2.5 py-1.5 text-xs text-primary">
+            <MessageSquarePlus className="size-3.5" />
+            {t("talk.thread.new")}
+          </div>
+        ) : null}
+        {threads.map((th) =>
+          renamingId === th.id ? (
+            <input
+              key={th.id}
+              defaultValue={th.name}
+              autoFocus
+              className="w-full rounded-lg border border-primary/50 bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === "Escape") setRenamingId(null);
+                if (e.key === "Enter") {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  if (v) onRename(th.id, v);
+                  setRenamingId(null);
+                }
+              }}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v && v !== th.name) onRename(th.id, v);
+                setRenamingId(null);
+              }}
+            />
+          ) : (
+            <div
+              key={th.id}
+              className={cn(
+                "group flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-colors",
+                th.id === threadId
+                  ? "border-primary/40 bg-primary/10"
+                  : "border-transparent hover:border-border hover:bg-muted/50",
+              )}
+            >
+              <button type="button" onClick={() => onSelect(th.id)} className="min-w-0 flex-1 truncate text-left text-xs">
+                {th.name}
+              </button>
+              <button
+                type="button"
+                title={t("talk.thread.rename")}
+                onClick={() => setRenamingId(th.id)}
+                className="shrink-0 text-muted-foreground/50 opacity-0 transition hover:text-primary group-hover:opacity-100"
+              >
+                <Pencil className="size-3" />
+              </button>
+              <button
+                type="button"
+                title={t("talk.thread.delete")}
+                onClick={() => onDelete(th.id)}
+                className="shrink-0 text-muted-foreground/50 opacity-0 transition hover:text-destructive group-hover:opacity-100"
+              >
+                <Trash2 className="size-3" />
+              </button>
+            </div>
+          ),
+        )}
+      </div>
+    </aside>
   );
 }
 
