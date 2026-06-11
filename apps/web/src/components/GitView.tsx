@@ -54,6 +54,13 @@ export function GitView({ project }: { project: Project }) {
     onSuccess: () => { setMessage(""); setErr(null); invalidate(); },
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
+  // 커밋 메시지 AI 초안 — staged diff 를 선택한 에이전트에게.
+  const [suggestAgent, setSuggestAgent] = useState("");
+  const suggest = useMutation({
+    mutationFn: (agent: string) => api.gitSuggestCommit(project.id, agent),
+    onSuccess: (r) => { setMessage(r.message); setErr(null); },
+    onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
+  });
 
   const s = status.data;
   if (s && !s.git) {
@@ -77,6 +84,34 @@ export function GitView({ project }: { project: Project }) {
 
         {/* 커밋 */}
         <div className="mt-3 border-t border-border/60 pt-3">
+          {/* AI 초안 — 에이전트 선택 + ✨ 생성 */}
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <select
+              value={suggestAgent}
+              onChange={(e) => setSuggestAgent(e.target.value)}
+              className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 text-[11px] focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">{t("git.suggestAgent")}</option>
+              {(agentsQ.data?.office.agents ?? []).map((a) => (
+                <option key={a.name} value={a.name}>@{a.name} · {a.adapter}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!suggestAgent || stagedFiles.length === 0 || suggest.isPending}
+              onClick={() => suggest.mutate(suggestAgent)}
+              title={t("git.suggest")}
+              className={cn(
+                "flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-all",
+                suggest.isPending
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-40",
+              )}
+            >
+              <Sparkles className={cn("size-3", suggest.isPending && "animate-pulse")} />
+              {suggest.isPending ? t("git.suggesting") : t("git.suggest")}
+            </button>
+          </div>
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}

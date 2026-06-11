@@ -7,7 +7,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Hono } from "hono";
 import { z } from "zod";
-import { getProjectDb, listAgentFileActivity } from "../db.js";
+import { getProjectDb, getRunEventsDb, listAgentFileActivity } from "../db.js";
+import { startRun, waitForRun } from "../run/engine.js";
 import { isResponse, parseBody } from "./helpers.js";
 
 const exec = promisify(execFile);
@@ -160,6 +161,55 @@ projectFilesRoute.post("/:id/git/commit", async (c) => {
     return c.json({ ok: true, output: out.trim() });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
+  }
+});
+
+// ── 커밋 메시지 AI 생성 — staged diff 를 에이전트에게 보내 한 줄 초안을 받는다 ───
+// 스레드 없는 유틸 run(Talk 에 안 보임). diff 가 크면 --stat 요약으로 대체.
+const MAX_DIFF_CHARS = 30_000;
+projectFilesRoute.post("/:id/git/suggest-commit", async (c) => {
+  const p = project(c);
+  if (!p) return c.json({ error: "not_found" }, 404);
+  const data = await parseBody(c, z.object({ agent: z.string().min(1) }));
+  if (isResponse(data)) return data;
+
+  let diff: string;
+  try {
+    diff = await git(p.path, ["diff", "--cached"]);
+    if (!diff.trim()) return c.json({ error: "nothing_staged" }, 400);
+    if (diff.length > MAX_DIFF_CHARS) {
+      diff = (await git(p.path, ["diff", "--cached", "--stat"])) + "\n(diff too large — stat summary only)";
+    }
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
+
+  const prompt =
+    "Write a git commit message for the staged diff below.\n" +
+    "Rules: first line `<scope>: <imperative summary>` under 72 chars; " +
+    "optionally 1-3 short body lines explaining WHY. Match the language of the diff/codebase comments. " +
+    "Reply with ONLY the commit message — no quotes, no code fences, no explanations.\n\n" +
+    "```diff\n" + diff + "\n```";
+
+  const started = await startRun({ agent: data.agent, prompt });
+  if (!started.ok) return c.json({ error: started.error }, started.status);
+  try {
+    const done = await waitForRun(started.run.id, 120_000);
+    const events = getRunEventsDb(started.run.id);
+    const result = [...events].reverse().find((e) => e.kind === "result");
+    // 모델이 지시를 어기고 펜스/따옴표로 감싸는 경우(opencode 등) 정규화.
+    const message = (result && "text" in result ? result.text : "")
+      .trim()
+      .replace(/^```[a-zA-Z]*\n?/, "")
+      .replace(/\n?```$/, "")
+      .replace(/^["'`]+|["'`]+$/g, "")
+      .trim();
+    if (done.status !== "succeeded" || !message) {
+      return c.json({ error: `agent run ${done.status}: ${message.slice(0, 200) || "no output"}` }, 502);
+    }
+    return c.json({ message });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 504);
   }
 });
 

@@ -1,0 +1,9 @@
+{
+  "adapter": "devin",
+  "model": "swe",
+  "reasoning": "high",
+  "permission": "bypass",
+  "rules": [
+    "global"
+  ]
+}

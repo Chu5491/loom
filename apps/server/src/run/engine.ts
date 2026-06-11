@@ -219,7 +219,9 @@ function emit(state: RunState, events: OfficeEvent[]): void {
       state.costUsd = ev.costUsd;
       state.sessionId = ev.sessionId;
     }
-    if (ev.kind === "text") state.lastText = ev.text;
+    // plain-text CLI(devin/antigravity)는 줄 단위 text 이벤트 — 누적해야 여러 줄
+    // 출력(커밋 메시지 등)이 result 합성에서 잘리지 않는다.
+    if (ev.kind === "text") state.lastText = state.lastText ? `${state.lastText}\n${ev.text}` : ev.text;
     for (const fn of state.listeners) {
       try {
         fn({ kind: "event", event: ev });
@@ -334,8 +336,8 @@ function evaluateFiredEdges(state: RunState, status: RunInfo["status"]): import(
   }
 }
 
-// run 완료를 기다린다 — 위임(delegate)이 자식 결과를 동기적으로 돌려줄 때 사용.
-function waitForRun(id: string, timeoutMs: number): Promise<RunInfo> {
+// run 완료를 기다린다 — 위임(delegate)·커밋메시지 생성처럼 결과를 동기로 쓸 때.
+export function waitForRun(id: string, timeoutMs: number): Promise<RunInfo> {
   return new Promise((resolve, reject) => {
     const sub = subscribe(id, (msg) => {
       if (msg.kind === "done") {

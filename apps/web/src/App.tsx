@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, FolderGit2, House, Languages, Moon, Plug, RefreshCw, Sun, FolderCog } from "lucide-react";
+import { ChevronDown, FolderGit2, House, Languages, Moon, Plug, RefreshCw, Sun, FolderCog } from "lucide-react";
 import { api } from "./api/client.js";
 import { CliStatus } from "./components/CliStatus.js";
 import { LoomLogo } from "./components/LoomLogo.js";
@@ -24,6 +24,8 @@ export function App() {
   const { effective, setMode } = useTheme();
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("home");
+  // 헤더 프로젝트 칩 → 미션 컨트롤 오버레이 열기 신호(클릭마다 +1).
+  const [mcSignal, setMcSignal] = useState(0);
   const [projectId, setProjectId] = useState<string | null>(() => localStorage.getItem("loom.project") || null);
   const setProject = (id: string | null) => {
     setProjectId(id);
@@ -79,17 +81,17 @@ export function App() {
             ))}
           </nav>
 
-          {/* 프로젝트 안일 때 — 현재 위치 칩(← 누르면 대시보드로) */}
+          {/* 프로젝트 안일 때 — 현재 위치 칩(누르면 미션 컨트롤 오버레이) */}
           {project && tab === "home" ? (
             <button
               type="button"
-              onClick={() => setProject(null)}
-              title={t("nav.backHome")}
-              className="flex min-w-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 py-1 pl-1.5 pr-3 text-sm transition-colors hover:bg-primary/15"
+              onClick={() => setMcSignal((s) => s + 1)}
+              title={t("nav.missionControl")}
+              className="flex min-w-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 py-1 pl-2.5 pr-3 text-sm shadow-[var(--shadow-glow-sm)] transition-colors hover:bg-primary/15"
             >
-              <ChevronLeft className="size-4 shrink-0 text-primary" />
               <FolderGit2 className="size-3.5 shrink-0 text-primary" />
               <span className="max-w-44 truncate font-medium">{project.name}</span>
+              <ChevronDown className="size-3.5 shrink-0 text-primary" />
             </button>
           ) : null}
 
@@ -117,7 +119,7 @@ export function App() {
       ) : tab === "connections" ? (
         <ConnectionsPage />
       ) : project ? (
-        <TalkPage project={project} onBack={() => setProject(null)} />
+        <TalkPage project={project} onBack={() => setProject(null)} missionSignal={mcSignal} />
       ) : (
         <HomePage onOpen={setProject} />
       )}

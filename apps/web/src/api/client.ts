@@ -158,6 +158,12 @@ export const api = {
     request<{ ok: boolean }>(`/api/projects/${id}/git/stage`, { method: "POST", body: JSON.stringify({ paths }) }),
   gitUnstage: (id: string, paths: string[]) =>
     request<{ ok: boolean }>(`/api/projects/${id}/git/unstage`, { method: "POST", body: JSON.stringify({ paths }) }),
+  /** staged diff 로 커밋 메시지 초안 생성 — 지정 에이전트의 유틸 run(스레드 없음). */
+  gitSuggestCommit: (id: string, agent: string) =>
+    request<{ message: string }>(`/api/projects/${id}/git/suggest-commit`, {
+      method: "POST",
+      body: JSON.stringify({ agent }),
+    }),
   gitCommit: (id: string, message: string) =>
     request<{ ok: boolean; output: string }>(`/api/projects/${id}/git/commit`, {
       method: "POST",

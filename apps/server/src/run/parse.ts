@@ -80,5 +80,17 @@ export function parseLine(line: string): OfficeEvent[] {
     if (name) return [toolEvent(name, part?.state?.input ?? j.parameters)];
   }
 
+  // codex (신형): {type:"item.completed", item:{type:"agent_message"|"command_execution"|...}}
+  if (type === "item.completed") {
+    const item = j.item as Record<string, unknown> | undefined;
+    if (item?.type === "agent_message" && str(item.text)) return [{ kind: "text", text: str(item.text)! }];
+    if (item?.type === "command_execution" && str(item.command)) {
+      return [{ kind: "tool", name: "shell", target: str(item.command)!.slice(0, 80) }];
+    }
+    if ((item?.type === "file_change" || item?.type === "patch") && str(item.path)) {
+      return [{ kind: "file", path: str(item.path)!, action: "edit" }];
+    }
+  }
+
   return [];
 }

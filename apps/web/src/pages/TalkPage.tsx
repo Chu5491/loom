@@ -30,7 +30,7 @@ const AUTO = "__auto";
 /** 워크스페이스 내부 뷰 — 대화 / 파일(Monaco) / Git(diff·commit·에이전트 활동). */
 type WsView = "talk" | "files" | "git";
 
-export function TalkPage({ project, onBack }: { project: Project; onBack: () => void }) {
+export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Project; onBack: () => void; missionSignal?: number }) {
   const { t } = useI18n();
   const qc = useQueryClient();
   const projectId = project.id;
@@ -64,6 +64,11 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
   const [sendError, setSendError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [view, setView] = useState<WsView>("talk");
+  // 미션 컨트롤 — 진입 시 한 번 열리고, 헤더 프로젝트 칩으로 다시 부른다.
+  const [mcOpen, setMcOpen] = useState(true);
+  useEffect(() => {
+    if (missionSignal > 0) setMcOpen(true);
+  }, [missionSignal]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 라이브 활동 집계 — 각 버블(run)이 보고하는 "지금 하는 일"을 팀 패널에 흘린다.
@@ -168,37 +173,35 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
     return <Centered>{t("talk.noAgents")}</Centered>;
   }
 
-  return (
-    <div className="workspace-enter mx-auto flex h-[calc(100vh-3.5rem)] max-w-7xl gap-6 px-4 sm:px-6">
-      {/* 프로젝트 사이드바 — "이 프로젝트에 들어와 있다"는 공간의 축 (lg+) */}
-      <ProjectSidebar
-        project={project}
-        view={view}
-        onView={setView}
-        threads={threads.data.threads}
-        threadId={threadId}
-        onSelect={setThreadId}
-        onBack={onBack}
-        onRename={(id, name) => void api.renameThread(id, name).then(() => threads.refetch())}
-        onDelete={(id) => {
-          if (!confirm(t("talk.thread.deleteConfirm"))) return;
-          void api.deleteThread(id).then(() => {
-            if (threadId === id) setThreadId(null);
-            void threads.refetch();
-          });
-        }}
-      />
+  const wsViews: { key: WsView; label: string; icon: React.ReactNode }[] = [
+    { key: "talk", label: t("ws.talk"), icon: <MessagesSquare className="size-4" /> },
+    { key: "files", label: t("ws.files"), icon: <FolderOpen className="size-4" /> },
+    { key: "git", label: t("ws.git"), icon: <GitBranch className="size-4" /> },
+  ];
 
-      {view === "files" ? (
-        <FilesView project={project} />
-      ) : view === "git" ? (
-        <GitView project={project} />
-      ) : (
-        <>
-      {/* 채팅 컬럼 */}
-      <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
-        {/* 스레드 바(모바일 폴백) — lg 이상에선 사이드바가 대신한다. */}
-        <div className="flex items-center gap-2 border-b border-border/60 py-2 lg:hidden">
+  return (
+    <div className="workspace-enter mx-auto flex h-[calc(100vh-3.5rem)] max-w-7xl flex-col px-4 sm:px-6">
+      {/* 워크스페이스 바 — 뷰 스위처 + (대화 뷰일 때) 스레드 컨트롤 */}
+      <div className="flex items-center gap-2 border-b border-border/60 py-2">
+        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+          {wsViews.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => setView(v.key)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all",
+                view === v.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span className={cn(view === v.key && "text-primary")}>{v.icon}</span>
+              {v.label}
+            </button>
+          ))}
+        </div>
+
+        {view === "talk" ? (
+          <>
           {renaming && threadId ? (
             <input
               className="h-8 min-w-0 flex-1 rounded-md border border-primary/50 bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72"
@@ -262,7 +265,19 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
               <Trash2 className="size-4" />
             </button>
           ) : null}
-        </div>
+          </>
+        ) : null}
+      </div>
+
+      <div className="flex min-h-0 flex-1 gap-6">
+      {view === "files" ? (
+        <FilesView project={project} />
+      ) : view === "git" ? (
+        <GitView project={project} />
+      ) : (
+        <>
+      {/* 채팅 컬럼 */}
+      <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
           {messages.length === 0 && !pending ? (
             <Welcome activeAgent={agents.find((a) => a.name === active)} />
@@ -315,6 +330,22 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
       />
         </>
       )}
+      </div>
+
+      {/* 미션 컨트롤 — 진입/호출 시 뜨는 프로젝트 허브 오버레이 */}
+      {mcOpen ? (
+        <MissionControl
+          project={project}
+          threads={threads.data.threads}
+          agents={agents}
+          runs={runs.data?.runs ?? []}
+          threadId={threadId}
+          onThread={(id) => { setThreadId(id); setView("talk"); setMcOpen(false); }}
+          onView={(v) => { setView(v); setMcOpen(false); }}
+          onBack={onBack}
+          onClose={() => setMcOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -355,157 +386,175 @@ function Welcome({ activeAgent }: { activeAgent?: AgentSpec }) {
   );
 }
 
-// ── 프로젝트 사이드바 — 정체성 블록 + 대화 목록. "이 공간에서 일한다"의 축 ────────
-function ProjectSidebar({
+// ── 미션 컨트롤 — 프로젝트 허브 오버레이. 진입의 "전환" 그 자체 ─────────────────
+// 대화·팀·바로가기를 한 화면에 펼치고, 무엇이든 고르면 닫히며 그 자리로 간다.
+function MissionControl({
   project,
-  view,
-  onView,
   threads,
+  agents,
+  runs,
   threadId,
-  onSelect,
+  onThread,
+  onView,
   onBack,
-  onRename,
-  onDelete,
+  onClose,
 }: {
   project: Project;
-  view: WsView;
-  onView: (v: WsView) => void;
   threads: Thread[];
+  agents: AgentSpec[];
+  runs: RunInfo[];
   threadId: string | null;
-  onSelect: (id: string | null) => void;
+  onThread: (id: string | null) => void;
+  onView: (v: WsView) => void;
   onBack: () => void;
-  onRename: (id: string, name: string) => void;
-  onDelete: (id: string) => void;
+  onClose: () => void;
 }) {
-  const { t } = useI18n();
-  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const { t, lang } = useI18n();
+  const working = useMemo(() => new Set(runs.filter((r) => r.status === "running").map((r) => r.agent)), [runs]);
+  const activity = useQuery({
+    queryKey: ["activity", project.id],
+    queryFn: () => api.agentActivity(project.id),
+    staleTime: 10_000,
+  });
 
-  const views: { key: WsView; label: string; icon: React.ReactNode }[] = [
-    { key: "talk", label: t("ws.talk"), icon: <MessagesSquare className="size-4" /> },
-    { key: "files", label: t("ws.files"), icon: <FolderOpen className="size-4" /> },
-    { key: "git", label: t("ws.git"), icon: <GitBranch className="size-4" /> },
-  ];
+  // Esc 로 닫기.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-5 pr-4 lg:flex">
-      {/* 프로젝트 정체성 */}
-      <div className="flex items-center gap-2.5">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-[var(--shadow-glow-sm)]">
-          <FolderGit2 className="size-5" />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate font-display text-base font-semibold">{project.name}</span>
-          <span className="block truncate font-mono text-[10px] text-muted-foreground">{project.path}</span>
-        </span>
-      </div>
-      <button
-        type="button"
-        onClick={onBack}
-        className="mt-2.5 inline-flex items-center gap-1 self-start rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+    <div
+      className="fixed inset-0 z-40 overflow-y-auto bg-background/60 p-4 backdrop-blur-xl sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="workspace-enter mx-auto mt-6 w-full max-w-4xl rounded-3xl border border-primary/20 bg-card/95 p-6 shadow-[var(--shadow-glow)]"
+        onClick={(e) => e.stopPropagation()}
       >
-        <ChevronLeft className="size-3" />
-        {t("nav.backHome")}
-      </button>
-
-      {/* 워크스페이스 뷰 — 대화 / 파일 / Git */}
-      <nav className="mt-4 space-y-0.5">
-        {views.map((v) => (
-          <button
-            key={v.key}
-            type="button"
-            onClick={() => onView(v.key)}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-all",
-              view === v.key
-                ? "bg-primary/15 font-medium text-foreground shadow-[var(--shadow-glow-sm)]"
-                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-            )}
-          >
-            <span className={cn(view === v.key && "text-primary")}>{v.icon}</span>
-            {v.label}
-          </button>
-        ))}
-      </nav>
-
-      {view !== "talk" ? null : (
-        <>
-      {/* 대화 목록 */}
-      <div className="mt-5 flex items-center justify-between">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.sidebar.threads")}</h3>
-        <button
-          type="button"
-          title={t("talk.thread.new")}
-          onClick={() => onSelect(null)}
-          className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-        >
-          <MessageSquarePlus className="size-3.5" />
-        </button>
-      </div>
-      <div className="mt-1.5 space-y-0.5">
-        {threadId === null ? (
-          <div className="flex items-center gap-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-2.5 py-1.5 text-xs text-primary">
-            <MessageSquarePlus className="size-3.5" />
-            {t("talk.thread.new")}
+        {/* 헤더 — 프로젝트 정체성 */}
+        <div className="flex items-start gap-3">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 text-primary shadow-[var(--shadow-glow-sm)]">
+            <FolderGit2 className="size-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate font-display text-xl font-semibold">{project.name}</h2>
+            <p className="truncate font-mono text-[11px] text-muted-foreground">{project.path}</p>
           </div>
-        ) : null}
-        {threads.map((th) =>
-          renamingId === th.id ? (
-            <input
-              key={th.id}
-              defaultValue={th.name}
-              autoFocus
-              className="w-full rounded-lg border border-primary/50 bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return;
-                if (e.key === "Escape") setRenamingId(null);
-                if (e.key === "Enter") {
-                  const v = (e.target as HTMLInputElement).value.trim();
-                  if (v) onRename(th.id, v);
-                  setRenamingId(null);
-                }
-              }}
-              onBlur={(e) => {
-                const v = e.target.value.trim();
-                if (v && v !== th.name) onRename(th.id, v);
-                setRenamingId(null);
-              }}
-            />
-          ) : (
-            <div
-              key={th.id}
-              className={cn(
-                "group flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-colors",
-                th.id === threadId
-                  ? "border-primary/40 bg-primary/10"
-                  : "border-transparent hover:border-border hover:bg-muted/50",
-              )}
-            >
-              <button type="button" onClick={() => onSelect(th.id)} className="min-w-0 flex-1 truncate text-left text-xs">
-                {th.name}
-              </button>
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          >
+            <ChevronLeft className="size-3.5" />
+            {t("nav.backHome")}
+          </button>
+          <button type="button" aria-label="close" onClick={onClose} className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {/* 대화 */}
+          <section>
+            <div className="mb-1.5 flex items-center justify-between">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.sidebar.threads")}</h3>
               <button
                 type="button"
-                title={t("talk.thread.rename")}
-                onClick={() => setRenamingId(th.id)}
-                className="shrink-0 text-muted-foreground/50 opacity-0 transition hover:text-primary group-hover:opacity-100"
+                title={t("talk.thread.new")}
+                onClick={() => onThread(null)}
+                className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
               >
-                <Pencil className="size-3" />
-              </button>
-              <button
-                type="button"
-                title={t("talk.thread.delete")}
-                onClick={() => onDelete(th.id)}
-                className="shrink-0 text-muted-foreground/50 opacity-0 transition hover:text-destructive group-hover:opacity-100"
-              >
-                <Trash2 className="size-3" />
+                <MessageSquarePlus className="size-3.5" />
               </button>
             </div>
-          ),
-        )}
+            <div className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
+              {threads.length === 0 ? <p className="py-3 text-xs text-muted-foreground">{t("mc.noThreads")}</p> : null}
+              {threads.map((th) => (
+                <button
+                  key={th.id}
+                  type="button"
+                  onClick={() => onThread(th.id)}
+                  className={cn(
+                    "flex w-full items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-left text-xs transition-colors",
+                    th.id === threadId ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-muted/50",
+                  )}
+                >
+                  <MessagesSquare className="size-3 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{th.name}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* 팀 */}
+          <section>
+            <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
+            <div className="space-y-1">
+              {agents.map((a) => (
+                <div
+                  key={a.name}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border px-2.5 py-1.5",
+                    working.has(a.name) ? "border-primary/40 bg-primary/5 shadow-[var(--shadow-glow-sm)]" : "border-border/60",
+                  )}
+                >
+                  <Avatar agent={a} size={22} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium">{a.label || a.name}</span>
+                    <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+                  </span>
+                  {working.has(a.name) ? <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" /> : null}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 바로가기 + 최근 활동 */}
+          <section>
+            <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("mc.shortcuts")}</h3>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => onView("files")}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs transition-colors hover:border-primary/40 hover:bg-primary/5"
+              >
+                <FolderOpen className="size-4 text-primary" />
+                {t("ws.files")}
+              </button>
+              <button
+                type="button"
+                onClick={() => onView("git")}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs transition-colors hover:border-primary/40 hover:bg-primary/5"
+              >
+                <GitBranch className="size-4 text-primary" />
+                {t("ws.git")}
+              </button>
+            </div>
+            {(activity.data?.activity.length ?? 0) > 0 ? (
+              <>
+                <h3 className="mb-1.5 mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("mc.activity")}</h3>
+                <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                  {activity.data!.activity.slice(0, 6).map((a) => (
+                    <div key={a.runId} className="rounded-lg border border-border/60 px-2 py-1.5 text-[11px]">
+                      <span className="font-medium">@{a.agent}</span>
+                      <span className="ml-1.5 text-muted-foreground">
+                        {new Date(a.startedAt).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                      <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
+                        {a.files.map((f) => f.path.split("/").pop()).join(" · ")}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </section>
+        </div>
       </div>
-        </>
-      )}
-    </aside>
+    </div>
   );
 }
 

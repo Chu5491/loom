@@ -49,7 +49,9 @@ const OPTS = {
   padding: { top: 12, bottom: 12 },
   renderLineHighlight: "none" as const,
   overviewRulerLanes: 0,
-  scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
+  // 긴 줄은 자동 줄바꿈 — 가로 스크롤을 없앤다.
+  wordWrap: "on" as const,
+  scrollbar: { verticalScrollbarSize: 8, horizontal: "hidden" as const, horizontalScrollbarSize: 0 },
   automaticLayout: true,
 };
 
@@ -77,7 +79,13 @@ export function CodeDiff({ path, original, modified }: { path: string; original:
       modified={modified}
       beforeMount={defineLoomTheme}
       theme={effective === "dark" ? "loom-dark" : "loom-light"}
-      options={{ ...OPTS, renderSideBySide: true, hideUnchangedRegions: { enabled: true } }}
+      options={{
+        ...OPTS,
+        // 항상 전(좌)·후(우) 나란히 — 좁아도 인라인으로 안 바뀌게 고정.
+        renderSideBySide: true,
+        useInlineViewWhenSpaceIsLimited: false,
+        hideUnchangedRegions: { enabled: true },
+      }}
     />
   );
 }
