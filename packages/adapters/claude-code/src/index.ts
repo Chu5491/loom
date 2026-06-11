@@ -14,6 +14,8 @@ export interface ClaudeCodeConfig extends AdapterConfig {
   verbose?: boolean;
   addDirs?: string[];
   dangerouslySkipPermissions?: boolean;
+  /** Headless permission mode — acceptEdits 는 파일 편집만 자동 승인. */
+  permissionMode?: "acceptEdits" | "plan" | "default";
   /** Reasoning effort: low / medium / high / xhigh / max. Maps to --effort. */
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
 }
@@ -30,6 +32,9 @@ export function buildClaudeCommand(config: ClaudeCodeConfig = {}): BuiltCommand 
   if (config.effort) args.push("--effort", config.effort);
   for (const dir of config.addDirs ?? []) args.push("--add-dir", dir);
   if (config.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
+  if (config.permissionMode && config.permissionMode !== "default") {
+    args.push("--permission-mode", config.permissionMode);
+  }
   if (config.extraArgs?.length) args.push(...config.extraArgs);
 
   return { command, args };

@@ -121,8 +121,11 @@ export function TalkPage({ project, onBack }: { project: Project; onBack: () => 
     return () => ro.disconnect();
   }, [threadId]);
 
-  async function send(rawText: string, skills: string[]) {
-    const text = rawText.trim();
+  async function send(rawText: string, skills: string[], files: string[] = []) {
+    // 첨부 파일은 프롬프트에 명시적으로 — 칩으로 고른 것이 그대로 보이게(주입 아님).
+    const text = files.length
+      ? `${rawText.trim()}\n\n[Files]\n${files.map((f) => `- ${f}`).join("\n")}`
+      : rawText.trim();
     if (!text) return;
     // 선행 @mention 이 있으면 대상 에이전트 결정 + 토큰 제거(에이전트엔 안 보냄).
     let agent = active;
@@ -979,11 +982,14 @@ function Composer({
   projectId: string | null;
   active: string;
   onActive: (name: string) => void;
-  onSend: (text: string, skills: string[]) => void;
+  onSend: (text: string, skills: string[], files: string[]) => void;
 }) {
   const { t } = useI18n();
   const [text, setText] = useState("");
   const [attached, setAttached] = useState<string[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const [selIdx, setSelIdx] = useState(0);
+  const [dismissed, setDismissed] = useState(false); // Esc — 토큰은 두고 메뉴만 닫기
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // 커서 앞 텍스트의 끝이 "@partial" 이면 멘션 메뉴를 띄운다. 파일은 / . 도 허용.
@@ -992,6 +998,12 @@ function Composer({
     return m ? m[1]! : null;
   }, [text]);
   const q = (token ?? "").toLowerCase();
+
+  // 토큰이 바뀌면(계속 타이핑) 선택을 처음으로, 닫았던 메뉴는 다시 연다.
+  useEffect(() => {
+    setSelIdx(0);
+    setDismissed(false);
+  }, [token]);
 
   // 파일 검색 — 프로젝트가 선택돼 있고 멘션 중일 때만 서버 질의.
   const files = useQuery({
@@ -1031,32 +1043,51 @@ function Composer({
       setAttached((prev) => [...prev, item.skill.name]);
       consumeToken("");
     } else {
-      consumeToken(`${item.path} `);
+      // 파일도 텍스트가 아니라 "선택된" 첨부 칩으로 — 전송 시 명시적으로 실린다.
+      setAttachedFiles((prev) => (prev.includes(item.path) ? prev : [...prev, item.path]));
+      consumeToken("");
     }
   }
 
   function submit() {
     if (!text.trim()) return;
-    onSend(text, attached);
+    onSend(text, attached, attachedFiles);
     setText("");
     setAttached([]);
+    setAttachedFiles([]);
   }
+
+  const menuOpen = menu.length > 0 && !dismissed;
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // IME(한글/일본어/중국어) 조합 중 Enter 는 글자 확정용 — 전송하면 안 됨.
     // 안 막으면 조합 완료 Enter + 실제 Enter 가 둘 다 발화해 마지막 글자가 또 전송됨.
     if (e.nativeEvent.isComposing) return;
-    if (e.key === "Escape" && token !== null) {
-      e.preventDefault();
-      consumeToken("");
-      return;
+    if (menuOpen) {
+      // 키보드 네비 — ↑↓ 로 고르고 Enter/Tab 으로 확정, Esc 로 닫기(토큰 유지).
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelIdx((i) => (i + 1) % menu.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelIdx((i) => (i - 1 + menu.length) % menu.length);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setDismissed(true);
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+        e.preventDefault();
+        pick(menu[Math.min(selIdx, menu.length - 1)]!);
+        return;
+      }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (menu.length > 0) {
-        pick(menu[0]!);
-        return;
-      }
       submit();
     }
   }
@@ -1070,18 +1101,32 @@ function Composer({
 
   return (
     <div className="relative pb-5">
-      {/* 멘션 메뉴 — 에이전트/스킬/파일 섹션 */}
-      {sections.length > 0 ? (
+      {/* 멘션 메뉴 — 에이전트/스킬/파일 섹션. ↑↓ 키보드 선택, Esc 닫기 */}
+      {menuOpen ? (
         <div className="absolute bottom-full left-0 z-10 mb-2 max-h-72 w-80 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+          <div className="sticky top-0 flex items-center justify-between border-b border-border/60 bg-card/95 px-3 py-1 backdrop-blur">
+            <span className="text-[10px] text-muted-foreground">{t("talk.menu.hint")}</span>
+            <button type="button" aria-label="close mention menu" onClick={() => setDismissed(true)} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+              <X className="size-3" />
+            </button>
+          </div>
           {sections.map((sec) => (
             <div key={sec.key}>
               <div className="px-3 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{sec.label}</div>
-              {sec.items.map((item, i) => (
+              {sec.items.map((item, i) => {
+                const flat = menu.indexOf(item);
+                const sel = flat === selIdx;
+                return (
                 <button
                   key={i}
                   type="button"
+                  ref={(el) => { if (sel && el) el.scrollIntoView({ block: "nearest" }); }}
                   onClick={() => pick(item)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/60"
+                  onMouseEnter={() => setSelIdx(flat)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm",
+                    sel ? "bg-primary/15" : "hover:bg-muted/60",
+                  )}
                 >
                   {item.kind === "agent" ? (
                     <>
@@ -1104,7 +1149,8 @@ function Composer({
                     </>
                   )}
                 </button>
-              ))}
+                );
+              })}
             </div>
           ))}
         </div>
@@ -1150,6 +1196,16 @@ function Composer({
             <Sparkles className="size-3" />
             {s}
             <button type="button" aria-label={`detach ${s}`} onClick={() => setAttached((prev) => prev.filter((x) => x !== s))} className="rounded-full p-0.5 hover:bg-primary/20">
+              <X className="size-3" />
+            </button>
+          </span>
+        ))}
+        {/* 첨부 파일 — 멘션에서 고른 파일은 텍스트가 아닌 "선택된" 칩 */}
+        {attachedFiles.map((f) => (
+          <span key={f} title={f} className="inline-flex max-w-56 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 font-mono text-[11px] text-foreground">
+            <FileText className="size-3 shrink-0 text-primary" />
+            <span className="truncate">{f.split("/").pop()}</span>
+            <button type="button" aria-label={`detach ${f}`} onClick={() => setAttachedFiles((prev) => prev.filter((x) => x !== f))} className="shrink-0 rounded-full p-0.5 hover:bg-primary/20">
               <X className="size-3" />
             </button>
           </span>
