@@ -1,5 +1,5 @@
 // office CRUD — 파일이 정의의 원천이라 라우트는 얇은 패스스루.
-// 모든 자원은 per-name (rules/skills/agents) 또는 single-file (mcp/harness).
+// 모든 자원은 per-name (rules/skills/agents/workflows) 또는 single-file (mcp).
 
 import { Hono } from "hono";
 import { z } from "zod";
@@ -11,19 +11,24 @@ import {
   deleteRule,
   deleteSkill,
   deleteSkillFile,
-  edgesListSchema,
+  deleteWorkflow,
+  FEATURE_PROMPT_NAMES,
+  type FeaturePromptName,
   mcpListSchema,
+  readAgents,
   readOffice,
   readSkillFile,
   ruleSchema,
   safeName,
   skillSchema,
+  workflowSchema,
   writeAgent,
-  writeEdges,
+  writeFeaturePrompt,
   writeMcp,
   writeRule,
   writeSkill,
   writeSkillFile,
+  writeWorkflow,
 } from "../office.js";
 
 export const officeRoute = new Hono();
@@ -148,9 +153,42 @@ officeRoute.put("/mcp", async (c) => {
   return c.json({ servers: writeMcp(data.servers) });
 });
 
-// ── harness (single file) ─────────────────────────────────────────────────────
-officeRoute.put("/harness", async (c) => {
-  const data = await parseBody(c, edgesListSchema);
+// ── feature prompts — 내장 기능(git 커밋·분석)의 조정 가능한 지침 ───────────────
+officeRoute.put("/prompts/:name", async (c) => {
+  const name = c.req.param("name");
+  if (!FEATURE_PROMPT_NAMES.includes(name as FeaturePromptName)) {
+    return c.json({ error: `unknown_feature_prompt: ${name}` }, 404);
+  }
+  const data = await parseBody(c, ruleSchema);
   if (isResponse(data)) return data;
-  return c.json({ edges: writeEdges(data.edges) });
+  return c.json({ prompt: writeFeaturePrompt(name as FeaturePromptName, data.body) });
 });
+
+// ── workflows (per-name) — 참조 무결성은 저장 경계에서 검증 ────────────────────
+officeRoute.put("/workflows/:name", async (c) => {
+  const data = await parseBody(c, workflowSchema);
+  if (isResponse(data)) return data;
+  const ids = new Set(data.nodes.map((n) => n.id));
+  if (ids.size !== data.nodes.length) return c.json({ error: "duplicate_node_id" }, 400);
+  if (!ids.has(data.entry)) return c.json({ error: "entry_node_not_found" }, 400);
+  for (const e of data.edges) {
+    if (!ids.has(e.from) || !ids.has(e.to)) return c.json({ error: `edge_refers_missing_node: ${e.from}->${e.to}` }, 400);
+  }
+  const agents = new Set(readAgents().map((a) => a.name));
+  for (const n of data.nodes) {
+    if (n.kind !== "gate" && !agents.has(n.agent)) return c.json({ error: `unknown_agent: ${n.agent}` }, 400);
+  }
+  if (data.trigger && !agents.has(data.trigger.agent)) {
+    return c.json({ error: `unknown_trigger_agent: ${data.trigger.agent}` }, 400);
+  }
+  try {
+    return c.json({ workflow: writeWorkflow(safeName(c.req.param("name")), data) });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
+});
+officeRoute.delete("/workflows/:name", (c) =>
+  deleteWorkflow(c.req.param("name"))
+    ? c.json({ ok: true })
+    : c.json({ error: "not_found" }, 404),
+);

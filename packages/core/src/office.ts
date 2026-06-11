@@ -5,7 +5,7 @@
 //   office/skills/<name>.md         SkillSpec  (frontmatter: name, description)
 //   office/mcp/servers.json         McpServer[]
 //   office/agents/<name>.json       AgentSpec
-//   office/harness/edges.json       HarnessEdge[]
+//   office/workflows/<name>.json    WorkflowSpec
 
 import type { AdapterConfig, AdapterKind } from "./types.js";
 
@@ -25,6 +25,9 @@ export interface SkillSpec {
   files?: string[];
 }
 
+/** 전담 역할 — 기능별 기본 에이전트 지정. git=커밋 메시지, analyst=프로젝트 분석. */
+export type AgentRole = "git" | "analyst";
+
 /** 에이전트 = CLI + 모델 + 어떤 rules/skills/mcp 를 끌어올지. name = @mention 핸들. */
 export interface AgentSpec {
   name: string;
@@ -41,6 +44,9 @@ export interface AgentSpec {
   /** 팀원 위임 허용 — run 에 loom 의 delegate MCP 도구가 실려, 에이전트가 작업 중
    *  다른 office 에이전트를 서브에이전트로 직접 호출할 수 있다(opt-in). */
   delegate?: boolean;
+  /** 전담 역할 — UI 의 해당 기능이 이 에이전트를 기본 선택한다.
+   *  git=커밋 메시지 생성, analyst=프로젝트 분석 리포트. */
+  roles?: AgentRole[];
   /** 시스템/지시 프롬프트 — 매 run 의 user 입력 앞에 붙는다. */
   prompt?: string;
   /** 포함할 rule 이름들. */
@@ -53,19 +59,59 @@ export interface AgentSpec {
   config?: AdapterConfig;
 }
 
-export type HarnessTrigger = "on_success" | "on_fail" | "on_changes" | "manual";
-export type HarnessMode = "ask" | "auto";
+// ── 워크플로우 — 다단계 에이전트 그래프. office/workflows/<name>.json ─────────
+// 실행: 수동(사용자 버튼) 또는 트리거(에이전트 run 종료 시 자동/제안).
+// 1-hop 하네스(edges.json)를 흡수한 단일 오케스트레이션 개념.
 
-/** 핸드오프 규칙 — from 의 run 이 trigger 로 끝나면 to 로 라우팅. */
-export interface HarnessEdge {
-  from: string; // agent name
-  to: string; // agent name
-  trigger: HarnessTrigger;
-  mode: HarnessMode;
-  /** 발화 시 to 에게 보낼 지시문. carryResult 만으로도 내용이 생긴다. */
-  prompt?: string;
-  /** from 의 결과를 마크된 블록으로 to 프롬프트에 실어보낼지(자동주입 금지: opt-in). */
-  carryResult?: boolean;
+/** 워크플로우 노드 = 한 스텝. prompt 의 {{input}}=실행 입력, {{result}}=직전 결과.
+ *  kind "gate" = 휴먼 게이트 — 사람이 승인(success 경로)/거부(fail 경로)할 때까지 정지.
+ *  들어오는 엣지가 2개 이상인 노드는 join — 모든 분기가 도착해야 실행되고,
+ *  {{result}} 에 분기 결과들이 합쳐져 들어간다. */
+export interface WorkflowNode {
+  id: string;
+  kind?: "agent" | "gate";
+  /** kind "gate" 면 무시(빈 문자열 허용). */
+  agent: string;
+  prompt: string;
+  /** 캔버스 좌표 — 편집 UX 의 일부라 정의에 포함(git 커밋). */
+  x?: number;
+  y?: number;
+}
+
+/** 대기 중인 휴먼 게이트 — 서버 인메모리(재시작 시 소실, v1 한계). */
+export interface WorkflowGate {
+  id: string;
+  workflow: string;
+  nodeId: string;
+  /** 게이트에 도달한 직전 run — 승인 시 다음 스텝의 parentRunId. */
+  prevRunId: string | null;
+  projectId: string | null;
+  threadId: string | null;
+  /** 게이트까지 흘러온 결과 — 승인 시 다음 스텝의 {{result}}. */
+  result: string;
+  createdAt: string;
+}
+/** 노드 연결 — from 스텝이 on 결과로 끝나면 to 실행. */
+export interface WorkflowEdge {
+  from: string; // node id
+  to: string; // node id
+  on: "success" | "fail" | "always";
+}
+/** 자동/제안 발화 — agent 의 (워크플로우 밖) run 이 on 결과로 끝나면 이 워크플로우를
+ *  시작. auto=즉시, ask=UI 제안 버튼. 없으면 수동 실행 전용. */
+export interface WorkflowTrigger {
+  agent: string;
+  on: "success" | "fail" | "changes";
+  mode: "auto" | "ask";
+}
+export interface WorkflowSpec {
+  name: string;
+  description?: string;
+  trigger?: WorkflowTrigger | null;
+  /** 시작 노드 id. */
+  entry: string;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
 }
 
 /** 로드된 오피스 전체 — 파일들을 읽어 메모리에 올린 형태. */
@@ -74,7 +120,9 @@ export interface Office {
   skills: SkillSpec[];
   mcp: import("./types.js").McpServer[];
   agents: AgentSpec[];
-  edges: HarnessEdge[];
+  workflows: WorkflowSpec[];
+  /** 기능 프롬프트 — git 커밋·분석 같은 내장 기능의 조정 가능한 지침(양식은 코드 고정). */
+  prompts: RuleSpec[];
 }
 
 // ── 런타임 (data/, gitignore) ────────────────────────────────────────────────
@@ -85,7 +133,8 @@ export type OfficeEvent =
   | { kind: "text"; text: string }
   | { kind: "tool"; name: string; target?: string }
   | { kind: "file"; path: string; action: "edit" | "write" }
-  | { kind: "handoff"; toAgent: string; via: "edge" | "delegation" }
+  // via "edge" 는 흡수 전 하네스가 영속한 과거 이벤트 호환용.
+  | { kind: "handoff"; toAgent: string; via: "edge" | "delegation" | "workflow"; reason?: string }
   | { kind: "result"; text: string; costUsd?: number; sessionId?: string }
   | { kind: "error"; message: string };
 
@@ -110,6 +159,21 @@ export interface Thread {
   createdAt: string;
 }
 
+/** 예약 실행 — cron 으로 에이전트 run 을 반복. 프로젝트(머신-로컬)를 가리키므로
+ *  기록과 같은 data/(sqlite)에. nextRunAt 은 API 응답에서 croner 가 계산해 채움. */
+export interface Schedule {
+  id: string;
+  name: string;
+  agent: string;
+  prompt: string;
+  cron: string;
+  projectId: string | null;
+  enabled: boolean;
+  lastRunAt: string | null;
+  createdAt: string;
+  nextRunAt?: string | null;
+}
+
 export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
 
 export interface RunInfo {
@@ -130,4 +194,7 @@ export interface RunInfo {
   threadId: string | null;
   /** 이 run 의 비용(USD). CLI 가 보고할 때만(claude 등), 아니면 null. */
   costUsd: number | null;
+  /** 워크플로우 스텝으로 돈 run 이면 워크플로우 이름/노드 id — 진행 보드용. */
+  workflow?: string | null;
+  node?: string | null;
 }

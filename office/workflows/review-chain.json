@@ -1,0 +1,32 @@
+{
+  "description": "claude 작업 후 codex 검토",
+  "trigger": {
+    "agent": "claude",
+    "on": "success",
+    "mode": "ask"
+  },
+  "entry": "n1",
+  "nodes": [
+    {
+      "id": "n1",
+      "agent": "claude",
+      "prompt": "{{input}}",
+      "x": 160,
+      "y": 200
+    },
+    {
+      "id": "n2",
+      "agent": "codex-t",
+      "prompt": "Review the previous result:\n{{result}}",
+      "x": 520,
+      "y": 200
+    }
+  ],
+  "edges": [
+    {
+      "from": "n1",
+      "to": "n2",
+      "on": "success"
+    }
+  ]
+}

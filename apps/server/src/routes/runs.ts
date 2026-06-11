@@ -4,9 +4,10 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isResponse, parseBody } from "./helpers.js";
-import { readAgents, readSkills } from "../office.js";
+import { readAgents, readSkills, readWorkflows } from "../office.js";
 import { pickAgent } from "../run/dispatch.js";
-import { cancelRun, deleteRun, fireManualHandoff, getPersistedRun, getRun, listRuns, startRun, subscribe } from "../run/engine.js";
+import { startWorkflow } from "../run/workflow.js";
+import { cancelRun, deleteRun, fireWorkflowFromRun, getPersistedRun, getRun, getRunPromptText, getRunRawText, listRuns, startRun, subscribe } from "../run/engine.js";
 
 export const runsRoute = new Hono();
 
@@ -36,10 +37,42 @@ runsRoute.post("/", async (c) => {
   return c.json({ run: result.run }, 201);
 });
 
+// 워크플로우 수동 실행 — entry run 을 즉시 반환, 나머지 스텝은 비동기 체인.
+// (":id" 라우트보다 먼저 — "workflow" 가 id 로 잡히면 안 됨.)
+const workflowRunSchema = z.object({
+  workflow: z.string().min(1),
+  input: z.string().min(1),
+  projectId: z.string().optional(),
+  threadId: z.string().optional(),
+});
+runsRoute.post("/workflow", async (c) => {
+  const data = await parseBody(c, workflowRunSchema);
+  if (isResponse(data)) return data;
+  const wf = readWorkflows().find((w) => w.name === data.workflow);
+  if (!wf) return c.json({ error: "workflow_not_found" }, 404);
+  const result = await startWorkflow(wf, { input: data.input, projectId: data.projectId, threadId: data.threadId });
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json({ run: result.run }, 201);
+});
+
 runsRoute.get("/:id", (c) => {
   const run = getRun(c.req.param("id"));
   if (!run) return c.json({ error: "not_found" }, 404);
   return c.json({ run });
+});
+
+// 투명성 — 이 run 에서 CLI 에 실제로 들어간 합성 프롬프트(rules+agent+loadout+user).
+runsRoute.get("/:id/prompt", (c) => {
+  const text = getRunPromptText(c.req.param("id"));
+  if (text === null) return c.json({ error: "not_found" }, 404);
+  return c.json({ prompt: text });
+});
+
+// CLI raw 출력(진실) — run 상세 화면의 Raw 탭.
+runsRoute.get("/:id/raw", (c) => {
+  const text = getRunRawText(c.req.param("id"));
+  if (text === null) return c.json({ error: "not_found" }, 404);
+  return c.json({ raw: text });
 });
 
 // 스마트 디스패치 — 작업 설명으로 적합 에이전트를 골라 run 시작.
@@ -71,12 +104,12 @@ runsRoute.post("/:id/cancel", (c) =>
     : c.json({ error: "not_active" }, 409),
 );
 
-// ask/manual 엣지 수동 발화 — body: { to: agentName }.
-const handoffSchema = z.object({ to: z.string().min(1) });
-runsRoute.post("/:id/handoff", async (c) => {
-  const data = await parseBody(c, handoffSchema);
+// ask 트리거 수동 발화 — 완료된 run 의 결과를 입력으로 워크플로우 시작.
+const fireWorkflowSchema = z.object({ workflow: z.string().min(1) });
+runsRoute.post("/:id/workflow", async (c) => {
+  const data = await parseBody(c, fireWorkflowSchema);
   if (isResponse(data)) return data;
-  const result = await fireManualHandoff(c.req.param("id"), data.to);
+  const result = await fireWorkflowFromRun(c.req.param("id"), data.workflow);
   if (!result.ok) return c.json({ error: result.error }, result.status);
   return c.json({ run: result.run }, 201);
 });

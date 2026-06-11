@@ -55,7 +55,11 @@ export function GitView({ project }: { project: Project }) {
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
   // 커밋 메시지 AI 초안 — staged diff 를 선택한 에이전트에게.
+  // 기본값: git 역할 에이전트 > 첫 에이전트 (드롭다운을 안 건드려도 동작).
   const [suggestAgent, setSuggestAgent] = useState("");
+  const agents = agentsQ.data?.office.agents ?? [];
+  const gitAgent = agents.find((a) => a.roles?.includes("git"));
+  const draftAgent = suggestAgent || gitAgent?.name || agents[0]?.name || "";
   const suggest = useMutation({
     mutationFn: (agent: string) => api.gitSuggestCommit(project.id, agent),
     onSuccess: (r) => { setMessage(r.message); setErr(null); },
@@ -87,20 +91,24 @@ export function GitView({ project }: { project: Project }) {
           {/* AI 초안 — 에이전트 선택 + ✨ 생성 */}
           <div className="mb-1.5 flex items-center gap-1.5">
             <select
-              value={suggestAgent}
+              value={draftAgent}
               onChange={(e) => setSuggestAgent(e.target.value)}
               className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 text-[11px] focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              <option value="">{t("git.suggestAgent")}</option>
-              {(agentsQ.data?.office.agents ?? []).map((a) => (
+              {agents.length === 0 ? <option value="">{t("git.suggestAgent")}</option> : null}
+              {agents.map((a) => (
                 <option key={a.name} value={a.name}>@{a.name} · {a.adapter}</option>
               ))}
             </select>
             <button
               type="button"
-              disabled={!suggestAgent || stagedFiles.length === 0 || suggest.isPending}
-              onClick={() => suggest.mutate(suggestAgent)}
-              title={t("git.suggest")}
+              disabled={!draftAgent || stagedFiles.length === 0 || suggest.isPending}
+              onClick={() => suggest.mutate(draftAgent)}
+              title={
+                !draftAgent ? t("git.suggestNeedAgent")
+                : stagedFiles.length === 0 ? t("git.suggestNeedStaged")
+                : t("git.suggest")
+              }
               className={cn(
                 "flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-all",
                 suggest.isPending

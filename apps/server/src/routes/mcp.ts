@@ -32,6 +32,7 @@ function delegateTool(selfAgent: string | null) {
       properties: {
         agent: { type: "string", enum: teammates.map((a) => a.name), description: "Teammate to delegate to" },
         task: { type: "string", description: "Complete, self-contained task description for the teammate" },
+        reason: { type: "string", description: "One short line: why you are delegating this to that teammate" },
       },
       required: ["agent", "task"],
     },
@@ -68,12 +69,12 @@ mcpRoute.post("/", async (c) => {
     }
 
     case "tools/call": {
-      const p = req.params as { name?: string; arguments?: { agent?: string; task?: string } } | undefined;
+      const p = req.params as { name?: string; arguments?: { agent?: string; task?: string; reason?: string } } | undefined;
       if (p?.name !== "delegate") return c.json(err(req.id, -32602, `unknown tool: ${p?.name}`));
       const agent = p.arguments?.agent;
       const task = p.arguments?.task;
       if (!agent || !task) return c.json(err(req.id, -32602, "agent and task are required"));
-      const r = await delegateFromRun(runId, agent, task);
+      const r = await delegateFromRun(runId, agent, task, p.arguments?.reason);
       if (!r.ok) {
         return c.json(ok(req.id, { content: [{ type: "text", text: `Delegation failed: ${r.error}` }], isError: true }));
       }
@@ -90,3 +91,18 @@ mcpRoute.post("/", async (c) => {
 
 // 일부 클라이언트는 GET 으로 SSE 스트림을 열려고 한다 — 우리는 단방향이 필요 없음.
 mcpRoute.get("/", (c) => c.body(null, 405));
+
+// ── 셸 브리지 — MCP 주입 불가 CLI(antigravity)의 위임 경로. loadout 의
+// delegate.sh 가 호출한다: POST /api/delegate?runId=&agent= (body = task 텍스트).
+// 결과는 plain text — 에이전트의 셸 stdout 으로 그대로 돌아간다.
+export const delegateRoute = new Hono();
+delegateRoute.post("/", async (c) => {
+  const runId = c.req.query("runId") ?? "";
+  const agent = c.req.query("agent") ?? "";
+  const reason = c.req.query("reason") || undefined;
+  const task = (await c.req.text()).trim();
+  if (!runId || !agent || !task) return c.text("runId, agent and task are required", 400);
+  const r = await delegateFromRun(runId, agent, task, reason);
+  if (!r.ok) return c.text(`Delegation failed: ${r.error}`, 400);
+  return c.text(`[@${agent} replied]\n${r.result}`);
+});

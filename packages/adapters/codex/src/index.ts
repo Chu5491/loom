@@ -14,6 +14,8 @@ export interface CodexConfig extends AdapterConfig {
   reasoningEffort?: string;
   search?: boolean;
   dangerouslyBypassApprovalsAndSandbox?: boolean;
+  /** 엔진 공통 위험 토글(agent.permission=bypass) — codex 고유 키와 동치. */
+  dangerouslySkipPermissions?: boolean;
   /** Override the working dir codex sees (--cd). Distinct from spawn cwd. */
   cd?: string;
 }
@@ -23,7 +25,7 @@ export function buildCodexCommand(config: CodexConfig = {}): BuiltCommand {
   // Trailing `-` tells `codex exec` to read the prompt from stdin.
   const args: string[] = ["exec", "--json"];
   if (config.search) args.push("--search");
-  if (config.dangerouslyBypassApprovalsAndSandbox) {
+  if (config.dangerouslyBypassApprovalsAndSandbox || config.dangerouslySkipPermissions) {
     args.push("--dangerously-bypass-approvals-and-sandbox");
   }
   if (config.model) args.push("--model", config.model);

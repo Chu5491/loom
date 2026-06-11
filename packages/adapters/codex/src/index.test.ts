@@ -89,6 +89,12 @@ describe("buildCodexCommand", () => {
     ).toContain("--dangerously-bypass-approvals-and-sandbox");
   });
 
+  it("honours the engine-wide dangerouslySkipPermissions toggle", () => {
+    expect(
+      buildCodexCommand({ dangerouslySkipPermissions: true }).args,
+    ).toContain("--dangerously-bypass-approvals-and-sandbox");
+  });
+
   it("appends --cd when configured", () => {
     const { args } = buildCodexCommand({ cd: "/repo" });
     expect(args[args.indexOf("--cd") + 1]).toBe("/repo");

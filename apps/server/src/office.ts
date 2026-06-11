@@ -6,11 +6,11 @@ import path from "node:path";
 import { z } from "zod";
 import type {
   AgentSpec,
-  HarnessEdge,
   McpServer,
   Office,
   RuleSpec,
   SkillSpec,
+  WorkflowSpec,
 } from "@loom/core";
 import { paths } from "./config.js";
 
@@ -25,8 +25,8 @@ const dir = {
   rules: () => path.join(paths.office, "rules"),
   skills: () => path.join(paths.office, "skills"),
   agents: () => path.join(paths.office, "agents"),
+  workflows: () => path.join(paths.office, "workflows"),
   mcpFile: () => path.join(paths.office, "mcp", "servers.json"),
-  edgesFile: () => path.join(paths.office, "harness", "edges.json"),
 };
 
 // ── zod 스키마 (입력 경계 검증) ─────────────────────────────────────────────
@@ -62,21 +62,43 @@ export const agentSchema = z.object({
   reasoning: z.enum(["high", "medium", "low"]).optional(),
   permission: z.enum(["default", "acceptEdits", "bypass"]).optional(),
   delegate: z.boolean().optional(),
+  roles: z.array(z.enum(["git", "analyst"])).optional(),
   prompt: z.string().optional(),
   rules: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   mcp: z.array(z.string()).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
 });
-const edgeSchema = z.object({
+// 워크플로우 — 노드 id 는 캔버스 로컬 식별자(n1…), entry/edges 의 참조 무결성은
+// 라우트에서 검증(스키마는 형태만).
+const workflowNodeSchema = z.object({
+  id: z.string().regex(NAME_RE),
+  kind: z.enum(["agent", "gate"]).optional(),
+  // gate 노드는 agent 미사용 — 빈 문자열 허용(에이전트 존재 검증은 라우트에서 kind 별로).
+  agent: z.string(),
+  prompt: z.string().max(20_000),
+  x: z.number().optional(),
+  y: z.number().optional(),
+});
+const workflowEdgeSchema = z.object({
   from: z.string(),
   to: z.string(),
-  trigger: z.enum(["on_success", "on_fail", "on_changes", "manual"]),
-  mode: z.enum(["ask", "auto"]),
-  prompt: z.string().optional(),
-  carryResult: z.boolean().optional(),
+  on: z.enum(["success", "fail", "always"]),
 });
-export const edgesListSchema = z.object({ edges: z.array(edgeSchema) });
+export const workflowSchema = z.object({
+  description: z.string().optional(),
+  trigger: z
+    .object({
+      agent: z.string().min(1),
+      on: z.enum(["success", "fail", "changes"]),
+      mode: z.enum(["auto", "ask"]),
+    })
+    .nullable()
+    .optional(),
+  entry: z.string(),
+  nodes: z.array(workflowNodeSchema).min(1).max(20),
+  edges: z.array(workflowEdgeSchema).max(40),
+});
 
 // ── frontmatter (의존성 없이 — `---` 펜스 사이 key: value 만) ────────────────
 function splitFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
@@ -188,14 +210,51 @@ export function readAgents(): AgentSpec[] {
   });
 }
 
-export function readEdges(): HarnessEdge[] {
+// ── 기능 프롬프트 — git 커밋·프로젝트 분석 같은 내장 기능의 지침(스타일·관점).
+// 양식(출력 형식)은 서버 코드에 고정, 이 파일은 그 앞에 붙는 조정 가능한 부분.
+// 에이전트 프롬프트와 분리 — 기능 실행 시 에이전트의 prompt 대신 이게 쓰인다.
+export const FEATURE_PROMPT_NAMES = ["git-commit", "analysis"] as const;
+export type FeaturePromptName = (typeof FEATURE_PROMPT_NAMES)[number];
+
+const DEFAULT_FEATURE_PROMPTS: Record<FeaturePromptName, string> = {
+  "git-commit":
+    "You are writing a commit message for this repository.\n" +
+    "Match the language of the diff and codebase comments. Be concise; the body explains WHY, not WHAT.\n",
+  analysis:
+    "You are analyzing this repository for its team dashboard.\n" +
+    "Be honest and specific — scores should reflect reality, risks should be actionable, suggestions concrete.\n",
+};
+
+function featurePromptFile(name: FeaturePromptName): string {
+  return path.join(paths.office, "prompts", `${name}.md`);
+}
+
+export function readFeaturePrompt(name: FeaturePromptName): string {
   try {
-    return edgesListSchema.parse(
-      JSON.parse(fs.readFileSync(dir.edgesFile(), "utf8")),
-    ).edges;
+    return fs.readFileSync(featurePromptFile(name), "utf8");
   } catch {
-    return [];
+    return DEFAULT_FEATURE_PROMPTS[name]; // 파일이 없으면 기본값 — 저장 시 생성
   }
+}
+
+export function readFeaturePrompts(): RuleSpec[] {
+  return FEATURE_PROMPT_NAMES.map((name) => ({ name, body: readFeaturePrompt(name) }));
+}
+
+export function writeFeaturePrompt(name: FeaturePromptName, body: string): RuleSpec {
+  writeFileEnsured(featurePromptFile(name), body);
+  return { name, body };
+}
+
+export function readWorkflows(): WorkflowSpec[] {
+  return listJson(dir.workflows()).flatMap((name) => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(dir.workflows(), `${name}.json`), "utf8"));
+      return [{ name, ...workflowSchema.parse(raw) }];
+    } catch {
+      return []; // 깨진 정의는 목록에서 제외 — 파일은 보존(사용자가 고침)
+    }
+  });
 }
 
 export function readOffice(): Office {
@@ -204,7 +263,8 @@ export function readOffice(): Office {
     skills: readSkills(),
     mcp: readMcp(),
     agents: readAgents(),
-    edges: readEdges(),
+    workflows: readWorkflows(),
+    prompts: readFeaturePrompts(),
   };
 }
 
@@ -288,9 +348,12 @@ export function writeAgent(name: string, spec: Omit<AgentSpec, "name">): AgentSp
   return { name, ...spec };
 }
 
-export function writeEdges(edges: HarnessEdge[]): HarnessEdge[] {
-  writeFileEnsured(dir.edgesFile(), JSON.stringify({ edges }, null, 2));
-  return edges;
+export function writeWorkflow(name: string, spec: Omit<WorkflowSpec, "name">): WorkflowSpec {
+  writeFileEnsured(
+    path.join(dir.workflows(), `${safeName(name)}.json`),
+    JSON.stringify(spec, null, 2),
+  );
+  return { name, ...spec };
 }
 
 // ── 삭제 ────────────────────────────────────────────────────────────────────
@@ -314,6 +377,8 @@ export const deleteSkill = (name: string) => {
 };
 export const deleteAgent = (name: string) =>
   rmIfExists(path.join(dir.agents(), `${safeName(name)}.json`));
+export const deleteWorkflow = (name: string) =>
+  rmIfExists(path.join(dir.workflows(), `${safeName(name)}.json`));
 
 /** 첫 실행 시 office/ 골격 + 예시 한 개씩. 이미 있으면 noop. */
 // 기본 MCP 4종 — 코딩 에이전트의 표준 장비(웹검색·코드검색·문서·위키). remote 라
@@ -332,5 +397,4 @@ export function ensureOffice(): void {
     "# Global rules\n\nKeep changes minimal and explain non-obvious decisions.\n",
   );
   writeMcp(DEFAULT_MCP);
-  writeEdges([]);
 }

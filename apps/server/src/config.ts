@@ -1,5 +1,5 @@
 // 서버 설정. v2: CLI 허브 + office-as-code.
-//   office/  = git 커밋되는 정의 (rules/skills/mcp/agents/harness)
+//   office/  = git 커밋되는 정의 (rules/skills/mcp/agents/workflows)
 //   data/    = gitignore 되는 기록 (runs/logs/loadouts)
 // 둘 다 리포 루트 기준 (LOOM_HOME 으로 오버라이드 — 다른 오피스 폴더 열 때).
 
@@ -18,7 +18,15 @@ const home = process.env.LOOM_HOME
   ? path.resolve(process.env.LOOM_HOME)
   : path.resolve(process.cwd(), "..", "..");
 
-export const config = { port, host, home } as const;
+// 동시 CLI run 한도 — 스케줄×트리거×위임이 겹쳐도 머신이 폭주하지 않게.
+// 위임 자식은 한도를 우회(부모가 슬롯을 쥔 채 기다리므로 — 데드락 방지).
+const rawMax = process.env.LOOM_MAX_RUNS ?? "4";
+const maxConcurrentRuns = Number(rawMax);
+if (!Number.isInteger(maxConcurrentRuns) || maxConcurrentRuns < 1) {
+  throw new Error(`LOOM_MAX_RUNS 값이 잘못됨: "${rawMax}" — 1 이상 정수 필요`);
+}
+
+export const config = { port, host, home, maxConcurrentRuns } as const;
 
 export const paths = {
   office: path.join(home, "office"),

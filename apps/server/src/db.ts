@@ -4,7 +4,7 @@
 
 import Database from "better-sqlite3";
 import fs from "node:fs";
-import type { OfficeEvent, Project, RunInfo, Thread } from "@loom/core";
+import type { OfficeEvent, Project, RunInfo, Schedule, Thread } from "@loom/core";
 import { paths } from "./config.js";
 
 export type DB = Database.Database;
@@ -49,6 +49,17 @@ export function getDb(): DB {
       project_id  TEXT,
       created_at  TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS schedules (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      agent       TEXT NOT NULL,
+      prompt      TEXT NOT NULL,
+      cron        TEXT NOT NULL,
+      project_id  TEXT,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      last_run_at TEXT,
+      created_at  TEXT NOT NULL
+    );
   `);
   // 이전 버전 db 에 없던 컬럼 자가치유(기록은 disposable이지만 안전하게).
   const cols = db.prepare<[], { name: string }>(`PRAGMA table_info(runs)`).all();
@@ -61,6 +72,10 @@ export function getDb(): DB {
   if (!cols.some((c) => c.name === "thread_id")) {
     db.exec(`ALTER TABLE runs ADD COLUMN thread_id TEXT`);
     backfillThreads(db);
+  }
+  if (!cols.some((c) => c.name === "workflow")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN workflow TEXT`);
+    db.exec(`ALTER TABLE runs ADD COLUMN node TEXT`);
   }
   _db = db;
   return db;
@@ -98,6 +113,8 @@ interface RunRow {
   project_id: string | null;
   thread_id: string | null;
   cost_usd: number | null;
+  workflow: string | null;
+  node: string | null;
 }
 function toInfo(r: RunRow): RunInfo {
   return {
@@ -112,16 +129,18 @@ function toInfo(r: RunRow): RunInfo {
     projectId: r.project_id,
     threadId: r.thread_id,
     costUsd: r.cost_usd,
+    workflow: r.workflow,
+    node: r.node,
   };
 }
 
 export function insertRun(info: RunInfo): void {
   getDb()
     .prepare(
-      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id, project_id, thread_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id, project_id, thread_id, workflow, node)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId, info.projectId, info.threadId);
+    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId, info.projectId, info.threadId, info.workflow ?? null, info.node ?? null);
 }
 
 export function appendEvent(runId: string, seq: number, event: OfficeEvent): void {
@@ -140,6 +159,15 @@ export function finishRun(
        WHERE id = ?`,
     )
     .run(info.status, info.endedAt, info.exitCode, meta.costUsd ?? null, meta.sessionId ?? null, info.id);
+}
+
+/** 서버 부팅 시 — 프로세스가 죽어 영원히 "running" 으로 남은 고아 run 정리.
+ *  spawn 된 CLI 는 서버와 함께 죽으므로 실패로 마감하는 것이 사실에 부합. */
+export function failOrphanRuns(): number {
+  const r = getDb()
+    .prepare(`UPDATE runs SET status = 'failed', ended_at = ? WHERE status = 'running'`)
+    .run(new Date().toISOString());
+  return r.changes;
 }
 
 export interface RunFilter {
@@ -291,4 +319,69 @@ export function deleteProjectDb(id: string): void {
 
 export function projectPathExists(path: string): boolean {
   return !!getDb().prepare<[string], { n: number }>(`SELECT 1 n FROM projects WHERE path = ?`).get(path);
+}
+
+// ── schedules — cron 으로 에이전트 run 을 반복 실행 (머신-로컬 기록) ─────────────
+interface ScheduleRow {
+  id: string;
+  name: string;
+  agent: string;
+  prompt: string;
+  cron: string;
+  project_id: string | null;
+  enabled: number;
+  last_run_at: string | null;
+  created_at: string;
+}
+function toSchedule(r: ScheduleRow): Schedule {
+  return {
+    id: r.id,
+    name: r.name,
+    agent: r.agent,
+    prompt: r.prompt,
+    cron: r.cron,
+    projectId: r.project_id,
+    enabled: !!r.enabled,
+    lastRunAt: r.last_run_at,
+    createdAt: r.created_at,
+  };
+}
+
+export function listSchedulesDb(projectId?: string | null): Schedule[] {
+  const db = getDb();
+  const rows =
+    projectId === undefined
+      ? db.prepare<[], ScheduleRow>(`SELECT * FROM schedules ORDER BY created_at DESC`).all()
+      : db.prepare<[string | null], ScheduleRow>(`SELECT * FROM schedules WHERE project_id IS ? ORDER BY created_at DESC`).all(projectId);
+  return rows.map(toSchedule);
+}
+
+export function getScheduleDb(id: string): Schedule | null {
+  const r = getDb().prepare<[string], ScheduleRow>(`SELECT * FROM schedules WHERE id = ?`).get(id);
+  return r ? toSchedule(r) : null;
+}
+
+export function insertSchedule(s: Schedule): void {
+  getDb()
+    .prepare(
+      `INSERT INTO schedules (id, name, agent, prompt, cron, project_id, enabled, last_run_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(s.id, s.name, s.agent, s.prompt, s.cron, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.createdAt);
+}
+
+export function updateScheduleDb(s: Schedule): void {
+  getDb()
+    .prepare(
+      `UPDATE schedules SET name = ?, agent = ?, prompt = ?, cron = ?, project_id = ?, enabled = ?, last_run_at = ? WHERE id = ?`,
+    )
+    .run(s.name, s.agent, s.prompt, s.cron, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.id);
+}
+
+export function deleteScheduleDb(id: string): boolean {
+  return getDb().prepare(`DELETE FROM schedules WHERE id = ?`).run(id).changes > 0;
+}
+
+export function touchScheduleLastRun(id: string, at: string): void {
+  getDb().prepare(`UPDATE schedules SET last_run_at = ? WHERE id = ?`).run(at, id);
 }

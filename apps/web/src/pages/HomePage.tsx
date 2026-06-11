@@ -1,19 +1,22 @@
-// 홈 = 프로젝트 대시보드. 채팅은 프로젝트에 "들어가서" 한다(depth 흐름).
-// 프로젝트 추가는 경로 타이핑이 아니라 폴더 피커로 — 서버가 로컬 디렉토리를 탐색해준다.
+// 홈 = 회사 대시보드. 인원(에이전트)·양식(office)·연결(CLI)·사용량을 한눈에 보고,
+// 진행 중인 프로젝트로 "들어간다"(depth 흐름). 프로젝트 추가는 폴더 피커로.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, ArrowUp, Check, FolderGit2, FolderOpen, House, MessagesSquare, Plus, Trash2, X } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, CircleDollarSign, FileText, FolderGit2, FolderOpen, House, MessagesSquare, Plug, Plus, Trash2, Users, X } from "lucide-react";
 import { api } from "../api/client.js";
+import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Button } from "../components/ui.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
-export function HomePage({ onOpen }: { onOpen: (projectId: string) => void }) {
+export function HomePage({ onOpen, onOpenTab }: { onOpen: (projectId: string) => void; onOpenTab: (tab: "office" | "connections") => void }) {
   const { t, lang } = useI18n();
   const qc = useQueryClient();
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
   const [adding, setAdding] = useState(false);
+  const [pendingDel, setPendingDel] = useState<{ id: string; name: string } | null>(null);
   const del = useMutation({
     mutationFn: (id: string) => api.deleteProject(id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
@@ -23,16 +26,24 @@ export function HomePage({ onOpen }: { onOpen: (projectId: string) => void }) {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <header className="flex items-end justify-between">
+      <header>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">{t("home.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("home.subtitle")}</p>
+      </header>
+
+      {/* 회사 현황 — 인원·양식·연결·사용량 */}
+      <CompanyCards onOpenTab={onOpenTab} />
+
+      <div className="mt-10 flex items-end justify-between">
         <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">{t("home.title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t("home.subtitle")}</p>
+          <h2 className="font-display text-lg font-semibold">{t("home.projects")}</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t("home.projectsSub")}</p>
         </div>
         <Button onClick={() => setAdding(true)}>
           <Plus className="size-4" />
           {t("home.add")}
         </Button>
-      </header>
+      </div>
 
       {adding ? (
         <AddProject
@@ -87,7 +98,7 @@ export function HomePage({ onOpen }: { onOpen: (projectId: string) => void }) {
                 aria-label={t("home.unregister")}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm(t("project.deleteConfirm", { name: p.name }))) del.mutate(p.id);
+                  setPendingDel({ id: p.id, name: p.name });
                 }}
                 className="absolute right-3 top-3 rounded p-1 text-muted-foreground/50 opacity-0 transition hover:text-destructive group-hover:opacity-100"
               >
@@ -97,7 +108,113 @@ export function HomePage({ onOpen }: { onOpen: (projectId: string) => void }) {
           ))}
         </div>
       )}
+
+      {pendingDel ? (
+        <ConfirmDialog
+          icon={<Trash2 className="size-4.5" />}
+          tone="danger"
+          title={t("home.unregister")}
+          body={t("project.deleteConfirm", { name: pendingDel.name })}
+          confirmLabel={t("home.unregister")}
+          onConfirm={() => { del.mutate(pendingDel.id); setPendingDel(null); }}
+          onCancel={() => setPendingDel(null)}
+        />
+      ) : null}
     </main>
+  );
+}
+
+// ── 회사 현황 카드 — 인원(에이전트)·양식(office 정의)·연결(CLI)·사용량(30일) ──────
+function CompanyCards({ onOpenTab }: { onOpenTab: (tab: "office" | "connections") => void }) {
+  const { t } = useI18n();
+  const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
+  const usage = useQuery({ queryKey: ["usage"], queryFn: () => api.getUsage(30), staleTime: 60_000 });
+  const o = office.data?.office;
+  const u = usage.data;
+  // 사용량 막대 — 비용 기준 상위 4 에이전트, 최대값 대비 비율.
+  const topAgents = (u?.byAgent ?? []).slice(0, 4);
+  const maxCost = Math.max(...topAgents.map((a) => a.costUsd), 0.0001);
+  const adapterOf = (name: string) => o?.agents.find((a) => a.name === name)?.adapter;
+
+  const cardCls =
+    "flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]";
+  const headCls = "flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground";
+
+  return (
+    <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* 인원 */}
+      <button type="button" onClick={() => onOpenTab("office")} className={cardCls}>
+        <span className={headCls}><Users className="size-3.5 text-primary" />{t("home.people")}</span>
+        <span className="flex items-center gap-2">
+          <span className="font-display text-2xl font-bold tabular-nums">{o?.agents.length ?? "…"}</span>
+          <span className="flex -space-x-1.5">
+            {(o?.agents ?? []).slice(0, 6).map((a) => (
+              <AgentAvatar key={a.name} adapter={a.adapter} size={22} className="rounded-full ring-2 ring-card" />
+            ))}
+          </span>
+        </span>
+        <span className="text-[11px] text-muted-foreground">{t("home.peopleSub")}</span>
+      </button>
+
+      {/* 양식 */}
+      <button type="button" onClick={() => onOpenTab("office")} className={cardCls}>
+        <span className={headCls}><FileText className="size-3.5 text-primary" />{t("home.forms")}</span>
+        <span className="flex flex-wrap gap-1.5 text-[11px]">
+          {o ? (
+            <>
+              <FormChip label={t("office.section.rules")} n={o.rules.length} />
+              <FormChip label={t("office.section.skills")} n={o.skills.length} />
+              <FormChip label={t("office.section.workflows")} n={o.workflows.length} />
+              <FormChip label="MCP" n={o.mcp.length} />
+            </>
+          ) : "…"}
+        </span>
+        <span className="text-[11px] text-muted-foreground">{t("home.formsSub")}</span>
+      </button>
+
+      {/* 연결 */}
+      <button type="button" onClick={() => onOpenTab("connections")} className={cardCls}>
+        <span className={headCls}><Plug className="size-3.5 text-primary" />{t("home.connections")}</span>
+        <span className="flex items-center gap-1.5">
+          {[...new Set((o?.agents ?? []).map((a) => a.adapter))].map((ad) => (
+            <AgentAvatar key={ad} adapter={ad} size={22} className="rounded-md" />
+          ))}
+        </span>
+        <span className="text-[11px] text-muted-foreground">{t("home.connectionsSub")}</span>
+      </button>
+
+      {/* 사용량 — loom 기록 기준 소비량(30일) */}
+      <button type="button" onClick={() => onOpenTab("connections")} className={cardCls}>
+        <span className={headCls}><CircleDollarSign className="size-3.5 text-primary" />{t("home.usage")}</span>
+        <span className="flex items-baseline gap-2">
+          <span className="font-display text-2xl font-bold tabular-nums">${(u?.totals.costUsd ?? 0).toFixed(2)}</span>
+          <span className="text-[11px] text-muted-foreground">{t("home.usageRuns", { n: String(u?.totals.runs ?? 0) })}</span>
+        </span>
+        <span className="space-y-1">
+          {topAgents.map((a) => {
+            const adapter = adapterOf(a.agent);
+            return (
+              <span key={a.agent} className="flex items-center gap-1.5">
+                {adapter ? <AgentAvatar adapter={adapter} size={14} className="rounded" /> : null}
+                <span className="w-16 truncate text-[10px] text-muted-foreground">@{a.agent}</span>
+                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/60">
+                  <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.max(4, (a.costUsd / maxCost) * 100)}%` }} />
+                </span>
+                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">${a.costUsd.toFixed(2)}</span>
+              </span>
+            );
+          })}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function FormChip({ label, n }: { label: string; n: number }) {
+  return (
+    <span className="rounded-full border border-border px-2 py-0.5">
+      {label} <span className="font-semibold tabular-nums">{n}</span>
+    </span>
   );
 }
 

@@ -19,6 +19,16 @@ export interface AgentLoadout {
   mcpConfigPath: string | null;
   skills: LoadoutSkill[];
   mcpServerNames: string[];
+  /** MCP 주입 불가 CLI(antigravity)용 위임 셸 브리지 — delegate.sh 경로 + 팀원. */
+  delegate?: { scriptPath: string; teammates: string[] } | null;
+}
+
+/** MCP 를 못 싣는 CLI 용 위임 브리지 입력 — 엔진이 delegate opt-in 시 넘긴다. */
+export interface DelegateBridge {
+  runId: string;
+  /** POST <url>?runId=&agent= (body=task) — 결과 텍스트가 응답으로 온다. */
+  url: string;
+  teammates: string[];
 }
 
 function safeFilename(raw: string, fallback: string): string {
@@ -82,6 +92,7 @@ export function materializeLoadout(
   agent: AgentSpec,
   skills: SkillSpec[],
   mcp: McpServer[],
+  bridge?: DelegateBridge | null,
 ): AgentLoadout {
   const dir = path.join(paths.loadouts, agent.name);
   fs.rmSync(dir, { recursive: true, force: true });
@@ -122,8 +133,27 @@ export function materializeLoadout(
     );
   }
 
+  // MCP 불가 CLI 의 위임 — 에이전트가 자기 셸 도구로 실행하는 브리지 스크립트.
+  // 결과 텍스트가 stdout 으로 돌아오므로 어떤 CLI 든 동작한다.
+  let delegate: AgentLoadout["delegate"] = null;
+  if (bridge) {
+    const scriptPath = path.join(dir, "delegate.sh");
+    fs.writeFileSync(
+      scriptPath,
+      [
+        "#!/bin/sh",
+        "# loom delegate bridge — usage: sh delegate.sh <teammate> <task...>",
+        'AGENT="$1"; shift',
+        `printf '%s' "$*" | curl -sS -X POST "${bridge.url}?runId=${bridge.runId}&agent=$AGENT" -H 'Content-Type: text/plain' --data-binary @-`,
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    delegate = { scriptPath, teammates: bridge.teammates };
+  }
+
   const readmePath = path.join(dir, "README.md");
   fs.writeFileSync(readmePath, renderReadme(agent.name, dir, loadoutSkills, mcp));
 
-  return { dir, readmePath, mcpConfigPath, skills: loadoutSkills, mcpServerNames: mcp.map((s) => s.name) };
+  return { dir, readmePath, mcpConfigPath, skills: loadoutSkills, mcpServerNames: mcp.map((s) => s.name), delegate };
 }

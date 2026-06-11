@@ -122,6 +122,9 @@ function summariseInput(
 
 export const antigravityAdapter = defineCliAdapter<AntigravityConfig>({
   kind: "antigravity",
+  // agy 는 run별 MCP 주입 경로가 없음(플러그인은 CLI root 전역 설치뿐 — 헌법 3조).
+  // 위임은 loadout 셸 브리지(delegate.sh)로 제공된다.
+  supportsMcpServers: false,
   buildCommand: buildAntigravityCommand,
   prompt: { via: "arg", flag: "--print" },
   resolveEnv: (cfg) => {

@@ -71,8 +71,8 @@ office/                      ← git 커밋되는 정의 (이름 = 식별자, id
   rules/<name>.md            항상 붙는 규약
   skills/<name>.md           단일 스킬 — 또는 skills/<name>/SKILL.md + 딸린 파일(폴더 스킬)
   mcp/servers.json           MCP 서버 (secret 은 "${ENV}" 참조)
-  agents/<name>.json         에이전트 = CLI + 모델 + 끌고 갈 rules/skills/mcp
-  harness/edges.json         핸드오프 규칙 (from→to, trigger, mode)
+  agents/<name>.json         에이전트 = CLI + 모델 + 끌고 갈 rules/skills/mcp + roles
+  workflows/<name>.json      워크플로우 = 노드(에이전트+프롬프트) 그래프 + 트리거(옛 하네스 흡수)
 data/                        ← gitignore 되는 기록
   loom.db                    runs + run_events (슬림 sqlite — 마이그레이션 프레임워크 없음)
   logs/<runId>.log           CLI raw 출력 (진실)
@@ -85,7 +85,7 @@ data/                        ← gitignore 되는 기록
 
 - **시작**: `routes/runs.ts` POST → `run/engine.ts startRun` — office 에서 에이전트의 rules/skills/mcp 추림(+`skills[]` 명시 첨부) → `run/loadout.ts` 디스크 펼침 → `run/compose.ts` 프롬프트 조립(스킬은 인덱스만 — 본문은 에이전트가 필요할 때 Read) → 어댑터 `spawn()`
 - **스트림**: stdout 라인 → `run/parse.ts parseEvents`(5 CLI 포맷 → OfficeEvent 단일 모델) → 인메모리 + sqlite 영속 → SSE(`/:id/events`, replay→live→done)
-- **하네스**: run 종료 시 `run/harness.ts` 가 auto 엣지 평가 → handoff 이벤트 emit → 자식 run spawn(`MAX_HARNESS_HOPS=5` 루프 방어). ask/manual 은 UI 제안 버튼 → `POST /:id/handoff`
+- **워크플로우**: `run/workflow.ts` — 다단계 그래프(노드=스텝, 엣지=success/fail/always 분기, `{{input}}`/`{{result}}` 치환). 시작은 ① Talk 수동 버튼(`POST /api/runs/workflow`) ② 트리거 — 에이전트 run 종료 시 auto(즉시)/ask(UI 제안 → `POST /:id/workflow`). `MAX_CHAIN_HOPS=5` + `MAX_WORKFLOW_STEPS=20` 루프 방어. 1-hop 하네스(edges.json)는 이 개념에 흡수돼 제거됨.
 - **프로젝트**: 등록된 로컬 디렉토리(`data/` sqlite, 머신별) — run 의 cwd. office 는 전역 공유 "팀", 프로젝트는 "일할 곳".
 
 ### 3.4 프론트엔드

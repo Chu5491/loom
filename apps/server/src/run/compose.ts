@@ -22,7 +22,7 @@ export function composePrompt(input: ComposeInput): string {
   const a = input.agentPrompt?.trim();
   if (a) sections.push(`=== Agent Instructions ===\n${a}\n=== End Instructions ===`);
 
-  if (input.loadout && (input.loadout.skills.length || input.loadout.mcpServerNames.length)) {
+  if (input.loadout && (input.loadout.skills.length || input.loadout.mcpServerNames.length || input.loadout.delegate)) {
     sections.push(renderLoadout(input.loadout));
   }
 
@@ -44,6 +44,16 @@ function renderLoadout(l: AgentLoadout): string {
     // 일부 CLI에서 툴을 못 찾게 만들었음(검증).
     lines.push("", `MCP servers available (${l.mcpServerNames.length}):`);
     for (const n of l.mcpServerNames) lines.push(`  - ${n}  — its tools are available; call them when relevant.`);
+  }
+  if (l.delegate) {
+    // MCP 도구가 없는 CLI 의 위임 경로 — 셸로 브리지 실행. delegate opt-in 시에만 실린다.
+    lines.push(
+      "",
+      "Delegation (this CLI has no MCP tools — use the shell bridge):",
+      `  Run: sh ${l.delegate.scriptPath} <teammate> "<complete, self-contained task>"`,
+      "  The teammate's reply prints to stdout. Use it to continue your work.",
+      `  Teammates: ${l.delegate.teammates.join(", ")}`,
+    );
   }
   lines.push(`\nFull index: ${l.readmePath}`, "=== End Loadout ===");
   return lines.join("\n");

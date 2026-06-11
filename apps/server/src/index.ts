@@ -5,20 +5,30 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { config } from "./config.js";
+import { failOrphanRuns } from "./db.js";
 import { logger } from "./logger.js";
 import { ensureOffice } from "./office.js";
 import { adaptersRoute } from "./routes/adapters.js";
 import { healthRoute } from "./routes/health.js";
 import { officeRoute } from "./routes/office.js";
 import { fsRoute } from "./routes/fs.js";
-import { mcpRoute } from "./routes/mcp.js";
+import { delegateRoute, mcpRoute } from "./routes/mcp.js";
 import { projectFilesRoute } from "./routes/project-files.js";
 import { projectsRoute } from "./routes/projects.js";
 import { runsRoute } from "./routes/runs.js";
+import { gatesRoute } from "./routes/gates.js";
+import { schedulesRoute } from "./routes/schedules.js";
+import { usageRoute } from "./routes/usage.js";
+import { cancelAllRunning } from "./run/engine.js";
+import { reschedule, stopScheduler } from "./run/scheduler.js";
 import { threadsRoute } from "./routes/threads.js";
 import { uploadsRoute } from "./routes/uploads.js";
 
 ensureOffice();
+// 직전 서버와 함께 죽은 run 들 — "running" 좀비로 남아 UI 에서 멈출 수 없게 되는 것 방지.
+const orphans = failOrphanRuns();
+if (orphans > 0) logger.warn({ orphans }, "marked orphan running runs as failed");
+reschedule(); // 저장된 활성 스케줄을 cron 으로 무장 (서버 프로세스 수명 동안)
 
 const app = new Hono();
 
@@ -27,11 +37,15 @@ app.route("/api/adapters", adaptersRoute);
 app.route("/api/office", officeRoute);
 app.route("/api/fs", fsRoute);
 app.route("/api/mcp", mcpRoute);
+app.route("/api/delegate", delegateRoute);
 app.route("/api/projects", projectsRoute);
 app.route("/api/projects", projectFilesRoute);
 app.route("/api/threads", threadsRoute);
 app.route("/api/uploads", uploadsRoute);
 app.route("/api/runs", runsRoute);
+app.route("/api/schedules", schedulesRoute);
+app.route("/api/usage", usageRoute);
+app.route("/api/gates", gatesRoute);
 
 app.onError((err, c) => {
   logger.error({ err }, "unhandled request error");
@@ -49,8 +63,13 @@ const server = serve(
 );
 
 const shutdown = () => {
-  logger.info("shutting down");
+  // 실행 중 run 들을 kill+cancelled 마감 — DB 에 "running" 좀비를 남기지 않는다.
+  stopScheduler();
+  const cancelled = cancelAllRunning();
+  logger.info({ cancelled }, "shutting down");
   server.close(() => process.exit(0));
+  // close 가 keep-alive 연결로 늦어져도 종료는 보장.
+  setTimeout(() => process.exit(0), 2000).unref();
 };
 
 process.on("SIGINT", shutdown);

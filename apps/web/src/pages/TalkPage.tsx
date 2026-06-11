@@ -6,14 +6,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowUp, Bot, ChevronDown, ChevronLeft, ChevronRight, FilePen, FilePlus2, FileSearch, FileText,
-  FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
-  Paperclip, Pencil, Plug, Sparkles, Terminal, Trash2, Workflow, Wrench, X, Zap,
+  ArrowUp, Bot, CalendarClock, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
+  FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
+  Paperclip, Pencil, Plug, ScanSearch, Sparkles, Terminal, Trash2, Workflow, Wrench, X,
 } from "lucide-react";
-import type { AgentSpec, HarnessEdge, OfficeEvent, Project, RunInfo, SkillSpec, Thread } from "@loom/core";
+import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, WorkflowSpec } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
+import { AnalysisView } from "../components/AnalysisView.js";
 import { FilesView } from "../components/FilesView.js";
+import { SchedulesView } from "../components/SchedulesView.js";
 import { GitView } from "../components/GitView.js";
 import { Markdown } from "../components/Markdown.js";
 import { useI18n } from "../context/I18nContext.js";
@@ -24,13 +26,10 @@ interface UserMsg { id: string; role: "user"; agent: string; text: string }
 interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string; startedAt?: string }
 type Msg = UserMsg | AgentMsg;
 
-/** 대상 칩의 "자동" 모드 — 서버 디스패치가 적합 에이전트를 고른다. */
-const AUTO = "__auto";
+/** 워크스페이스 내부 뷰 — 대화 / 파일(Monaco) / Git / 분석 / 스케줄. */
+type WsView = "talk" | "files" | "git" | "analysis" | "schedules";
 
-/** 워크스페이스 내부 뷰 — 대화 / 파일(Monaco) / Git(diff·commit·에이전트 활동). */
-type WsView = "talk" | "files" | "git";
-
-export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Project; onBack: () => void; missionSignal?: number }) {
+export function TalkPage({ project }: { project: Project }) {
   const { t } = useI18n();
   const qc = useQueryClient();
   const projectId = project.id;
@@ -56,19 +55,28 @@ export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Proj
     queryKey: ["runs", threadId],
     queryFn: () => api.listRuns(threadId!),
     enabled: !!threadId,
+    // 외부에서 시작되는 run(스케줄·트리거·워크플로우 스텝)도 라이브로 흘러들어오게.
+    // 창이 백그라운드여도 계속 — 에이전트는 사용자가 딴 데 보는 동안에도 일한다.
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+  });
+  // 대기 중 휴먼 게이트 — 승인/거부 칩을 진행 보드에 띄운다.
+  const gates = useQuery({
+    queryKey: ["gates", threadId],
+    queryFn: () => api.listGates(threadId!),
+    enabled: !!threadId,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
   });
   const agents = office.data?.office.agents ?? [];
 
   const [active, setActive] = useState<string>("");
   const [pending, setPending] = useState<{ agent: string; text: string } | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null); // rename 중인 thread id
   const [view, setView] = useState<WsView>("talk");
-  // 미션 컨트롤 — 진입 시 한 번 열리고, 헤더 프로젝트 칩으로 다시 부른다.
-  const [mcOpen, setMcOpen] = useState(true);
-  useEffect(() => {
-    if (missionSignal > 0) setMcOpen(true);
-  }, [missionSignal]);
+  // 워크플로우 실행 모달 — null=닫힘, ""=열림(선택 없음), "이름"=그 워크플로우 preselect.
+  const [wfOpen, setWfOpen] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 라이브 활동 집계 — 각 버블(run)이 보고하는 "지금 하는 일"을 팀 패널에 흘린다.
@@ -156,8 +164,7 @@ export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Proj
         await threads.refetch();
       }
       const opts = { prompt, projectId, threadId: tid, ...(skills.length ? { skills } : {}) };
-      if (agent === AUTO) await api.dispatchRun(opts); // 서버가 적합 에이전트 선택(라우팅만)
-      else await api.startRun({ ...opts, agent });
+      await api.startRun({ ...opts, agent });
       await qc.invalidateQueries({ queryKey: ["runs", tid] });
       setPending(null);
     } catch (e) {
@@ -177,6 +184,8 @@ export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Proj
     { key: "talk", label: t("ws.talk"), icon: <MessagesSquare className="size-4" /> },
     { key: "files", label: t("ws.files"), icon: <FolderOpen className="size-4" /> },
     { key: "git", label: t("ws.git"), icon: <GitBranch className="size-4" /> },
+    { key: "analysis", label: t("ws.analysis"), icon: <ScanSearch className="size-4" /> },
+    { key: "schedules", label: t("ws.schedules"), icon: <CalendarClock className="size-4" /> },
   ];
 
   return (
@@ -202,29 +211,9 @@ export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Proj
 
         {view === "talk" ? (
           <>
-          {renaming && threadId ? (
-            <input
-              className="h-8 min-w-0 flex-1 rounded-md border border-primary/50 bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72"
-              defaultValue={threads.data.threads.find((th) => th.id === threadId)?.name ?? ""}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return;
-                if (e.key === "Escape") setRenaming(false);
-                if (e.key === "Enter") {
-                  const v = (e.target as HTMLInputElement).value.trim();
-                  if (v) void api.renameThread(threadId, v).then(() => threads.refetch());
-                  setRenaming(false);
-                }
-              }}
-              onBlur={(e) => {
-                const v = e.target.value.trim();
-                if (v) void api.renameThread(threadId, v).then(() => threads.refetch());
-                setRenaming(false);
-              }}
-            />
-          ) : (
+            {/* 작은 화면 폴백 — lg+ 에선 좌측 스레드 사이드바가 담당 */}
             <select
-              className="h-8 min-w-0 flex-1 truncate rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72"
+              className="h-8 min-w-0 flex-1 truncate rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-72 lg:hidden"
               value={threadId ?? ""}
               onChange={(e) => setThreadId(e.target.value || null)}
             >
@@ -233,49 +222,71 @@ export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Proj
                 <option key={th.id} value={th.id}>{th.name}</option>
               ))}
             </select>
-          )}
-          {threadId ? (
-            <button
-              type="button"
-              title={t("talk.thread.rename")}
-              onClick={() => setRenaming(true)}
-              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-            >
-              <Pencil className="size-4" />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            title={t("talk.thread.new")}
-            onClick={() => setThreadId(null)}
-            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-          >
-            <MessageSquarePlus className="size-4" />
-          </button>
-          {threadId ? (
-            <button
-              type="button"
-              title={t("talk.thread.delete")}
-              onClick={() => {
-                if (!confirm(t("talk.thread.deleteConfirm"))) return;
-                void api.deleteThread(threadId).then(() => { setThreadId(null); void threads.refetch(); });
-              }}
-              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          ) : null}
+            {(office.data?.office.workflows.length ?? 0) > 0 ? (
+              <button
+                type="button"
+                title={t("talk.workflow.run")}
+                onClick={() => setWfOpen("")}
+                className="ml-auto flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-primary/40 px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+              >
+                <CirclePlay className="size-4" />
+                {t("talk.workflow.run")}
+              </button>
+            ) : null}
           </>
         ) : null}
       </div>
+
+      {wfOpen !== null ? (
+        <WorkflowRunModal
+          workflows={office.data?.office.workflows ?? []}
+          initialName={wfOpen || undefined}
+          onClose={() => setWfOpen(null)}
+          onRun={async (name, input) => {
+            setWfOpen(null);
+            setSendError(null);
+            try {
+              let tid = threadId;
+              if (!tid) {
+                const { thread } = await api.createThread(input.slice(0, 40), projectId);
+                tid = thread.id;
+                setThreadId(tid);
+                await threads.refetch();
+              }
+              await api.runWorkflow({ workflow: name, input, projectId, threadId: tid });
+              await qc.invalidateQueries({ queryKey: ["runs", tid] });
+            } catch (e) {
+              setSendError(e instanceof Error ? e.message : String(e));
+            }
+          }}
+        />
+      ) : null}
 
       <div className="flex min-h-0 flex-1 gap-6">
       {view === "files" ? (
         <FilesView project={project} />
       ) : view === "git" ? (
         <GitView project={project} />
+      ) : view === "analysis" ? (
+        <AnalysisView project={project} />
+      ) : view === "schedules" ? (
+        <SchedulesView project={project} />
       ) : (
         <>
+      {/* 스레드 사이드바 — 대화 목록 (lg+, 작은 화면은 상단 셀렉터 폴백) */}
+      <ThreadSidebar
+        threads={threads.data.threads}
+        threadId={threadId}
+        renaming={renaming}
+        onRenaming={setRenaming}
+        onPick={(id) => setThreadId(id)}
+        onRename={(id, name) => void api.renameThread(id, name).then(() => threads.refetch())}
+        onDelete={(id) => {
+          if (!confirm(t("talk.thread.deleteConfirm"))) return;
+          void api.deleteThread(id).then(() => { setThreadId(null); void threads.refetch(); });
+        }}
+      />
+
       {/* 채팅 컬럼 */}
       <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
@@ -294,8 +305,9 @@ export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Proj
                       agent={agents.find((a) => a.name === msg.agent)}
                       fromAgent={msg.fromAgent}
                       runId={msg.runId}
+                      run={byId.get(msg.runId)}
                       startedAt={msg.startedAt}
-                      edges={office.data.office.edges}
+                      workflows={office.data.office.workflows}
                       isLast={i === messages.length - 1}
                       onDone={() => void runs.refetch()}
                       onActivity={reportActivity}
@@ -308,6 +320,14 @@ export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Proj
             </div>
           )}
         </div>
+
+        {/* 워크플로우 진행 — 실행 중인 체인의 노드별 상태 + 대기 중 휴먼 게이트 */}
+        <WorkflowProgress
+          runs={runs.data?.runs ?? []}
+          workflows={office.data.office.workflows}
+          gates={gates.data?.gates ?? []}
+          onGate={(id, ok) => void (ok ? api.approveGate(id) : api.rejectGate(id)).then(() => { void gates.refetch(); void runs.refetch(); })}
+        />
 
         <Composer
           agents={agents}
@@ -322,30 +342,16 @@ export function TalkPage({ project, onBack, missionSignal = 0 }: { project: Proj
       {/* 팀 패널 — 누가 일하고 있고, 누굴 부를 수 있는지 (xl+) */}
       <TeamPanel
         agents={agents}
-        edges={office.data.office.edges}
+        workflows={office.data.office.workflows}
         runs={runs.data?.runs ?? []}
         activities={activities}
         active={active}
         onActive={setActive}
+        onRunWorkflow={(name) => setWfOpen(name)}
       />
         </>
       )}
       </div>
-
-      {/* 미션 컨트롤 — 진입/호출 시 뜨는 프로젝트 허브 오버레이 */}
-      {mcOpen ? (
-        <MissionControl
-          project={project}
-          threads={threads.data.threads}
-          agents={agents}
-          runs={runs.data?.runs ?? []}
-          threadId={threadId}
-          onThread={(id) => { setThreadId(id); setView("talk"); setMcOpen(false); }}
-          onView={(v) => { setView(v); setMcOpen(false); }}
-          onBack={onBack}
-          onClose={() => setMcOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -386,193 +392,120 @@ function Welcome({ activeAgent }: { activeAgent?: AgentSpec }) {
   );
 }
 
-// ── 미션 컨트롤 — 프로젝트 허브 오버레이. 진입의 "전환" 그 자체 ─────────────────
-// 대화·팀·바로가기를 한 화면에 펼치고, 무엇이든 고르면 닫히며 그 자리로 간다.
-function MissionControl({
-  project,
-  threads,
-  agents,
-  runs,
-  threadId,
-  onThread,
-  onView,
-  onBack,
-  onClose,
+// ── 스레드 사이드바 — 대화 목록을 큼직하게 (lg+). hover 시 이름변경·삭제 ─────────
+function ThreadSidebar({
+  threads, threadId, renaming, onRenaming, onPick, onRename, onDelete,
 }: {
-  project: Project;
   threads: Thread[];
-  agents: AgentSpec[];
-  runs: RunInfo[];
   threadId: string | null;
-  onThread: (id: string | null) => void;
-  onView: (v: WsView) => void;
-  onBack: () => void;
-  onClose: () => void;
+  renaming: string | null;
+  onRenaming: (id: string | null) => void;
+  onPick: (id: string | null) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
 }) {
-  const { t, lang } = useI18n();
-  const working = useMemo(() => new Set(runs.filter((r) => r.status === "running").map((r) => r.agent)), [runs]);
-  const activity = useQuery({
-    queryKey: ["activity", project.id],
-    queryFn: () => api.agentActivity(project.id),
-    staleTime: 10_000,
-  });
-
-  // Esc 로 닫기.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  const { t } = useI18n();
   return (
-    <div
-      className="fixed inset-0 z-40 overflow-y-auto bg-background/60 p-4 backdrop-blur-xl sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="workspace-enter mx-auto mt-6 w-full max-w-4xl rounded-3xl border border-primary/20 bg-card/95 p-6 shadow-[var(--shadow-glow)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* 헤더 — 프로젝트 정체성 */}
-        <div className="flex items-start gap-3">
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 text-primary shadow-[var(--shadow-glow-sm)]">
-            <FolderGit2 className="size-6" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate font-display text-xl font-semibold">{project.name}</h2>
-            <p className="truncate font-mono text-[11px] text-muted-foreground">{project.path}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-          >
-            <ChevronLeft className="size-3.5" />
-            {t("nav.backHome")}
-          </button>
-          <button type="button" aria-label="close" onClick={onClose} className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          {/* 대화 */}
-          <section>
-            <div className="mb-1.5 flex items-center justify-between">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.sidebar.threads")}</h3>
-              <button
-                type="button"
-                title={t("talk.thread.new")}
-                onClick={() => onThread(null)}
-                className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-              >
-                <MessageSquarePlus className="size-3.5" />
-              </button>
-            </div>
-            <div className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
-              {threads.length === 0 ? <p className="py-3 text-xs text-muted-foreground">{t("mc.noThreads")}</p> : null}
-              {threads.map((th) => (
-                <button
-                  key={th.id}
-                  type="button"
-                  onClick={() => onThread(th.id)}
-                  className={cn(
-                    "flex w-full items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-left text-xs transition-colors",
-                    th.id === threadId ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-muted/50",
-                  )}
-                >
-                  <MessagesSquare className="size-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{th.name}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {/* 팀 */}
-          <section>
-            <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
-            <div className="space-y-1">
-              {agents.map((a) => (
-                <div
-                  key={a.name}
-                  className={cn(
-                    "flex items-center gap-2 rounded-lg border px-2.5 py-1.5",
-                    working.has(a.name) ? "border-primary/40 bg-primary/5 shadow-[var(--shadow-glow-sm)]" : "border-border/60",
-                  )}
-                >
-                  <Avatar agent={a} size={22} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium">{a.label || a.name}</span>
-                    <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
-                  </span>
-                  {working.has(a.name) ? <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" /> : null}
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* 바로가기 + 최근 활동 */}
-          <section>
-            <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("mc.shortcuts")}</h3>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                type="button"
-                onClick={() => onView("files")}
-                className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs transition-colors hover:border-primary/40 hover:bg-primary/5"
-              >
-                <FolderOpen className="size-4 text-primary" />
-                {t("ws.files")}
-              </button>
-              <button
-                type="button"
-                onClick={() => onView("git")}
-                className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs transition-colors hover:border-primary/40 hover:bg-primary/5"
-              >
-                <GitBranch className="size-4 text-primary" />
-                {t("ws.git")}
-              </button>
-            </div>
-            {(activity.data?.activity.length ?? 0) > 0 ? (
-              <>
-                <h3 className="mb-1.5 mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("mc.activity")}</h3>
-                <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
-                  {activity.data!.activity.slice(0, 6).map((a) => (
-                    <div key={a.runId} className="rounded-lg border border-border/60 px-2 py-1.5 text-[11px]">
-                      <span className="font-medium">@{a.agent}</span>
-                      <span className="ml-1.5 text-muted-foreground">
-                        {new Date(a.startedAt).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                      <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
-                        {a.files.map((f) => f.path.split("/").pop()).join(" · ")}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : null}
-          </section>
-        </div>
+    <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-4 pr-3 lg:flex">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.sidebar.threads")}</h3>
+        <button
+          type="button"
+          title={t("talk.thread.new")}
+          onClick={() => onPick(null)}
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+        >
+          <MessageSquarePlus className="size-4" />
+        </button>
       </div>
-    </div>
+      <div className="space-y-0.5">
+        {threadId === null ? (
+          <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 px-2.5 py-2 text-sm text-primary">
+            {t("talk.thread.new")}
+          </div>
+        ) : null}
+        {threads.map((th) => {
+          const active = th.id === threadId;
+          if (renaming === th.id) {
+            return (
+              <input
+                key={th.id}
+                className="w-full rounded-lg border border-primary/50 bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                defaultValue={th.name}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  if (e.key === "Escape") onRenaming(null);
+                  if (e.key === "Enter") {
+                    const v = (e.target as HTMLInputElement).value.trim();
+                    if (v) onRename(th.id, v);
+                    onRenaming(null);
+                  }
+                }}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v) onRename(th.id, v);
+                  onRenaming(null);
+                }}
+              />
+            );
+          }
+          return (
+            <div
+              key={th.id}
+              className={cn(
+                "group/th flex items-center gap-1 rounded-lg transition-colors",
+                active ? "bg-primary/10" : "hover:bg-muted/50",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => onPick(th.id)}
+                className={cn("min-w-0 flex-1 truncate px-2.5 py-2 text-left text-sm", active ? "font-medium" : "text-muted-foreground")}
+              >
+                {th.name}
+              </button>
+              <button
+                type="button"
+                title={t("talk.thread.rename")}
+                onClick={() => onRenaming(th.id)}
+                className="shrink-0 p-1 text-muted-foreground/50 opacity-0 transition hover:text-primary group-hover/th:opacity-100"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                title={t("talk.thread.delete")}
+                onClick={() => onDelete(th.id)}
+                className="mr-1 shrink-0 p-1 text-muted-foreground/50 opacity-0 transition hover:text-destructive group-hover/th:opacity-100"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
   );
 }
 
-// ── 팀 패널 — 가능/작업중 에이전트 + 핸드오프 규칙 한눈에 (xl 이상) ──────────────
+// ── 팀 패널 — 가능/작업중 에이전트 + 워크플로우 한눈에 (xl 이상) ─────────────────
 function TeamPanel({
   agents,
-  edges,
+  workflows,
   runs,
   activities,
   active,
   onActive,
+  onRunWorkflow,
 }: {
   agents: AgentSpec[];
-  edges: HarnessEdge[];
+  workflows: WorkflowSpec[];
   runs: RunInfo[];
   activities: Record<string, { agent: string; item: TraceItem | null }>;
   active: string;
   onActive: (name: string) => void;
+  onRunWorkflow: (name: string) => void;
 }) {
   const { t } = useI18n();
   const workingAgents = useMemo(
@@ -652,21 +585,31 @@ function TeamPanel({
         </div>
       ))}
 
-      {edges.length > 0 ? (
+      {workflows.length > 0 ? (
         <>
           <h3 className="mb-2 mt-5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <Workflow className="size-3.5" />
-            {t("talk.team.harness")}
+            {t("talk.team.workflows")}
           </h3>
           <div className="space-y-1">
-            {edges.map((e, i) => (
-              <div key={i} className="rounded-lg border border-border/60 px-2.5 py-1.5 text-xs">
-                <span className="font-medium">@{e.from}</span>
-                <span className="mx-1 text-muted-foreground">→</span>
-                <span className="font-medium">@{e.to}</span>
-                <span className="ml-1.5 rounded bg-muted/70 px-1 py-0.5 text-[10px] text-muted-foreground">
-                  {e.trigger.replace("on_", "")}{e.mode === "auto" ? " · auto" : " · ask"}
+            {workflows.map((w) => (
+              <div key={w.name} className="group/wf flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-2 text-xs transition-colors hover:border-primary/40">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{w.name}</span>
+                  <span className="block truncate text-[10px] text-muted-foreground">
+                    {w.trigger
+                      ? `@${w.trigger.agent} · ${w.trigger.on} · ${w.trigger.mode}`
+                      : t("talk.team.manual")}
+                  </span>
                 </span>
+                <button
+                  type="button"
+                  title={t("talk.workflow.run")}
+                  onClick={() => onRunWorkflow(w.name)}
+                  className="shrink-0 rounded-md border border-primary/40 p-1 text-primary opacity-0 transition hover:bg-primary/10 group-hover/wf:opacity-100"
+                >
+                  <CirclePlay className="size-3.5" />
+                </button>
               </div>
             ))}
           </div>
@@ -711,11 +654,12 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
-function AgentBubble({ agent, fromAgent, runId, startedAt, edges, isLast, onDone, onActivity }: { agent?: AgentSpec; fromAgent?: string; runId: string; startedAt?: string; edges: HarnessEdge[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void }) {
+function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLast, onDone, onActivity }: { agent?: AgentSpec; fromAgent?: string; runId: string; run?: RunInfo; startedAt?: string; workflows: WorkflowSpec[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void }) {
   const { t } = useI18n();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
   const [handedOff, setHandedOff] = useState<string[]>([]);
+  const [detail, setDetail] = useState(false);
 
   const name = agent?.label || agent?.name || "?";
   const view = useMemo(() => deriveView(stream.events), [stream.events]);
@@ -735,25 +679,30 @@ function AgentBubble({ agent, fromAgent, runId, startedAt, edges, isLast, onDone
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.trace.length, running]);
 
-  // 수동 발화 제안 — 자동발화로 이미 자식이 생긴 핸드오프(view.trace 의 →)는 제외.
+  // 수동 발화 제안 — auto 트리거로 이미 발화한 워크플로우(handoff 이벤트의 reason)는 제외.
   const autoFired = useMemo(
-    () => new Set(stream.events.filter((e) => e.kind === "handoff").map((e) => (e as Extract<OfficeEvent, { kind: "handoff" }>).toAgent)),
+    () =>
+      new Set(
+        stream.events
+          .filter((e) => e.kind === "handoff" && e.via === "workflow")
+          .map((e) => (e as Extract<OfficeEvent, { kind: "handoff" }>).reason ?? ""),
+      ),
     [stream.events],
   );
   // 마지막 버블에만 제안 — 과거 모든 버블에 붙으면 시끄럽다.
   const suggestions = isStartError || !isLast
     ? []
-    : suggestedEdges(edges, agent?.name ?? "", stream.status, view.changedFiles).filter(
-        (e) => !autoFired.has(e.to) && !handedOff.includes(e.to),
+    : suggestedWorkflows(workflows, agent?.name ?? "", stream.status, view.changedFiles).filter(
+        (w) => !autoFired.has(w.name) && !handedOff.includes(w.name),
       );
 
-  async function fireHandoff(to: string) {
-    setHandedOff((prev) => [...prev, to]);
+  async function fireWorkflow(name: string) {
+    setHandedOff((prev) => [...prev, name]);
     try {
-      await api.handoffRun(runId, to);
+      await api.fireRunWorkflow(runId, name);
       onDone?.();
     } catch {
-      setHandedOff((prev) => prev.filter((x) => x !== to)); // 실패 시 버튼 복원
+      setHandedOff((prev) => prev.filter((x) => x !== name)); // 실패 시 버튼 복원
     }
   }
 
@@ -777,18 +726,31 @@ function AgentBubble({ agent, fromAgent, runId, startedAt, edges, isLast, onDone
               </button>
             </>
           ) : (
-            // hover 시에만 — 이 run(user+agent 버블 한 쌍)을 기록에서 삭제.
+            // hover 시에만 — 상세 보기 + 이 run(user+agent 버블 한 쌍) 삭제.
             !isStartError && (
-              <button
-                type="button"
-                aria-label={t("talk.deleteRun")}
-                onClick={() => confirm(t("talk.deleteConfirm")) && void api.deleteRun(runId).then(() => onDone?.()).catch(() => {})}
-                className="text-muted-foreground/50 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
+              <>
+                {run ? (
+                  <button
+                    type="button"
+                    title={t("talk.detail.open")}
+                    onClick={() => setDetail(true)}
+                    className="text-muted-foreground/50 opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
+                  >
+                    <Info className="size-3.5" />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={t("talk.deleteRun")}
+                  onClick={() => confirm(t("talk.deleteConfirm")) && void api.deleteRun(runId).then(() => onDone?.()).catch(() => {})}
+                  className="text-muted-foreground/50 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </>
             )
           )}
+          {detail && run ? <RunDetailModal run={run} agent={agent} onClose={() => setDetail(false)} /> : null}
         </div>
 
         {/* 실행 중 — 현재 작업 + 경과 시간 */}
@@ -817,31 +779,283 @@ function AgentBubble({ agent, fromAgent, runId, startedAt, edges, isLast, onDone
           <p className="text-sm text-muted-foreground">{t("talk.noOutput")}</p>
         )}
 
-        {/* 결과 메타(비용·취소·실패) */}
+        {/* 결과 메타(비용) + 전달된 프롬프트(투명성) */}
         {view.result?.costUsd != null ? (
           <p className="mt-1 text-[11px] text-muted-foreground">${view.result.costUsd.toFixed(4)}</p>
         ) : null}
+        {!isStartError && !running ? <PromptPeek runId={runId} /> : null}
         {!isStartError && (stream.status === "failed" || stream.status === "cancelled") ? (
           <p className="mt-1 text-[11px] text-muted-foreground">{t(`talk.status.${stream.status}`)}</p>
         ) : null}
 
-        {/* ask/manual 엣지 수동 발화 제안 */}
+        {/* ask 트리거 수동 발화 제안 — 이 run 의 결과를 입력으로 워크플로우 시작 */}
         {suggestions.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {suggestions.map((e) => (
+            {suggestions.map((w) => (
               <button
-                key={e.to}
+                key={w.name}
                 type="button"
-                onClick={() => void fireHandoff(e.to)}
+                onClick={() => void fireWorkflow(w.name)}
                 className="inline-flex items-center gap-1 rounded-full border border-dashed border-primary/50 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
               >
                 <Workflow className="size-3" />
-                {t("talk.handoffTo", { name: e.to })}
+                {t("talk.fireWorkflow", { name: w.name })}
               </button>
             ))}
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+// 워크플로우 수동 실행 모달 — 워크플로우 선택 + 입력({{input}} 자리에 들어감).
+function WorkflowRunModal({
+  workflows, initialName, onClose, onRun,
+}: {
+  workflows: WorkflowSpec[];
+  initialName?: string;
+  onClose: () => void;
+  onRun: (name: string, input: string) => void;
+}) {
+  const { t } = useI18n();
+  const [name, setName] = useState(initialName ?? workflows[0]?.name ?? "");
+  const [input, setInput] = useState("");
+  const wf = workflows.find((w) => w.name === name);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
+            <CirclePlay className="size-4.5" />
+          </span>
+          <h2 className="font-display text-base font-semibold">{t("talk.workflow.run")}</h2>
+        </div>
+        <select
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="mt-4 h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          {workflows.map((w) => (
+            <option key={w.name} value={w.name}>{w.name} · {t("talk.workflow.steps", { n: String(w.nodes.length) })}</option>
+          ))}
+        </select>
+        {wf?.description ? <p className="mt-1.5 text-xs text-muted-foreground">{wf.description}</p> : null}
+        <textarea
+          autoFocus
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={t("talk.workflow.inputPh")}
+          className="mt-3 min-h-24 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/60">
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            disabled={!name || !input.trim()}
+            onClick={() => onRun(name, input.trim())}
+            className="rounded-md bg-gradient-accent px-3 py-1.5 text-xs font-medium text-white shadow-[var(--shadow-glow-sm)] disabled:opacity-40"
+          >
+            {t("talk.workflow.go")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── run 상세 모달 — 메타 + [전달 프롬프트][Raw 로그] 탭. Raw 는 진실(디스크 보존본).
+function RunDetailModal({ run, agent, onClose }: { run: RunInfo; agent?: AgentSpec; onClose: () => void }) {
+  const { t, lang } = useI18n();
+  const [tab, setTab] = useState<"prompt" | "raw">("prompt");
+  const promptQ = useQuery({ queryKey: ["runPrompt", run.id], queryFn: () => api.getRunPrompt(run.id), staleTime: Infinity });
+  const rawQ = useQuery({ queryKey: ["runRaw", run.id], queryFn: () => api.getRunRaw(run.id), enabled: tab === "raw" });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const fmt = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div role="dialog" aria-modal="true" className="flex h-[80vh] w-full max-w-3xl flex-col rounded-2xl border border-border bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
+        {/* 메타 */}
+        <div className="flex flex-wrap items-center gap-2">
+          {agent ? <AgentAvatar adapter={agent.adapter} size={24} className="rounded-md" /> : null}
+          <span className="font-display text-sm font-semibold">@{run.agent}</span>
+          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium",
+            run.status === "succeeded" ? "bg-success/15 text-success" : run.status === "running" ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
+            {run.status}
+          </span>
+          {run.workflow ? (
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">{run.workflow} · {run.node}</span>
+          ) : null}
+          {run.costUsd != null ? <span className="font-mono text-[11px] text-muted-foreground">${run.costUsd.toFixed(4)}</span> : null}
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">{run.id.slice(0, 8)}</span>
+          <button type="button" aria-label="close" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">{fmt(run.startedAt)} → {fmt(run.endedAt)}</p>
+
+        {/* 탭 */}
+        <div className="mt-3 inline-flex w-fit rounded-lg border border-border bg-muted/40 p-0.5">
+          {(["prompt", "raw"] as const).map((k) => (
+            <button key={k} type="button" onClick={() => setTab(k)}
+              className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition-all", tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              {t(`talk.detail.${k}`)}
+            </button>
+          ))}
+        </div>
+
+        <pre className="mt-2 min-h-0 flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          {tab === "prompt"
+            ? promptQ.data?.prompt ?? (promptQ.isLoading ? "…" : t("talk.promptPeek.missing"))
+            : rawQ.data?.raw ?? (rawQ.isLoading ? "…" : t("talk.detail.rawMissing"))}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+// ── 워크플로우 진행 보드 — 이 스레드에서 도는 워크플로우 체인의 노드별 상태 ─────────
+// 실행 중이거나 게이트가 대기 중일 때 채팅 위에 뜨는 스트립. run.workflow/node 태그 기반.
+function WorkflowProgress({ runs, workflows, gates, onGate }: { runs: RunInfo[]; workflows: WorkflowSpec[]; gates: import("@loom/core").WorkflowGate[]; onGate: (id: string, ok: boolean) => void }) {
+  const { t } = useI18n();
+  // 실행 중인 체인만 — 같은 워크플로우를 여러 번 돌렸어도 parentRunId 루트로
+  // 묶어 "이번 실행"만 그린다(역대 run 이 한 줄에 합쳐지는 것 방지).
+  const active = useMemo(() => {
+    const byId = new Map(runs.map((r) => [r.id, r]));
+    const rootOf = (r: RunInfo): string => {
+      let cur = r;
+      while (cur.parentRunId) {
+        const p = byId.get(cur.parentRunId);
+        if (!p || p.workflow !== r.workflow) break;
+        cur = p;
+      }
+      return cur.id;
+    };
+    const chains = new Map<string, { name: string; list: RunInfo[] }>();
+    for (const r of runs) {
+      if (!r.workflow) continue;
+      const key = `${r.workflow}:${rootOf(r)}`;
+      const g = chains.get(key) ?? { name: r.workflow, list: [] };
+      g.list.push(r);
+      chains.set(key, g);
+    }
+    return [...chains.values()]
+      .map(({ name, list }) => ({ name, list: list.sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1)) }))
+      .filter(({ list }) => list.some((r) => r.status === "running"));
+  }, [runs]);
+  if (active.length === 0 && gates.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5 pt-3">
+      {/* 휴먼 게이트 — 사람이 결정할 차례 */}
+      {gates.map((g) => (
+        <div key={g.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2">
+          <span className="text-sm">⏸</span>
+          <span className="text-xs font-semibold">{g.workflow}</span>
+          <span className="rounded-full border border-warning/40 px-2 py-0.5 text-[10px] font-medium text-warning">{g.nodeId} · {t("talk.gate.waiting")}</span>
+          <span className="ml-auto flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => onGate(g.id, true)}
+              className="rounded-md border border-success/40 bg-success/10 px-2.5 py-1 text-xs font-medium text-success transition-colors hover:bg-success/20"
+            >
+              {t("talk.gate.approve")}
+            </button>
+            <button
+              type="button"
+              onClick={() => onGate(g.id, false)}
+              className="rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
+            >
+              {t("talk.gate.reject")}
+            </button>
+          </span>
+        </div>
+      ))}
+      {active.map(({ name, list }) => {
+        const wf = workflows.find((w) => w.name === name);
+        const total = wf?.nodes.length;
+        return (
+          <div key={name} className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 shadow-[var(--shadow-glow-sm)]">
+            <Workflow className="size-3.5 animate-pulse text-primary" />
+            <span className="text-xs font-semibold">{name}</span>
+            <span className="text-[10px] text-muted-foreground">
+              {t("talk.wfProgress", { done: String(list.filter((r) => r.status !== "running").length), total: String(total ?? list.length) })}
+            </span>
+            <span className="flex flex-wrap items-center gap-1">
+              {list.map((r, i) => (
+                <span key={r.id} className="flex items-center gap-1">
+                  {i > 0 ? <span className="text-[10px] text-muted-foreground">→</span> : null}
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                      r.status === "running"
+                        ? "border-primary/50 bg-primary/15 text-primary"
+                        : r.status === "succeeded"
+                          ? "border-success/40 bg-success/10 text-success"
+                          : "border-destructive/40 bg-destructive/10 text-destructive",
+                    )}
+                  >
+                    {r.node ?? "?"} @{r.agent}{r.status === "running" ? " ⋯" : r.status === "succeeded" ? " ✓" : " ✗"}
+                  </span>
+                </span>
+              ))}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// 투명성 — 이 run 에서 CLI 에 실제로 들어간 합성 프롬프트를 펼쳐 본다.
+// 호버 시에만 버튼 노출(시끄럽지 않게), 열 때 한 번 lazy fetch.
+function PromptPeek({ runId }: { runId: string }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const q = useQuery({
+    queryKey: ["runPrompt", runId],
+    queryFn: () => api.getRunPrompt(runId),
+    enabled: open,
+    staleTime: Infinity, // 프롬프트는 불변 기록
+  });
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "inline-flex items-center gap-1 text-[10px] text-muted-foreground/60 transition-opacity hover:text-foreground",
+          open ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        )}
+      >
+        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+        <FileText className="size-3" />
+        {t("talk.promptPeek")}
+      </button>
+      {open ? (
+        q.isLoading ? (
+          <p className="mt-1 text-[11px] text-muted-foreground">…</p>
+        ) : q.data ? (
+          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            {q.data.prompt}
+          </pre>
+        ) : (
+          <p className="mt-1 text-[11px] text-muted-foreground">{t("talk.promptPeek.missing")}</p>
+        )
+      ) : null}
     </div>
   );
 }
@@ -879,7 +1093,7 @@ function deriveView(events: OfficeEvent[]): DerivedView {
     else if (e.kind === "file") {
       trace.push({ kind: "file", name: e.action === "edit" ? "Edit" : "Write", target: e.path, action: e.action });
       changedFiles++;
-    } else if (e.kind === "handoff") trace.push({ kind: "handoff", name: `@${e.toAgent}` });
+    } else if (e.kind === "handoff") trace.push({ kind: "handoff", name: `@${e.toAgent}`, target: e.reason });
     else if (e.kind === "result") result = e;
     else if (e.kind === "error") errors.push(e.message);
   }
@@ -998,17 +1212,16 @@ function WorkingLine({ trace, startedAt }: { trace: TraceItem[]; startedAt?: str
   );
 }
 
-// 완료된 run 에서 수동 발화를 제안할 엣지 — manual 트리거는 항상,
-// ask 모드는 트리거가 결과와 맞을 때만. auto+매치는 엔진이 이미 발화했으니 제외.
-function suggestedEdges(edges: HarnessEdge[], agent: string, status: string, changedFiles: number): HarnessEdge[] {
+// 완료된 run 에서 제안할 워크플로우 — ask 모드 + 트리거가 결과와 맞을 때.
+// auto+매치는 엔진이 이미 발화했으니 여기 안 옴(autoFired 로도 이중 방어).
+function suggestedWorkflows(workflows: WorkflowSpec[], agent: string, status: string, changedFiles: number): WorkflowSpec[] {
   if (status !== "succeeded" && status !== "failed") return [];
-  return edges.filter((e) => {
-    if (e.from !== agent) return false;
-    if (e.trigger === "manual") return true;
-    if (e.mode !== "ask") return false;
-    if (e.trigger === "on_success") return status === "succeeded";
-    if (e.trigger === "on_fail") return status === "failed";
-    return status === "succeeded" && changedFiles > 0; // on_changes
+  return workflows.filter((w) => {
+    const tr = w.trigger;
+    if (!tr || tr.mode !== "ask" || tr.agent !== agent) return false;
+    if (tr.on === "success") return status === "succeeded";
+    if (tr.on === "fail") return status === "failed";
+    return status === "succeeded" && changedFiles > 0; // changes
   });
 }
 
@@ -1228,21 +1441,6 @@ function Composer({
       {/* 대상 에이전트 칩 + 첨부 스킬 칩 */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <span className="text-[11px] text-muted-foreground">{t("talk.talkingTo")}</span>
-        {/* 자동 — 서버 디스패치가 스킬·설명 매칭으로 적합 에이전트 선택 */}
-        <button
-          type="button"
-          onClick={() => onActive(AUTO)}
-          title={t("talk.auto.hint")}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
-            active === AUTO
-              ? "border-primary/50 bg-gradient-accent text-white shadow-[var(--shadow-glow-sm)]"
-              : "border-border text-muted-foreground hover:bg-muted/60",
-          )}
-        >
-          <Zap className="size-3" />
-          {t("talk.auto")}
-        </button>
         {agents.map((a) => {
           const on = a.name === active;
           return (

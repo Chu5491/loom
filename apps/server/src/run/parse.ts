@@ -92,5 +92,9 @@ export function parseLine(line: string): OfficeEvent[] {
     }
   }
 
+  // type 없는 JSON = 스트림 이벤트가 아니라 모델이 말한 JSON 본문(plain-text CLI 가
+  // pretty-print 한 조각 줄 등) — 버리면 devin 의 JSON 응답에 구멍이 난다(실측).
+  if (type === undefined) return [{ kind: "text", text: t }];
+
   return [];
 }

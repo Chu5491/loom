@@ -1,8 +1,9 @@
 {
   "adapter": "devin",
-  "model": "swe",
+  "model": "swe-1-6-slow",
   "reasoning": "high",
   "permission": "bypass",
+  "delegate": true,
   "rules": [
     "global"
   ]

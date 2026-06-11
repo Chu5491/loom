@@ -12,15 +12,36 @@ import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEven
 import { logger } from "../logger.js";
 import {
   readAgents,
-  readEdges,
   readMcp,
   readRules,
   readSkills,
+  readWorkflows,
 } from "../office.js";
 import { composePrompt } from "./compose.js";
-import { buildHandoffPrompt, MAX_HARNESS_HOPS, resolveAutoEdges, type RunOutcome } from "./harness.js";
 import { materializeLoadout } from "./loadout.js";
 import { parseLine } from "./parse.js";
+// 순환 import (workflow.ts ↔ engine.ts) — 양쪽 다 호출 시점에만 쓰는 함수 참조라 안전.
+import { resolveAutoWorkflows, startWorkflow, type RunOutcome } from "./workflow.js";
+
+/** 자동 체인(워크플로우 트리거·위임)의 최대 깊이 — parentRunId 로 측정, 무한루프 방어. */
+export const MAX_CHAIN_HOPS = 5;
+
+// ── 동시 실행 한도 — 스케줄×트리거×위임이 겹쳐도 CLI 폭주 방지. FIFO 대기열.
+// 위임 자식은 우회(부모가 슬롯을 쥔 채 결과를 기다리므로 — 한도=1 데드락 방지).
+let activeSlots = 0;
+const slotWaiters: (() => void)[] = [];
+async function acquireSlot(): Promise<void> {
+  if (activeSlots < config.maxConcurrentRuns) {
+    activeSlots++;
+    return;
+  }
+  await new Promise<void>((resolve) => slotWaiters.push(resolve));
+  activeSlots++;
+}
+function releaseSlot(): void {
+  activeSlots = Math.max(0, activeSlots - 1);
+  slotWaiters.shift()?.();
+}
 
 export interface StartRunInput {
   agent: string; // office agent name
@@ -35,6 +56,12 @@ export interface StartRunInput {
   /** 이 run 에만 추가로 실을 스킬 이름들 — 사용자가 컴포저에서 명시적으로 첨부.
    *  (자동주입 아님: 명시 첨부는 헌법이 허용하는 유일한 추가 경로.) */
   skills?: string[];
+  /** 내장 기능(git 커밋·분석) 전용 — 에이전트의 prompt 를 이 지침으로 대체.
+   *  office/prompts/<feature>.md 에서 사용자가 관리하는 명시 정의. */
+  promptOverride?: string;
+  /** 워크플로우 스텝으로 도는 run 의 태그 — 진행 보드가 노드별 상태를 그린다. */
+  workflow?: string;
+  node?: string;
 }
 export type StartRunResult =
   | { ok: true; run: RunInfo }
@@ -77,6 +104,38 @@ export function subscribe(id: string, fn: Listener): { replay: OfficeEvent[]; do
   };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// 실제로 CLI 에 들어간 합성 프롬프트(투명성). id 는 UUID 만 — 경로 탈출 차단.
+export function getRunPromptText(id: string): string | null {
+  if (!UUID_RE.test(id)) return null;
+  try {
+    return fs.readFileSync(path.join(paths.logs, `${id}.prompt.txt`), "utf8");
+  } catch {
+    return null; // 영속 이전의 옛 run — 프롬프트 기록 없음
+  }
+}
+
+/** CLI raw 출력(진실) — run 상세 화면용. 1MB cap(뷰어 보호). */
+export function getRunRawText(id: string): string | null {
+  if (!UUID_RE.test(id)) return null;
+  try {
+    const file = path.join(paths.logs, `${id}.log`);
+    const size = fs.statSync(file).size;
+    const fd = fs.openSync(file, "r");
+    try {
+      const len = Math.min(size, 1024 * 1024);
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, size - len); // 크면 꼬리쪽이 더 유용
+      return (size > len ? `… (앞 ${size - len} bytes 생략)\n` : "") + buf.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+
 // 서버 재시작 후 인메모리 Map 에 없는 완료 run — 디스크 기록에서 정적 복원.
 export function getPersistedRun(id: string): { events: OfficeEvent[]; run: RunInfo } | null {
   const run = getRunDb(id);
@@ -96,10 +155,21 @@ export function deleteRun(id: string): { ok: true } | { ok: false; status: 404 |
 
 export function cancelRun(id: string): boolean {
   const r = runs.get(id);
-  if (!r || r.info.status !== "running") return false;
-  r.abort.abort();
-  r.kill();
-  return true;
+  if (r && r.info.status === "running") {
+    r.abort.abort();
+    r.kill();
+    return true;
+  }
+  // 인메모리에 없는데 DB 가 running — 직전 서버와 함께 죽은 좀비. 기록을 닫아준다
+  // (부팅 sweep 이 있지만, 같은 프로세스 수명 안에서도 막히지 않게 이중 방어).
+  const stale = getRunDb(id);
+  if (stale && stale.status === "running") {
+    stale.status = "cancelled";
+    stale.endedAt = new Date().toISOString();
+    finishRun(stale, {});
+    return true;
+  }
+  return false;
 }
 
 // "${ENV_NAME}" 참조를 process.env 로 치환 — secret 은 파일에 리터럴로 안 둔다.
@@ -144,23 +214,39 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
 
   const id = randomUUID();
 
-  // 팀원 위임(opt-in) — loom 의 delegate MCP 도구를 이 run 의 loadout 에 싣는다.
-  // URL 의 runId 로 "누가 위임하는지"를 알아 부모/스레드/프로젝트를 상속시킨다.
+  // 팀원 위임(opt-in) — MCP 지원 CLI 는 loom 의 delegate MCP 도구를 loadout 에,
+  // MCP 불가 CLI(antigravity)는 loadout 의 셸 브리지(delegate.sh)를 싣는다.
+  // 어느 쪽이든 runId 로 "누가 위임하는지"를 알아 부모/스레드/프로젝트를 상속시킨다.
+  let bridge: import("./loadout.js").DelegateBridge | null = null;
   if (agent.delegate) {
-    mcp.push({
-      name: "loom",
-      description: "Delegate a task to a teammate agent",
-      kind: "http",
-      command: null,
-      args: [],
-      env: {},
-      url: `http://${config.host}:${config.port}/api/mcp?runId=${id}`,
-      headers: {},
-    });
+    if (adapter.supportsMcpServers) {
+      mcp.push({
+        name: "loom",
+        description: "Delegate a task to a teammate agent",
+        kind: "http",
+        command: null,
+        args: [],
+        env: {},
+        url: `http://${config.host}:${config.port}/api/mcp?runId=${id}`,
+        headers: {},
+      });
+    } else {
+      bridge = {
+        runId: id,
+        url: `http://${config.host}:${config.port}/api/delegate`,
+        teammates: readAgents().filter((a) => a.name !== agent.name).map((a) => a.name),
+      };
+    }
   }
 
-  const loadout = materializeLoadout(agent, skills, mcp);
-  const prompt = composePrompt({ userPrompt: input.prompt, rules, agentPrompt: agent.prompt, loadout });
+  const loadout = materializeLoadout(agent, skills, mcp, bridge);
+  const prompt = composePrompt({
+    userPrompt: input.prompt,
+    rules,
+    // 기능 실행(git 커밋·분석)은 에이전트 개성 대신 기능 프롬프트 — 출력 일관성.
+    agentPrompt: input.promptOverride ?? agent.prompt,
+    loadout,
+  });
   const info: RunInfo = {
     id,
     agent: agent.name,
@@ -173,8 +259,12 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     projectId: input.projectId ?? null,
     threadId: input.threadId ?? null,
     costUsd: null,
+    workflow: input.workflow ?? null,
+    node: input.node ?? null,
   };
   fs.mkdirSync(paths.logs, { recursive: true });
+  // 투명성 — 실제로 CLI 에 들어간 합성 프롬프트를 영속(사용자 텍스트는 DB 에 따로).
+  fs.writeFileSync(path.join(paths.logs, `${id}.prompt.txt`), prompt);
   const rawFd = fs.openSync(path.join(paths.logs, `${id}.log`), "a");
   const abort = new AbortController();
 
@@ -206,7 +296,9 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     ...(cfg.env ? { env: resolveRefs(cfg.env as Record<string, string>) } : {}),
   };
 
-  void run(state, adapter, adapterConfig, prompt, mcp, loadout, cwd, resumeSessionId);
+  // 위임 자식은 슬롯 우회 — 부모가 슬롯을 쥔 채 결과를 기다리므로(데드락 방지).
+  const isDelegation = !!input.parentRunId && runs.get(input.parentRunId)?.info.status === "running";
+  void run(state, adapter, adapterConfig, prompt, mcp, loadout, cwd, resumeSessionId, isDelegation);
   return { ok: true, run: info };
 }
 
@@ -249,8 +341,18 @@ async function run(
   loadout: { dir: string; mcpConfigPath: string | null },
   cwd: string,
   resumeSessionId: string | null,
+  skipSlot: boolean,
 ): Promise<void> {
   const log = logger.child({ runId: state.info.id, agent: state.info.agent });
+  if (!skipSlot) {
+    await acquireSlot();
+    // 대기 중 취소됐으면 spawn 없이 마감.
+    if (state.abort.signal.aborted) {
+      releaseSlot();
+      concludeRun(state, "cancelled", null);
+      return;
+    }
+  }
   log.info({ cwd, resume: !!resumeSessionId }, "run start");
   try {
     const handle = await adapter.spawn(
@@ -287,24 +389,42 @@ async function run(
     emit(state, [{ kind: "error", message: (err as Error).message }]);
     concludeRun(state, "failed", null);
     log.error({ err }, "run threw");
+  } finally {
+    if (!skipSlot) releaseSlot();
   }
 }
 
-// 종료 시퀀스: (1) 자동발화 엣지 평가 → 부모 버블에 handoff 이벤트(라이브+영속),
-// (2) finish(=done 통지), (3) 자식 run spawn(fire-and-forget). handoff 를 done
+/** 서버 종료 시 — 실행 중 run 들을 즉시 kill 하고 cancelled 로 마감(좀비 방지). */
+export function cancelAllRunning(): number {
+  let n = 0;
+  for (const state of runs.values()) {
+    if (state.info.status !== "running") continue;
+    state.abort.abort();
+    state.kill();
+    finish(state, "cancelled", null);
+    n++;
+  }
+  return n;
+}
+
+// 종료 시퀀스: (1) 자동발화 워크플로우 평가 → 부모 버블에 handoff 이벤트(라이브+영속),
+// (2) finish(=done 통지), (3) 워크플로우 시작(fire-and-forget). handoff 를 done
 // 앞에 emit 하므로 라이브 구독자가 스트림 닫기 전에 핸드오프를 본다.
 function concludeRun(state: RunState, status: RunInfo["status"], exitCode: number | null): void {
-  const fired = evaluateFiredEdges(state, status);
-  for (const edge of fired) emit(state, [{ kind: "handoff", toAgent: edge.to, via: "edge" }]);
+  const fired = evaluateFiredWorkflows(state, status);
+  for (const wf of fired) {
+    const entryAgent = wf.nodes.find((n) => n.id === wf.entry)?.agent ?? wf.entry;
+    emit(state, [{ kind: "handoff", toAgent: entryAgent, via: "workflow", reason: wf.name }]);
+  }
   finish(state, status, exitCode);
-  spawnHarnessChildren(state, fired);
+  spawnTriggeredWorkflows(state, fired);
 }
 
 // parentRunId 체인 깊이 — A→B→A 무한루프 방어. MAX 에 닿으면 발화 중단.
-function harnessHops(info: RunInfo): number {
+function chainHops(info: RunInfo): number {
   let hops = 0;
   let cur = info.parentRunId;
-  while (cur && hops <= MAX_HARNESS_HOPS) {
+  while (cur && hops <= MAX_CHAIN_HOPS) {
     const parent = getRun(cur);
     if (!parent) break;
     hops++;
@@ -313,25 +433,22 @@ function harnessHops(info: RunInfo): number {
   return hops;
 }
 
-function evaluateFiredEdges(state: RunState, status: RunInfo["status"]): import("@loom/core").HarnessEdge[] {
+function evaluateFiredWorkflows(state: RunState, status: RunInfo["status"]): import("@loom/core").WorkflowSpec[] {
   if (status === "cancelled") return []; // cancelled 는 발화 안 함
   try {
     const outcome: RunOutcome = {
       status,
       changedFileCount: state.events.filter((e) => e.kind === "file").length,
     };
-    const fired = resolveAutoEdges(
-      readEdges().filter((e) => e.from === state.info.agent),
-      outcome,
-    );
+    const fired = resolveAutoWorkflows(readWorkflows(), state.info.agent, outcome);
     if (fired.length === 0) return [];
-    if (harnessHops(state.info) >= MAX_HARNESS_HOPS) {
-      logger.warn({ runId: state.info.id, max: MAX_HARNESS_HOPS }, "harness hop limit reached; not firing");
+    if (chainHops(state.info) >= MAX_CHAIN_HOPS) {
+      logger.warn({ runId: state.info.id, max: MAX_CHAIN_HOPS }, "chain hop limit reached; not firing");
       return [];
     }
     return fired;
   } catch (err) {
-    logger.error({ err, runId: state.info.id }, "harness edge eval failed");
+    logger.error({ err, runId: state.info.id }, "workflow trigger eval failed");
     return [];
   }
 }
@@ -367,16 +484,17 @@ export async function delegateFromRun(
   parentRunId: string,
   toAgent: string,
   task: string,
+  reason?: string,
 ): Promise<{ ok: true; result: string; childRunId: string } | { ok: false; error: string }> {
   const parent = runs.get(parentRunId);
   if (!parent) return { ok: false, error: "parent_run_not_found" };
   if (parent.info.agent === toAgent) return { ok: false, error: "cannot_delegate_to_self" };
-  if (harnessHops(parent.info) >= MAX_HARNESS_HOPS) {
-    return { ok: false, error: `delegation depth limit (${MAX_HARNESS_HOPS}) reached` };
+  if (chainHops(parent.info) >= MAX_CHAIN_HOPS) {
+    return { ok: false, error: `delegation depth limit (${MAX_CHAIN_HOPS}) reached` };
   }
 
   // 부모 스트림에 위임 이벤트 — UI 가 "→ @x (위임)" 을 라이브로 그린다.
-  emit(parent, [{ kind: "handoff", toAgent, via: "delegation" }]);
+  emit(parent, [{ kind: "handoff", toAgent, via: "delegation", ...(reason ? { reason } : {}) }]);
 
   const started = await startRun({
     agent: toAgent,
@@ -402,50 +520,46 @@ export async function delegateFromRun(
   }
 }
 
-// ask/manual 엣지의 수동 발화 — 사용자가 UI 에서 "넘기기"를 눌렀을 때.
-// 완료된 run 에서 from=run.agent, to=대상 인 엣지를 찾아 자식 run 을 시작한다.
-export async function fireManualHandoff(runId: string, to: string): Promise<StartRunResult> {
+// ask 트리거의 수동 발화 — 사용자가 UI 의 제안 버튼을 눌렀을 때. 완료된 run 의
+// 결과를 입력으로 워크플로우를 시작한다(parentRunId 체인으로 연결).
+export async function fireWorkflowFromRun(runId: string, workflowName: string): Promise<StartRunResult> {
   const run = getRun(runId);
   if (!run) return { ok: false, status: 404, error: "run_not_found" };
   if (run.status === "running") return { ok: false, status: 400, error: "run_still_running" };
-  const edge = readEdges().find((e) => e.from === run.agent && e.to === to);
-  if (!edge) return { ok: false, status: 404, error: "edge_not_found" };
+  const wf = readWorkflows().find((w) => w.name === workflowName);
+  if (!wf) return { ok: false, status: 404, error: "workflow_not_found" };
 
   // 결과 텍스트 — 인메모리에 있으면 거기서, 아니면 디스크 기록에서.
   const events = runs.get(runId)?.events ?? getRunEventsDb(runId);
   const last = [...events].reverse().find(
     (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",
   );
-  const prompt = buildHandoffPrompt({
-    edgePrompt: edge.prompt,
-    carryResult: !!edge.carryResult,
-    fromAgentName: run.agent,
-    fromRunId: run.id,
-    resultText: last?.text ?? null,
+  return startWorkflow(wf, {
+    input: last?.text ?? "",
+    parentRunId: run.id,
+    projectId: run.projectId,
+    threadId: run.threadId,
   });
-  return startRun({ agent: to, prompt, parentRunId: run.id, projectId: run.projectId, threadId: run.threadId });
 }
 
-function spawnHarnessChildren(state: RunState, fired: import("@loom/core").HarnessEdge[]): void {
+function spawnTriggeredWorkflows(state: RunState, fired: import("@loom/core").WorkflowSpec[]): void {
   if (fired.length === 0) return;
   const log = logger.child({ runId: state.info.id, agent: state.info.agent });
   const last = [...state.events].reverse().find(
     (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",
   );
-  const resultText = last?.text ?? state.lastText ?? null;
-  for (const edge of fired) {
-    const prompt = buildHandoffPrompt({
-      edgePrompt: edge.prompt,
-      carryResult: !!edge.carryResult,
-      fromAgentName: state.info.agent,
-      fromRunId: state.info.id,
-      resultText,
-    });
-    void startRun({ agent: edge.to, prompt, parentRunId: state.info.id, projectId: state.info.projectId, threadId: state.info.threadId })
+  const resultText = last?.text ?? state.lastText ?? "";
+  for (const wf of fired) {
+    void startWorkflow(wf, {
+      input: resultText,
+      parentRunId: state.info.id,
+      projectId: state.info.projectId,
+      threadId: state.info.threadId,
+    })
       .then((r) => {
-        if (!r.ok) log.warn({ to: edge.to, error: r.error }, "harness child did not start");
+        if (!r.ok) log.warn({ workflow: wf.name, error: r.error }, "triggered workflow did not start");
       })
-      .catch((err) => log.error({ err, to: edge.to }, "harness child threw"));
+      .catch((err) => log.error({ err, workflow: wf.name }, "triggered workflow threw"));
   }
 }
 

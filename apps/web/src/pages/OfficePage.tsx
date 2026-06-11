@@ -3,11 +3,12 @@
 
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Upload, Workflow, ChevronDown } from "lucide-react";
-import type { AdapterKind, AgentSpec, HarnessEdge, HarnessTrigger, McpServer, McpServerKind, Office } from "@loom/core";
+import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Upload, Workflow, ChevronDown, SlidersHorizontal } from "lucide-react";
+import type { AdapterKind, AgentSpec, McpServer, McpServerKind, Office } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Markdown } from "../components/Markdown.js";
+import { WorkflowEditor } from "../components/WorkflowEditor.js";
 import { Badge, Button } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
@@ -19,7 +20,7 @@ const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-ring";
 const areaCls = inputCls + " font-mono text-xs leading-relaxed";
 
-type Section = "agents" | "rules" | "skills" | "mcp" | "harness";
+type Section = "agents" | "rules" | "skills" | "mcp" | "workflows" | "prompts";
 
 export function OfficePage() {
   const { t } = useI18n();
@@ -32,7 +33,8 @@ export function OfficePage() {
     { key: "rules", icon: <FileText className="size-4" />, count: data?.rules.length ?? 0 },
     { key: "skills", icon: <Sparkles className="size-4" />, count: data?.skills.length ?? 0 },
     { key: "mcp", icon: <Plug className="size-4" />, count: data?.mcp.length ?? 0 },
-    { key: "harness", icon: <Workflow className="size-4" />, count: data?.edges.length ?? 0 },
+    { key: "workflows", icon: <Workflow className="size-4" />, count: data?.workflows.length ?? 0 },
+    { key: "prompts", icon: <SlidersHorizontal className="size-4" />, count: data?.prompts.length ?? 0 },
   ];
 
   return (
@@ -85,8 +87,10 @@ export function OfficePage() {
             <SkillsSection office={data} />
           ) : section === "agents" ? (
             <AgentsSection office={data} />
-          ) : section === "harness" ? (
-            <HarnessSection office={data} />
+          ) : section === "workflows" ? (
+            <WorkflowEditor agents={data.agents} />
+          ) : section === "prompts" ? (
+            <FeaturePromptsSection office={data} />
           ) : (
             <McpSection office={data} />
           )}
@@ -99,10 +103,6 @@ export function OfficePage() {
 function useInvalidate() {
   const qc = useQueryClient();
   return () => void qc.invalidateQueries({ queryKey: ["office"] });
-}
-
-function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">{children}</div>;
 }
 
 // 압축 행 — 헤더만 보이고, 클릭하면 본문이 펼쳐진다(리스트가 길어도 한눈에).
@@ -388,6 +388,35 @@ function AgentCard({
         </span>
       </label>
 
+      {/* 전담 역할 — 기능별 기본 에이전트(커밋 메시지·프로젝트 분석) */}
+      <div className="mt-4">
+        <FieldLabel>{t("office.agent.roles")}</FieldLabel>
+        <div className="flex flex-wrap gap-1.5">
+          {(["git", "analyst"] as const).map((role) => {
+            const on = a.roles?.includes(role) ?? false;
+            return (
+              <button
+                key={role}
+                type="button"
+                onClick={() =>
+                  setA((p) => {
+                    const next = on ? (p.roles ?? []).filter((r) => r !== role) : [...(p.roles ?? []), role];
+                    return { ...p, roles: next.length ? next : undefined };
+                  })
+                }
+                className={cn(
+                  "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
+                  on ? "border-primary/50 bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:bg-muted/60",
+                )}
+              >
+                {t(`office.agent.role.${role}`)}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.agent.roles.hint")}</p>
+      </div>
+
       {/* 지시 프롬프트 */}
       <div className="mt-4">
         <FieldLabel>{t("office.agent.prompt")}</FieldLabel>
@@ -564,6 +593,41 @@ function firstLine(body: string): string {
     if (t) return t.slice(0, 90);
   }
   return "";
+}
+
+// ── 기능 프롬프트 — git 커밋·분석 같은 내장 기능의 지침. 이름 고정, 본문만 편집.
+// 출력 양식은 서버 코드에 고정돼 있고, 여기는 스타일·관점을 조정하는 자리.
+function FeaturePromptsSection({ office }: { office: Office }) {
+  const { t } = useI18n();
+  const invalidate = useInvalidate();
+  const [open, setOpen] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (p: { name: string; body: string }) => api.putFeaturePrompt(p.name, p.body),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <div className="space-y-2.5">
+      {office.prompts.map((p) => (
+        <CollapsibleCard
+          key={p.name}
+          open={open === p.name}
+          onToggle={() => setOpen((o) => (o === p.name ? null : p.name))}
+          avatar={<span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><Sparkles className="size-4" /></span>}
+          title={t(`office.fp.${p.name}`)}
+          subtitle={firstLine(p.body)}
+          meta={<span className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{p.name}</span>}
+        >
+          <p className="mb-2 text-[11px] text-muted-foreground">{t("office.fp.hint")}</p>
+          <MarkdownField id={`fp-${p.name}`} defaultValue={p.body} placeholder="…" minH="min-h-28" />
+          <SaveRow
+            onSave={() => save.mutate({ name: p.name, body: (document.getElementById(`fp-${p.name}`) as HTMLTextAreaElement).value })}
+            pending={save.isPending}
+          />
+        </CollapsibleCard>
+      ))}
+    </div>
+  );
 }
 
 function RulesSection({ office }: { office: Office }) {
@@ -950,176 +1014,6 @@ function McpSection({ office }: { office: Office }) {
   );
 }
 
-// ── Harness (에이전트 간 핸드오프 규칙 — 단일 파일 edges.json) ──────────────────
-const TRIGGERS: HarnessTrigger[] = ["on_success", "on_fail", "on_changes", "manual"];
-
-function HarnessSection({ office }: { office: Office }) {
-  const { t } = useI18n();
-  const invalidate = useInvalidate();
-  const [rows, setRows] = useState<HarnessEdge[]>(office.edges);
-  const [err, setErr] = useState<string | null>(null);
-  const save = useMutation({
-    mutationFn: (edges: HarnessEdge[]) => api.putHarness(edges),
-    onSuccess: invalidate,
-    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
-  });
-
-  const names = office.agents.map((a) => a.name);
-  const patch = (i: number, next: Partial<HarnessEdge>) =>
-    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...next } : r)));
-  const addEdge = () =>
-    setRows((rs) => [
-      ...rs,
-      { from: names[0] ?? "", to: names[1] ?? names[0] ?? "", trigger: "on_success", mode: "ask" },
-    ]);
-
-  if (office.agents.length === 0) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">{t("office.harness.needAgents")}</p>;
-  }
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <HarnessGraph agents={office.agents} edges={rows} />
-      </Card>
-
-      <div className="flex justify-end">
-        <Button size="sm" onClick={addEdge}>
-          <Plus className="size-3.5" />
-          {t("office.harness.add")}
-        </Button>
-      </div>
-
-      {rows.length === 0 ? <Empty /> : null}
-      {rows.map((e, i) => (
-        <Card key={i}>
-          <div className="flex items-center gap-2">
-            <select className={cn(inputCls, "max-w-40")} value={e.from} onChange={(ev) => patch(i, { from: ev.target.value })}>
-              {names.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <span className="text-muted-foreground">→</span>
-            <select className={cn(inputCls, "max-w-40")} value={e.to} onChange={(ev) => patch(i, { to: ev.target.value })}>
-              {names.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <button type="button" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="ml-auto text-muted-foreground hover:text-destructive" aria-label="delete">
-              <Trash2 className="size-4" />
-            </button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <FieldLabel>{t("office.harness.trigger")}</FieldLabel>
-              <Segmented
-                value={e.trigger}
-                onChange={(v) => patch(i, { trigger: v })}
-                options={TRIGGERS.map((tr) => ({ value: tr, label: t(`office.harness.trigger.${tr}`) }))}
-              />
-            </div>
-            <div>
-              <FieldLabel>{t("office.harness.mode")}</FieldLabel>
-              <Segmented
-                value={e.mode}
-                onChange={(v) => patch(i, { mode: v })}
-                options={[
-                  { value: "auto", label: t("office.harness.mode.auto") },
-                  { value: "ask", label: t("office.harness.mode.ask") },
-                ]}
-              />
-              <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.harness.mode.hint")}</p>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <FieldLabel>{t("office.harness.prompt")}</FieldLabel>
-            <textarea
-              className={cn(areaCls, "min-h-16")}
-              value={e.prompt ?? ""}
-              placeholder={t("office.harness.promptPlaceholder")}
-              onChange={(ev) => patch(i, { prompt: ev.target.value || undefined })}
-            />
-          </div>
-
-          <label className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <input type="checkbox" checked={!!e.carryResult} onChange={(ev) => patch(i, { carryResult: ev.target.checked })} />
-            {t("office.harness.carry")}
-          </label>
-        </Card>
-      ))}
-
-      {err ? <p className="text-xs text-destructive">{err}</p> : null}
-      <SaveRow
-        onSave={() => {
-          setErr(null);
-          const bad = rows.find((e) => !e.from || !e.to || e.from === e.to);
-          if (bad) { setErr(t("office.harness.invalid")); return; }
-          save.mutate(rows);
-        }}
-        pending={save.isPending}
-      />
-    </div>
-  );
-}
-
-// 에이전트 노드를 원형 배치하고 엣지를 화살표로. auto=실선/violet, ask=점선.
-function HarnessGraph({ agents, edges }: { agents: AgentSpec[]; edges: HarnessEdge[] }) {
-  const W = 520, H = 260, cx = W / 2, cy = H / 2;
-  const r = agents.length <= 1 ? 0 : Math.min(W, H) / 2 - 52;
-  const NR = 22;
-  const pos = new Map<string, { x: number; y: number }>();
-  agents.forEach((a, i) => {
-    const ang = (2 * Math.PI * i) / agents.length - Math.PI / 2;
-    pos.set(a.name, { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) });
-  });
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 260 }}>
-      <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="var(--muted-foreground)" />
-        </marker>
-      </defs>
-      {edges.map((e, i) => {
-        const a = pos.get(e.from), b = pos.get(e.to);
-        if (!a || !b || e.from === e.to) return null;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const ux = dx / len, uy = dy / len;
-        const sx = a.x + ux * NR, sy = a.y + uy * NR;
-        const ex = b.x - ux * (NR + 8), ey = b.y - uy * (NR + 8);
-        const mx = (sx + ex) / 2, my = (sy + ey) / 2;
-        return (
-          <g key={i}>
-            <line
-              x1={sx} y1={sy} x2={ex} y2={ey}
-              stroke={e.mode === "auto" ? "var(--primary)" : "var(--muted-foreground)"}
-              strokeWidth={e.mode === "auto" ? 2 : 1.5}
-              strokeDasharray={e.mode === "auto" ? undefined : "5 4"}
-              markerEnd="url(#arrow)"
-              opacity={0.85}
-            />
-            <text x={mx} y={my - 4} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 9 }}>
-              {e.trigger.replace("on_", "")}
-            </text>
-          </g>
-        );
-      })}
-      {agents.map((a) => {
-        const p = pos.get(a.name)!;
-        return (
-          <g key={a.name}>
-            <circle cx={p.x} cy={p.y} r={NR} fill="var(--card)" stroke="var(--primary)" strokeWidth={1.5} opacity={0.95} />
-            <text x={p.x} y={p.y + 4} textAnchor="middle" className="fill-foreground font-display" style={{ fontSize: 13, fontWeight: 600 }}>
-              {(a.name.charAt(0) || "?").toUpperCase()}
-            </text>
-            <text x={p.x} y={p.y + NR + 13} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>
-              {a.label || a.name}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
 
 // ── 공통 작은 조각 ────────────────────────────────────────────────────────────
 

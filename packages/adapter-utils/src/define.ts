@@ -19,6 +19,8 @@ export type PromptMode =
 
 export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig> {
   kind: AdapterKind;
+  /** false = run별 MCP 주입 불가(antigravity). 기본 true. */
+  supportsMcpServers?: boolean;
   buildCommand(config: TConfig): BuiltCommand;
   /** Where the user prompt is injected. Default: stdin. */
   prompt?: PromptMode;
@@ -84,6 +86,7 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
 
   return {
     kind: def.kind,
+    supportsMcpServers: def.supportsMcpServers ?? true,
     buildCommand(config: AdapterConfig): BuiltCommand {
       return def.buildCommand(config as TConfig);
     },

@@ -45,6 +45,9 @@ export interface BuiltCommand {
 
 export interface CliAdapter {
   kind: AdapterKind;
+  /** false = 이 CLI 는 run별 MCP 서버 주입이 구조적으로 불가(antigravity).
+   *  위임(delegate)은 MCP 도구 대신 loadout 의 셸 브리지로 제공된다. */
+  supportsMcpServers: boolean;
   buildCommand(config: AdapterConfig): BuiltCommand;
   spawn(args: SpawnArgs, config: AdapterConfig): Promise<RunHandle>;
   /** Pluck a session id out of a stdout chunk. Run-service feeds every
