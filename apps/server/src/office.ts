@@ -230,6 +230,50 @@ export function writeSkill(name: string, description: string, body: string): Ski
   return { name, description, body, files: [] };
 }
 
+// ── 스킬 딸린 파일 (폴더 스킬) ───────────────────────────────────────────────
+// 상대경로 검증 — traversal 차단, 세그먼트별 안전 문자, 깊이 cap. SKILL.md 는 본문 전용.
+const SEG_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+export function safeRelPath(rel: string): string {
+  const segs = rel.split("/");
+  if (segs.length === 0 || segs.length > 4) throw new Error(`bad path depth: ${rel}`);
+  for (const s of segs) {
+    if (!SEG_RE.test(s) || s === ".." || s === ".") throw new Error(`bad path segment: ${s}`);
+  }
+  if (rel === "SKILL.md") throw new Error("SKILL.md is the skill body — edit it via the skill itself");
+  return rel;
+}
+
+function skillFolder(name: string): string {
+  return path.join(dir.skills(), safeName(name));
+}
+
+/** 단일 .md 스킬을 폴더 스킬로 승격 — <name>.md → <name>/SKILL.md. 이미 폴더면 noop. */
+function ensureSkillFolder(name: string): string {
+  const folder = skillFolder(name);
+  if (fs.existsSync(folder) && fs.statSync(folder).isDirectory()) return folder;
+  const single = path.join(dir.skills(), `${safeName(name)}.md`);
+  if (!fs.existsSync(single)) throw new Error(`skill not found: ${name}`);
+  fs.mkdirSync(folder, { recursive: true });
+  fs.renameSync(single, path.join(folder, "SKILL.md"));
+  return folder;
+}
+
+export function readSkillFile(name: string, rel: string): string {
+  return fs.readFileSync(path.join(skillFolder(name), safeRelPath(rel)), "utf8");
+}
+
+export function writeSkillFile(name: string, rel: string, content: string): SkillSpec {
+  const folder = ensureSkillFolder(name);
+  writeFileEnsured(path.join(folder, safeRelPath(rel)), content);
+  const found = readSkills().find((s) => s.name === name);
+  if (!found) throw new Error(`skill not found after write: ${name}`);
+  return found;
+}
+
+export function deleteSkillFile(name: string, rel: string): boolean {
+  return rmIfExists(path.join(skillFolder(name), safeRelPath(rel)));
+}
+
 export function writeMcp(servers: McpServer[]): McpServer[] {
   writeFileEnsured(dir.mcpFile(), JSON.stringify({ servers }, null, 2));
   return servers;

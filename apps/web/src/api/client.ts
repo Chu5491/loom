@@ -10,6 +10,7 @@ import type {
   Office,
   Project,
   RunInfo,
+  SkillSpec,
   TestAdapterResult,
 } from "@loom/core";
 
@@ -74,6 +75,20 @@ export const api = {
     }),
   deleteSkill: (name: string) =>
     request<unknown>(`/api/office/skills/${name}`, { method: "DELETE" }),
+
+  // 스킬 딸린 파일(폴더 스킬). 단일 .md 스킬에 파일을 추가하면 폴더로 자동 승격.
+  getSkillFile: (name: string, path: string) =>
+    request<{ content: string }>(`/api/office/skills/${name}/file?path=${encodeURIComponent(path)}`),
+  putSkillFile: (name: string, path: string, content: string) =>
+    request<{ skill: SkillSpec }>(`/api/office/skills/${name}/file`, {
+      method: "PUT",
+      body: JSON.stringify({ path, content }),
+    }),
+  deleteSkillFile: (name: string, path: string) =>
+    request<{ ok: boolean }>(`/api/office/skills/${name}/file`, {
+      method: "DELETE",
+      body: JSON.stringify({ path }),
+    }),
 
   putAgent: (name: string, spec: Omit<AgentSpec, "name">) =>
     request<unknown>(`/api/office/agents/${name}`, {

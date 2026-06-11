@@ -632,18 +632,8 @@ function SkillsSection({ office }: { office: Office }) {
             ) : null}
             <input className={cn(inputCls, "mb-2")} defaultValue={s.description} id={`skill-desc-${key}`} placeholder={t("office.skill.desc")} />
             <MarkdownField id={`skill-body-${key}`} defaultValue={s.body} placeholder="# Markdown skill body" minH="min-h-24" />
-            {/* 폴더 스킬의 딸린 파일(references/스크립트) — 파일은 git/파일시스템으로 관리 */}
-            {!s.isNew && (s as { files?: string[] }).files?.length ? (
-              <div className="mt-3">
-                <span className="text-xs font-medium text-muted-foreground">{t("office.skill.files")}</span>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {(s as { files?: string[] }).files!.map((f) => (
-                    <span key={f} className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{f}</span>
-                  ))}
-                </div>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.skill.files.hint")}</p>
-              </div>
-            ) : null}
+            {/* 폴더 스킬의 딸린 파일(references/스크립트) — 추가하면 단일 .md 가 폴더로 승격 */}
+            {!s.isNew ? <SkillFiles name={s.name} files={(s as { files?: string[] }).files ?? []} /> : null}
             <SaveRow
               onSave={() => {
                 const name = s.name.trim();
@@ -656,6 +646,106 @@ function SkillsSection({ office }: { office: Office }) {
           </CollapsibleCard>
         );
       })}
+    </div>
+  );
+}
+
+// ── 스킬 딸린 파일 편집기 ──────────────────────────────────────────────────────
+// 칩 클릭 → 내용 로드해 인라인 편집. "파일 추가" → 경로+내용 입력. 저장/삭제는
+// office API 로 — 단일 .md 스킬에 첫 파일을 추가하면 서버가 폴더로 승격한다.
+function SkillFiles({ name, files }: { name: string; files: string[] }) {
+  const { t } = useI18n();
+  const invalidate = useInvalidate();
+  const [editing, setEditing] = useState<string | null>(null); // 파일 경로 or "__new"
+  const [pathInput, setPathInput] = useState("");
+  const [content, setContent] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: (v: { path: string; content: string }) => api.putSkillFile(name, v.path, v.content),
+    onSuccess: () => { invalidate(); setEditing(null); setErr(null); },
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
+  });
+  const del = useMutation({
+    mutationFn: (path: string) => api.deleteSkillFile(name, path),
+    onSuccess: () => { invalidate(); setEditing(null); },
+  });
+
+  async function openFile(f: string) {
+    setErr(null);
+    setPathInput(f);
+    try {
+      const { content } = await api.getSkillFile(name, f);
+      setContent(content);
+      setEditing(f);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <div className="mt-3">
+      <span className="text-xs font-medium text-muted-foreground">{t("office.skill.files")}</span>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {files.map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => void openFile(f)}
+            className={cn(
+              "rounded-md border px-1.5 py-0.5 font-mono text-[11px] transition-colors",
+              editing === f ? "border-primary/50 bg-primary/10 text-foreground" : "border-border bg-muted/40 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {f}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => { setEditing("__new"); setPathInput(""); setContent(""); setErr(null); }}
+          className="rounded-md border border-dashed border-border px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+        >
+          + {t("office.skill.file.add")}
+        </button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.skill.files.hint")}</p>
+
+      {editing ? (
+        <div className="mt-2 rounded-lg border border-border bg-background p-3">
+          <input
+            className={cn(inputCls, "max-w-72 font-mono text-xs")}
+            value={pathInput}
+            placeholder="reference.md"
+            readOnly={editing !== "__new"}
+            autoFocus={editing === "__new"}
+            onChange={(e) => setPathInput(e.target.value.replace(/[^a-zA-Z0-9._/-]/g, ""))}
+          />
+          <textarea
+            className={cn(areaCls, "mt-2 min-h-32")}
+            value={content}
+            placeholder="# File contents"
+            onChange={(e) => setContent(e.target.value)}
+          />
+          {err ? <p className="mt-1 text-xs text-destructive">{err}</p> : null}
+          <div className="mt-2 flex items-center justify-end gap-2">
+            {editing !== "__new" ? (
+              <button
+                type="button"
+                onClick={() => confirm(t("office.deleteConfirm", { name: editing })) && del.mutate(editing)}
+                className="text-xs text-muted-foreground transition-colors hover:text-destructive"
+              >
+                {t("office.skill.file.delete")}
+              </button>
+            ) : null}
+            <Button size="sm" variant="secondary" onClick={() => { setEditing(null); setErr(null); }}>
+              {t("office.skill.file.cancel")}
+            </Button>
+            <Button size="sm" disabled={!pathInput.trim() || save.isPending} onClick={() => save.mutate({ path: pathInput.trim(), content })}>
+              {save.isPending ? t("office.saving") : t("office.save")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
