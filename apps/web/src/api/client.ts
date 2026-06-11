@@ -90,6 +90,18 @@ export const api = {
       body: JSON.stringify({ path }),
     }),
 
+  // .md/.zip 업로드 가져오기 — base64 JSON (멀티파트 의존성 없이).
+  importSkillArchive: async (file: File) =>
+    request<{ skill: SkillSpec }>("/api/office/skills/import", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, dataBase64: await fileToBase64(file) }),
+    }),
+  importRulesArchive: async (file: File) =>
+    request<{ rules: { name: string }[] }>("/api/office/rules/import", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, dataBase64: await fileToBase64(file) }),
+    }),
+
   putAgent: (name: string, spec: Omit<AgentSpec, "name">) =>
     request<unknown>(`/api/office/agents/${name}`, {
       method: "PUT",
@@ -158,3 +170,13 @@ export const api = {
 
 /** SSE 구독 URL — EventSource 가 직접 연다(`event`/`done` 네임드 이벤트). */
 export const runEventsUrl = (id: string) => `/api/runs/${id}/events`;
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    // data:...;base64, 프리픽스 제거
+    r.onload = () => resolve(String(r.result).split(",", 2)[1] ?? "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}

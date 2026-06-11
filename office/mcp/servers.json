@@ -1,3 +1,44 @@
 {
-  "servers": []
+  "servers": [
+    {
+      "name": "exa",
+      "description": "Web search (Exa)",
+      "kind": "http",
+      "command": null,
+      "args": [],
+      "env": {},
+      "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+      "headers": {}
+    },
+    {
+      "name": "grep-app",
+      "description": "Code search across public repos (grep.app)",
+      "kind": "http",
+      "command": null,
+      "args": [],
+      "env": {},
+      "url": "https://mcp.grep.app",
+      "headers": {}
+    },
+    {
+      "name": "context7",
+      "description": "Up-to-date library docs (Context7)",
+      "kind": "http",
+      "command": null,
+      "args": [],
+      "env": {},
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {}
+    },
+    {
+      "name": "deepwiki",
+      "description": "GitHub repo wiki/Q&A (DeepWiki)",
+      "kind": "http",
+      "command": null,
+      "args": [],
+      "env": {},
+      "url": "https://mcp.deepwiki.com/mcp",
+      "headers": {}
+    }
+  ]
 }

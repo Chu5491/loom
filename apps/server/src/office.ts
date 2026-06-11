@@ -315,12 +315,21 @@ export const deleteAgent = (name: string) =>
   rmIfExists(path.join(dir.agents(), `${safeName(name)}.json`));
 
 /** 첫 실행 시 office/ 골격 + 예시 한 개씩. 이미 있으면 noop. */
+// 기본 MCP 4종 — 코딩 에이전트의 표준 장비(웹검색·코드검색·문서·위키). remote 라
+// 설치 없이 동작, secret 불필요. 에이전트가 opt-in 해야 실리므로 자동주입 아님.
+export const DEFAULT_MCP: McpServer[] = [
+  { name: "exa", description: "Web search (Exa)", kind: "http", command: null, args: [], env: {}, url: "https://mcp.exa.ai/mcp?tools=web_search_exa", headers: {} },
+  { name: "grep-app", description: "Code search across public repos (grep.app)", kind: "http", command: null, args: [], env: {}, url: "https://mcp.grep.app", headers: {} },
+  { name: "context7", description: "Up-to-date library docs (Context7)", kind: "http", command: null, args: [], env: {}, url: "https://mcp.context7.com/mcp", headers: {} },
+  { name: "deepwiki", description: "GitHub repo wiki/Q&A (DeepWiki)", kind: "http", command: null, args: [], env: {}, url: "https://mcp.deepwiki.com/mcp", headers: {} },
+];
+
 export function ensureOffice(): void {
   if (fs.existsSync(paths.office)) return;
   writeRule(
     "global",
     "# Global rules\n\nKeep changes minimal and explain non-obvious decisions.\n",
   );
-  writeMcp([]);
+  writeMcp(DEFAULT_MCP);
   writeEdges([]);
 }

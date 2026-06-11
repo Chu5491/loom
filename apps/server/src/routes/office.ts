@@ -3,6 +3,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import { importRulesArchive, importSkillArchive } from "../office-import.js";
 import { isResponse, parseBody } from "./helpers.js";
 import {
   agentSchema,
@@ -95,6 +96,30 @@ officeRoute.delete("/skills/:name/file", async (c) => {
     return deleteSkillFile(c.req.param("name"), data.path)
       ? c.json({ ok: true })
       : c.json({ error: "not_found" }, 404);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
+});
+
+// ── 가져오기 (.md / .zip 업로드 — base64 JSON, ~13MB cap) ─────────────────────
+const importSchema = z.object({
+  filename: z.string().min(1).max(200),
+  dataBase64: z.string().min(1).max(18_000_000),
+});
+officeRoute.post("/skills/import", async (c) => {
+  const data = await parseBody(c, importSchema);
+  if (isResponse(data)) return data;
+  try {
+    return c.json({ skill: importSkillArchive(data.filename, Buffer.from(data.dataBase64, "base64")) }, 201);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
+});
+officeRoute.post("/rules/import", async (c) => {
+  const data = await parseBody(c, importSchema);
+  if (isResponse(data)) return data;
+  try {
+    return c.json({ rules: importRulesArchive(data.filename, Buffer.from(data.dataBase64, "base64")) }, 201);
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
   }

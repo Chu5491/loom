@@ -1,9 +1,9 @@
 // Office 화면 — office/ 파일들을 UI로 편집. 정의의 원천은 파일, 여긴 그 뷰.
 // 4섹션: Agents / Rules / Skills / MCP. 모든 변경은 PUT → 파일 저장 → 재조회.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Workflow, ChevronDown } from "lucide-react";
+import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Upload, Workflow, ChevronDown } from "lucide-react";
 import type { AdapterKind, AgentSpec, HarnessEdge, HarnessTrigger, McpServer, McpServerKind, Office } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
@@ -150,9 +150,30 @@ function CollapsibleCard({
   );
 }
 
-function SectionHead({ onAdd, label }: { onAdd: () => void; label: string }) {
+function SectionHead({ onAdd, label, onImport }: { onAdd: () => void; label: string; onImport?: (file: File) => void }) {
+  const { t } = useI18n();
+  const fileRef = useRef<HTMLInputElement>(null);
   return (
-    <div className="mb-4 flex justify-end">
+    <div className="mb-4 flex items-center justify-end gap-2">
+      {onImport ? (
+        <>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".md,.zip"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onImport(f);
+              e.target.value = ""; // 같은 파일 재선택 허용
+            }}
+          />
+          <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
+            <Upload className="size-3.5" />
+            {t("office.import")}
+          </Button>
+        </>
+      ) : null}
       <Button size="sm" onClick={onAdd}>
         <Plus className="size-3.5" />
         {label}
@@ -541,12 +562,23 @@ function RulesSection({ office }: { office: Office }) {
     onSuccess: (_d, v) => { invalidate(); setDrafts((d) => d.filter((x) => x.name !== v.name)); },
   });
   const del = useMutation({ mutationFn: api.deleteRule, onSuccess: invalidate });
+  const [importErr, setImportErr] = useState<string | null>(null);
+  const imp = useMutation({
+    mutationFn: (f: File) => api.importRulesArchive(f),
+    onSuccess: () => { invalidate(); setImportErr(null); },
+    onError: (e) => setImportErr(e instanceof Error ? e.message : String(e)),
+  });
 
   const items = [...office.rules.map((r) => ({ ...r, isNew: false })), ...drafts.map((d) => ({ ...d, isNew: true }))];
 
   return (
     <div className="space-y-2.5">
-      <SectionHead label={t("office.new.rule")} onAdd={() => { setDrafts((d) => [...d, { name: "", body: "" }]); setOpen(`new-${drafts.length}`); }} />
+      <SectionHead
+        label={t("office.new.rule")}
+        onAdd={() => { setDrafts((d) => [...d, { name: "", body: "" }]); setOpen(`new-${drafts.length}`); }}
+        onImport={(f) => imp.mutate(f)}
+      />
+      {importErr ? <p className="text-xs text-destructive">{importErr}</p> : null}
       {items.length === 0 ? <Empty /> : null}
       {items.map((r, i) => {
         const di = i - office.rules.length;
@@ -601,6 +633,12 @@ function SkillsSection({ office }: { office: Office }) {
     onSuccess: (_d, v) => { invalidate(); setDrafts((d) => d.filter((x) => x.name !== v.name)); },
   });
   const del = useMutation({ mutationFn: api.deleteSkill, onSuccess: invalidate });
+  const [importErr, setImportErr] = useState<string | null>(null);
+  const imp = useMutation({
+    mutationFn: (f: File) => api.importSkillArchive(f),
+    onSuccess: () => { invalidate(); setImportErr(null); },
+    onError: (e) => setImportErr(e instanceof Error ? e.message : String(e)),
+  });
 
   const items = [
     ...office.skills.map((s) => ({ ...s, isNew: false })),
@@ -609,7 +647,12 @@ function SkillsSection({ office }: { office: Office }) {
 
   return (
     <div className="space-y-2.5">
-      <SectionHead label={t("office.new.skill")} onAdd={() => { setDrafts((d) => [...d, { name: "", files: [] }]); setOpen(`new-${drafts.length}`); }} />
+      <SectionHead
+        label={t("office.new.skill")}
+        onAdd={() => { setDrafts((d) => [...d, { name: "", files: [] }]); setOpen(`new-${drafts.length}`); }}
+        onImport={(f) => imp.mutate(f)}
+      />
+      {importErr ? <p className="text-xs text-destructive">{importErr}</p> : null}
       {items.length === 0 ? <Empty /> : null}
       {items.map((s, i) => {
         const di = i - office.skills.length;
