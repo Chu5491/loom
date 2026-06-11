@@ -590,11 +590,14 @@ function RulesSection({ office }: { office: Office }) {
 function SkillsSection({ office }: { office: Office }) {
   const { t } = useI18n();
   const invalidate = useInvalidate();
-  const [drafts, setDrafts] = useState<{ name: string }[]>([]);
+  const [drafts, setDrafts] = useState<{ name: string; files: { path: string; content: string }[] }[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const save = useMutation({
-    mutationFn: (s: { name: string; description: string; body: string }) =>
-      api.putSkill(s.name, s.description, s.body),
+    // 신규 스킬은 본문 저장 후 스테이징된 딸린 파일들을 이어서 기록 — 한 번의 "저장"으로.
+    mutationFn: async (s: { name: string; description: string; body: string; files: { path: string; content: string }[] }) => {
+      await api.putSkill(s.name, s.description, s.body);
+      for (const f of s.files) await api.putSkillFile(s.name, f.path, f.content);
+    },
     onSuccess: (_d, v) => { invalidate(); setDrafts((d) => d.filter((x) => x.name !== v.name)); },
   });
   const del = useMutation({ mutationFn: api.deleteSkill, onSuccess: invalidate });
@@ -606,7 +609,7 @@ function SkillsSection({ office }: { office: Office }) {
 
   return (
     <div className="space-y-2.5">
-      <SectionHead label={t("office.new.skill")} onAdd={() => { setDrafts((d) => [...d, { name: "" }]); setOpen(`new-${drafts.length}`); }} />
+      <SectionHead label={t("office.new.skill")} onAdd={() => { setDrafts((d) => [...d, { name: "", files: [] }]); setOpen(`new-${drafts.length}`); }} />
       {items.length === 0 ? <Empty /> : null}
       {items.map((s, i) => {
         const di = i - office.skills.length;
@@ -627,19 +630,39 @@ function SkillsSection({ office }: { office: Office }) {
                 value={s.name}
                 autoFocus
                 placeholder={t("office.namePlaceholder")}
-                onChange={(e) => setDrafts((d) => d.map((x, j) => (j === di ? { name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") } : x)))}
+                onChange={(e) => setDrafts((d) => d.map((x, j) => (j === di ? { ...x, name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") } : x)))}
               />
             ) : null}
             <input className={cn(inputCls, "mb-2")} defaultValue={s.description} id={`skill-desc-${key}`} placeholder={t("office.skill.desc")} />
             <MarkdownField id={`skill-body-${key}`} defaultValue={s.body} placeholder="# Markdown skill body" minH="min-h-24" />
-            {/* 폴더 스킬의 딸린 파일(references/스크립트) — 추가하면 단일 .md 가 폴더로 승격 */}
-            {!s.isNew ? <SkillFiles name={s.name} files={(s as { files?: string[] }).files ?? []} /> : null}
+            {/* 딸린 파일 — 기존 스킬은 API 직결(폴더 자동 승격), 신규는 로컬 스테이징 */}
+            <SkillFiles
+              ops={
+                s.isNew
+                  ? {
+                      list: (drafts[di]?.files ?? []).map((f) => f.path),
+                      read: async (p) => drafts[di]?.files.find((f) => f.path === p)?.content ?? "",
+                      write: async (p, content) =>
+                        setDrafts((d) => d.map((x, j) =>
+                          j === di ? { ...x, files: [...x.files.filter((f) => f.path !== p), { path: p, content }] } : x,
+                        )),
+                      remove: async (p) =>
+                        setDrafts((d) => d.map((x, j) => (j === di ? { ...x, files: x.files.filter((f) => f.path !== p) } : x))),
+                    }
+                  : {
+                      list: (s as { files?: string[] }).files ?? [],
+                      read: async (p) => (await api.getSkillFile(s.name, p)).content,
+                      write: async (p, content) => { await api.putSkillFile(s.name, p, content); invalidate(); },
+                      remove: async (p) => { await api.deleteSkillFile(s.name, p); invalidate(); },
+                    }
+              }
+            />
             <SaveRow
               onSave={() => {
                 const name = s.name.trim();
                 const description = (document.getElementById(`skill-desc-${key}`) as HTMLInputElement).value;
                 const body = (document.getElementById(`skill-body-${key}`) as HTMLTextAreaElement).value;
-                if (name) save.mutate({ name, description, body });
+                if (name) save.mutate({ name, description, body, files: s.isNew ? (drafts[di]?.files ?? []) : [] });
               }}
               pending={save.isPending}
             />
@@ -651,32 +674,42 @@ function SkillsSection({ office }: { office: Office }) {
 }
 
 // ── 스킬 딸린 파일 편집기 ──────────────────────────────────────────────────────
-// 칩 클릭 → 내용 로드해 인라인 편집. "파일 추가" → 경로+내용 입력. 저장/삭제는
-// office API 로 — 단일 .md 스킬에 첫 파일을 추가하면 서버가 폴더로 승격한다.
-function SkillFiles({ name, files }: { name: string; files: string[] }) {
+// 칩 클릭 → 내용 로드해 인라인 편집, "파일 추가" → 경로+내용 입력.
+// ops 로 저장소를 추상화 — 기존 스킬은 office API(폴더 자동 승격), 신규 드래프트는
+// 로컬 스테이징(스킬 저장 시 한꺼번에 기록). UI 는 양쪽이 완전히 동일.
+interface SkillFileOps {
+  list: string[];
+  read: (path: string) => Promise<string>;
+  write: (path: string, content: string) => Promise<void>;
+  remove: (path: string) => Promise<void>;
+}
+
+function SkillFiles({ ops }: { ops: SkillFileOps }) {
   const { t } = useI18n();
-  const invalidate = useInvalidate();
   const [editing, setEditing] = useState<string | null>(null); // 파일 경로 or "__new"
   const [pathInput, setPathInput] = useState("");
   const [content, setContent] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
-  const save = useMutation({
-    mutationFn: (v: { path: string; content: string }) => api.putSkillFile(name, v.path, v.content),
-    onSuccess: () => { invalidate(); setEditing(null); setErr(null); },
-    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
-  });
-  const del = useMutation({
-    mutationFn: (path: string) => api.deleteSkillFile(name, path),
-    onSuccess: () => { invalidate(); setEditing(null); },
-  });
+  async function run(fn: () => Promise<void>) {
+    setPending(true);
+    setErr(null);
+    try {
+      await fn();
+      setEditing(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function openFile(f: string) {
     setErr(null);
     setPathInput(f);
     try {
-      const { content } = await api.getSkillFile(name, f);
-      setContent(content);
+      setContent(await ops.read(f));
       setEditing(f);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -687,7 +720,7 @@ function SkillFiles({ name, files }: { name: string; files: string[] }) {
     <div className="mt-3">
       <span className="text-xs font-medium text-muted-foreground">{t("office.skill.files")}</span>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        {files.map((f) => (
+        {ops.list.map((f) => (
           <button
             key={f}
             type="button"
@@ -715,7 +748,7 @@ function SkillFiles({ name, files }: { name: string; files: string[] }) {
           <input
             className={cn(inputCls, "max-w-72 font-mono text-xs")}
             value={pathInput}
-            placeholder="reference.md"
+            placeholder="reference.md · docs/guide.md"
             readOnly={editing !== "__new"}
             autoFocus={editing === "__new"}
             onChange={(e) => setPathInput(e.target.value.replace(/[^a-zA-Z0-9._/-]/g, ""))}
@@ -731,7 +764,7 @@ function SkillFiles({ name, files }: { name: string; files: string[] }) {
             {editing !== "__new" ? (
               <button
                 type="button"
-                onClick={() => confirm(t("office.deleteConfirm", { name: editing })) && del.mutate(editing)}
+                onClick={() => confirm(t("office.deleteConfirm", { name: editing })) && void run(() => ops.remove(editing))}
                 className="text-xs text-muted-foreground transition-colors hover:text-destructive"
               >
                 {t("office.skill.file.delete")}
@@ -740,8 +773,8 @@ function SkillFiles({ name, files }: { name: string; files: string[] }) {
             <Button size="sm" variant="secondary" onClick={() => { setEditing(null); setErr(null); }}>
               {t("office.skill.file.cancel")}
             </Button>
-            <Button size="sm" disabled={!pathInput.trim() || save.isPending} onClick={() => save.mutate({ path: pathInput.trim(), content })}>
-              {save.isPending ? t("office.saving") : t("office.save")}
+            <Button size="sm" disabled={!pathInput.trim() || pending} onClick={() => void run(() => ops.write(pathInput.trim(), content))}>
+              {pending ? t("office.saving") : t("office.save")}
             </Button>
           </div>
         </div>
