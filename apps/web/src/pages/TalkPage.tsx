@@ -7,8 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp, Bot, ChevronDown, ChevronLeft, ChevronRight, FilePen, FilePlus2, FileSearch, FileText,
-  FolderGit2, FolderOpen, GitBranch, Globe, MessagesSquare, MessageSquarePlus, Pencil, Plug, Sparkles,
-  Terminal, Trash2, Workflow, Wrench, X, Zap,
+  FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
+  Paperclip, Pencil, Plug, Sparkles, Terminal, Trash2, Workflow, Wrench, X, Zap,
 } from "lucide-react";
 import type { AgentSpec, HarnessEdge, OfficeEvent, Project, RunInfo, SkillSpec, Thread } from "@loom/core";
 import { api } from "../api/client.js";
@@ -1039,7 +1039,27 @@ function Composer({
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [selIdx, setSelIdx] = useState(0);
   const [dismissed, setDismissed] = useState(false); // Esc — 토큰은 두고 메뉴만 닫기
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // 드롭/붙여넣기 파일 업로드 → 첨부 칩. 실패한 파일은 조용히 건너뛰지 않고 알림.
+  async function addFiles(list: FileList | File[]) {
+    const files = [...list];
+    if (!files.length) return;
+    setUploading((n) => n + files.length);
+    for (const f of files) {
+      try {
+        const { path } = await api.uploadAttachment(f);
+        setAttachedFiles((prev) => (prev.includes(path) ? prev : [...prev, path]));
+      } catch (e) {
+        alert(`${f.name}: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  }
 
   // 커서 앞 텍스트의 끝이 "@partial" 이면 멘션 메뉴를 띄운다. 파일은 / . 도 허용.
   const token = useMemo(() => {
@@ -1250,24 +1270,71 @@ function Composer({
           </span>
         ))}
         {/* 첨부 파일 — 멘션에서 고른 파일은 텍스트가 아닌 "선택된" 칩 */}
-        {attachedFiles.map((f) => (
-          <span key={f} title={f} className="inline-flex max-w-56 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 font-mono text-[11px] text-foreground">
-            <FileText className="size-3 shrink-0 text-primary" />
-            <span className="truncate">{f.split("/").pop()}</span>
-            <button type="button" aria-label={`detach ${f}`} onClick={() => setAttachedFiles((prev) => prev.filter((x) => x !== f))} className="shrink-0 rounded-full p-0.5 hover:bg-primary/20">
-              <X className="size-3" />
-            </button>
-          </span>
-        ))}
+        {attachedFiles.map((f) => {
+          const isImage = /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(f);
+          const Icon = isImage ? ImageIcon : FileText;
+          return (
+            <span key={f} title={f} className="inline-flex max-w-56 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 font-mono text-[11px] text-foreground">
+              <Icon className="size-3 shrink-0 text-primary" />
+              <span className="truncate">{f.split("/").pop()}</span>
+              <button type="button" aria-label={`detach ${f}`} onClick={() => setAttachedFiles((prev) => prev.filter((x) => x !== f))} className="shrink-0 rounded-full p-0.5 hover:bg-primary/20">
+                <X className="size-3" />
+              </button>
+            </span>
+          );
+        })}
       </div>
 
-      {/* 입력 */}
-      <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring">
+      {/* 입력 — 파일/이미지를 끌어다 놓거나(드롭) 붙여넣으면 첨부된다 */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          void addFiles(e.dataTransfer.files);
+        }}
+        className={cn(
+          "relative flex items-end gap-2 rounded-2xl border bg-card p-2 shadow-sm transition-colors focus-within:ring-2 focus-within:ring-ring",
+          dragOver ? "border-primary border-dashed bg-primary/5" : "border-border",
+        )}
+      >
+        {dragOver ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-primary/10 backdrop-blur-[1px]">
+            <span className="flex items-center gap-1.5 text-sm font-medium text-primary">
+              <Paperclip className="size-4" />
+              {t("talk.dropHint")}
+            </span>
+          </div>
+        ) : null}
+        {/* 파일 선택 폴백 */}
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }}
+        />
+        <button
+          type="button"
+          title={t("talk.attach")}
+          onClick={() => fileRef.current?.click()}
+          className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          {uploading > 0 ? <span className="size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" /> : <Paperclip className="size-4" />}
+        </button>
         <textarea
           ref={taRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={(e) => {
+            const files = [...e.clipboardData.files];
+            if (files.length) {
+              e.preventDefault();
+              void addFiles(files);
+            }
+          }}
           rows={1}
           placeholder={t("talk.placeholder")}
           className="max-h-40 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none"

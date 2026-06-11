@@ -16,6 +16,7 @@ import { projectFilesRoute } from "./routes/project-files.js";
 import { projectsRoute } from "./routes/projects.js";
 import { runsRoute } from "./routes/runs.js";
 import { threadsRoute } from "./routes/threads.js";
+import { uploadsRoute } from "./routes/uploads.js";
 
 ensureOffice();
 
@@ -29,6 +30,7 @@ app.route("/api/mcp", mcpRoute);
 app.route("/api/projects", projectsRoute);
 app.route("/api/projects", projectFilesRoute);
 app.route("/api/threads", threadsRoute);
+app.route("/api/uploads", uploadsRoute);
 app.route("/api/runs", runsRoute);
 
 app.onError((err, c) => {

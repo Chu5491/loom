@@ -174,6 +174,13 @@ export const api = {
       `/api/projects/${id}/agent-activity`,
     ),
 
+  /** 컴포저 드롭/붙여넣기 첨부 — data/uploads/ 에 저장하고 절대경로를 받는다. */
+  uploadAttachment: async (file: File) =>
+    request<{ path: string; name: string; bytes: number }>("/api/uploads", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name || "pasted-image.png", dataBase64: await fileToBase64(file) }),
+    }),
+
   /** Talk 컴포저 @file 멘션 — 프로젝트 디렉토리 파일 검색(상대경로 최대 20개). */
   searchProjectFiles: (projectId: string, q: string) =>
     request<{ files: string[] }>(`/api/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
