@@ -2,7 +2,7 @@
 // 잇는 편집기. 정의는 office/workflows/<name>.json (PUT 으로 저장).
 // 실행은 Talk 의 수동 버튼 — 여기는 정의만.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, CirclePlay, Link2, Plus, Trash2, Workflow, X, Zap } from "lucide-react";
 import type { AgentSpec, WorkflowEdge, WorkflowNode, WorkflowSpec } from "@loom/core";
@@ -99,7 +99,16 @@ const TEMPLATES: WfTemplate[] = [
   },
 ];
 
-export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
+export function WorkflowEditor({
+  agents,
+  initialName,
+  registerDirty,
+}: {
+  agents: AgentSpec[];
+  initialName?: string;
+  /** OfficePage 의 미저장 가드 — 트리 전환 시 dirty 면 confirm 을 띄운다. */
+  registerDirty?: (fn: () => boolean) => void;
+}) {
   const { t } = useI18n();
   const qc = useQueryClient();
   const officeQ = qc.getQueryData<{ office: { workflows: WorkflowSpec[] } }>(["office"]);
@@ -110,6 +119,23 @@ export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
   const [newName, setNewName] = useState("");
   const [dirty, setDirty] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    registerDirty?.(() => dirty);
+  });
+  useEffect(() => () => registerDirty?.(() => false), [registerDirty]);
+
+  // 트리에서 워크플로우를 직접 클릭한 경우 — 해당 캔버스로 점프.
+  useEffect(() => {
+    if (!initialName) return;
+    if (editing?.name === initialName) return;
+    const wf = workflows.find((w) => w.name === initialName);
+    if (wf) {
+      setEditing(structuredClone(wf));
+      setDirty(false);
+      setErr(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialName, workflows.length]);
 
   const save = useMutation({
     mutationFn: (wf: WorkflowSpec) => api.putWorkflow(wf),
@@ -119,9 +145,12 @@ export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
   const del = useMutation({
     mutationFn: (name: string) => api.deleteWorkflow(name),
     onSuccess: () => { setEditing(null); void qc.invalidateQueries({ queryKey: ["office"] }); },
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
   function open(wf: WorkflowSpec) {
+    // 편집 중 다른 워크플로우 칩 클릭 — 확인 없이 미저장 편집을 버리지 않는다.
+    if (dirty && !confirm(t("office.unsavedConfirm"))) return;
     setEditing(structuredClone(wf));
     setDirty(false);
     setErr(null);
@@ -129,6 +158,7 @@ export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
   function create(template?: WfTemplate) {
     const name = newName.trim();
     if (!name) return;
+    if (dirty && !confirm(t("office.unsavedConfirm"))) return;
     const first = agents[0]?.name ?? "";
     setEditing(
       template
@@ -227,7 +257,11 @@ export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
           agents={agents}
           onChange={(next) => { setEditing(next); setDirty(true); }}
           onSave={() => save.mutate(editing)}
-          onDelete={() => { if (workflows.some((w) => w.name === editing.name)) del.mutate(editing.name); else setEditing(null); }}
+          onDelete={() => {
+            // 다른 office 항목들과 동일 정책 — 영구 삭제는 반드시 confirm 을 거친다.
+            if (!workflows.some((w) => w.name === editing.name)) { setEditing(null); return; }
+            if (confirm(t("office.deleteConfirm", { name: editing.name }))) del.mutate(editing.name);
+          }}
           saving={save.isPending}
           dirty={dirty}
           err={err}

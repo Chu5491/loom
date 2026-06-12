@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
@@ -255,7 +256,7 @@ export function TalkPage({ project }: { project: Project }) {
   ];
 
   return (
-    <div className="workspace-enter mx-auto flex h-[calc(100vh-3.5rem)] max-w-7xl flex-col px-4 sm:px-6">
+    <div className="workspace-enter mx-auto flex h-full max-w-[1400px] flex-col px-6 sm:px-8 lg:px-12">
       {/* 워크스페이스 바 — 뷰 스위처(헤더 네비와 같은 글로우 필) + 스레드 컨트롤 */}
       <div className="flex items-center gap-2 py-2">
         <div className="inline-flex gap-1">
@@ -343,17 +344,25 @@ export function TalkPage({ project }: { project: Project }) {
         />
       ) : null}
 
-      <div className="flex min-h-0 flex-1 gap-3">
-      {view === "files" ? (
-        <FilesView project={project} />
-      ) : view === "git" ? (
-        <GitView project={project} />
-      ) : view === "analysis" ? (
-        <AnalysisView project={project} />
-      ) : view === "schedules" ? (
-        <SchedulesView project={project} />
-      ) : (
-        <>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={view}
+          initial={{ opacity: 0, y: 10, filter: "blur(2px)" }}
+          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+          exit={{ opacity: 0, y: -10, filter: "blur(2px)" }}
+          transition={{ duration: 0.25 }}
+          className="flex min-h-0 flex-1 gap-6 mb-6 w-full"
+        >
+          {view === "files" ? (
+            <FilesView project={project} />
+          ) : view === "git" ? (
+            <GitView project={project} />
+          ) : view === "analysis" ? (
+            <AnalysisView project={project} />
+          ) : view === "schedules" ? (
+            <SchedulesView project={project} />
+          ) : (
+            <>
       {/* 스레드 사이드바 — 대화 목록 (lg+, 작은 화면은 상단 셀렉터 폴백) */}
       <ThreadSidebar
         threads={threads.data.threads}
@@ -364,42 +373,68 @@ export function TalkPage({ project }: { project: Project }) {
         onRename={(id, name) => void api.renameThread(id, name).then(() => threads.refetch())}
         onDelete={(id) => {
           if (!confirm(t("talk.thread.deleteConfirm"))) return;
-          void api.deleteThread(id).then(() => { setThreadId(null); void threads.refetch(); });
+          void api.deleteThread(id)
+            .then(() => { setThreadId(null); void threads.refetch(); })
+            .catch((e: unknown) => {
+              // 실행 중 run 보호(서버 409) — 무음이면 삭제 버튼이 죽은 것처럼 보인다.
+              alert(String(e).includes("still_running") ? t("talk.thread.deleteRunning") : String(e));
+            });
         }}
       />
 
       {/* 채팅 컬럼 = 스테이지 — 워크스페이스의 주인공 서피스 */}
-      <div className="mx-auto mb-3 flex h-full w-full min-w-0 max-w-3xl flex-1 flex-col rounded-2xl border border-border/50 bg-card/30 px-4">
+      <div className="mx-auto flex h-full w-full min-w-0 max-w-4xl flex-1 flex-col rounded-2xl glass-panel border-cyber px-6 sm:px-8">
         {/* overflow-anchor 끔 — 브라우저 앵커링이 scrollTop 을 임의 조정해 바닥 고정과 충돌 */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-6 [overflow-anchor:none]">
           {messages.length === 0 && !pending ? (
             <Welcome activeAgent={agents.find((a) => a.name === active)} />
           ) : (
             <div className="space-y-5">
-              {messages.map((msg, i) =>
-                msg.role === "user" ? (
-                  <UserBubble key={msg.id} text={msg.text} />
-                ) : (
-                  <div key={msg.id}>
-                    {/* 에이전트 간 핸드오프 커넥터 — 누가 누구에게 넘겼는지 한눈에 */}
-                    {msg.fromAgent ? <HandoffDivider from={msg.fromAgent} to={msg.agent} /> : null}
-                    <ErrorBoundary label={t("err.bubble")} retryLabel={t("err.retry")}>
-                    <AgentBubble
-                      agent={agents.find((a) => a.name === msg.agent)}
-                      fromAgent={msg.fromAgent}
-                      runId={msg.runId}
-                      run={byId.get(msg.runId)}
-                      startedAt={msg.startedAt}
-                      workflows={office.data.office.workflows}
-                      isLast={i === messages.length - 1}
-                      onDone={() => void runs.refetch()}
-                      onActivity={reportActivity}
-                    />
-                    </ErrorBoundary>
-                  </div>
-                ),
-              )}
-              {pending ? <UserBubble key="pending" text={pending.text} /> : null}
+              {messages.map((msg, i) => (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 15, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  layout
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                >
+                  {msg.role === "user" ? (
+                    <UserBubble text={msg.text} />
+                  ) : (
+                    <div>
+                      {/* 에이전트 간 핸드오프 커넥터 — 누가 누구에게 넘겼는지 한눈에 */}
+                      {msg.fromAgent ? <HandoffDivider from={msg.fromAgent} to={msg.agent} /> : null}
+                      <ErrorBoundary label={t("err.bubble")} retryLabel={t("err.retry")}>
+                      <AgentBubble
+                        agent={agents.find((a) => a.name === msg.agent)}
+                        fromAgent={msg.fromAgent}
+                        runId={msg.runId}
+                        run={byId.get(msg.runId)}
+                        startedAt={msg.startedAt}
+                        workflows={office.data.office.workflows}
+                        isLast={i === messages.length - 1}
+                        onDone={() => void runs.refetch()}
+                        onActivity={reportActivity}
+                      />
+                      </ErrorBoundary>
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+              <AnimatePresence>
+                {pending ? (
+                  <motion.div
+                    key="pending"
+                    initial={{ opacity: 0, y: 15, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    layout
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  >
+                    <UserBubble text={pending.text} />
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
               {sendError ? <ErrorLine text={sendError} /> : null}
             </div>
           )}
@@ -424,19 +459,20 @@ export function TalkPage({ project }: { project: Project }) {
       </div>
 
       {/* 팀 패널 — 누가 일하고 있고, 누굴 부를 수 있는지 (xl+) */}
-      <TeamPanel
-        agents={agents}
-        workflows={office.data.office.workflows}
-        runs={runs.data?.runs ?? []}
-        activities={activities}
-        feed={feed}
-        active={active}
-        onActive={setActive}
-        onRunWorkflow={(name) => setWfOpen(name)}
-      />
-        </>
-      )}
-      </div>
+          <TeamPanel
+            agents={agents}
+            workflows={office.data.office.workflows}
+            runs={runs.data?.runs ?? []}
+            activities={activities}
+            feed={feed}
+            active={active}
+            onActive={setActive}
+            onRunWorkflow={(name) => setWfOpen(name)}
+          />
+            </>
+          )}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }
@@ -501,7 +537,7 @@ function NotesModal({ projectId, onClose }: { projectId: string; onClose: () => 
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-3xl items-center justify-center px-6">
+    <div className="mx-auto flex h-full max-w-3xl items-center justify-center px-6">
       <p className="text-center text-sm text-muted-foreground">{children}</p>
     </div>
   );
@@ -549,8 +585,8 @@ function ThreadSidebar({
 }) {
   const { t } = useI18n();
   return (
-    <aside className="mb-3 hidden w-60 shrink-0 flex-col overflow-y-auto rounded-2xl border border-border/60 bg-card/60 p-3 lg:flex">
-      <div className="mb-2 flex items-center justify-between">
+    <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto rounded-2xl glass-panel p-4 lg:flex">
+      <div className="mb-4 flex items-center justify-between">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.sidebar.threads")}</h3>
         <button
           type="button"
@@ -676,9 +712,9 @@ function TeamPanel({
   const workingCount = workingAgents.size;
 
   return (
-    <aside className="mb-3 hidden w-64 shrink-0 flex-col overflow-y-auto rounded-2xl border border-border/60 bg-card/60 p-3.5 xl:flex">
+    <aside className="hidden w-72 shrink-0 flex-col overflow-y-auto rounded-2xl glass-panel p-5 xl:flex">
       {/* 팀 현황 — 누가 일하고 있나 (선택이 아니라 상태 보드) */}
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
         {workingCount > 0 ? (
           <span className="flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
