@@ -3,10 +3,11 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, ArrowUp, Check, CircleDollarSign, FileText, FolderGit2, FolderOpen, House, MessagesSquare, Plug, Plus, Trash2, Users, X } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, CircleDollarSign, FileText, FolderGit2, FolderOpen, House, MessagesSquare, Plug, Plus, Sparkles, Trash2, Users, X } from "lucide-react";
+import type { Project, RunInfo } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
-import { Button } from "../components/ui.js";
+import { Button, PageShell, Panel, StatusDot } from "../components/ui.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
@@ -23,26 +24,40 @@ export function HomePage({ onOpen, onOpenTab }: { onOpen: (projectId: string) =>
   });
 
   const list = projects.data?.projects ?? [];
+  // 관제센터 라이브 데이터 — 전 프로젝트 run 을 5초 폴링(백그라운드 탭에서도).
+  const runsQ = useQuery({
+    queryKey: ["runs", "all"],
+    queryFn: api.listRunsAll,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
+  });
+  const allRuns = runsQ.data?.runs ?? [];
+  const running = allRuns.filter((r) => r.status === "running");
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <header>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">{t("home.title")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t("home.subtitle")}</p>
-      </header>
-
-      {/* 회사 현황 — 인원·양식·연결·사용량 */}
-      <CompanyCards onOpenTab={onOpenTab} />
-
-      <div className="mt-10 flex items-end justify-between">
-        <div>
-          <h2 className="font-display text-lg font-semibold">{t("home.projects")}</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">{t("home.projectsSub")}</p>
-        </div>
+    <PageShell
+      title={t("home.title")}
+      subtitle={t("home.subtitle")}
+      actions={
         <Button onClick={() => setAdding(true)}>
           <Plus className="size-4" />
           {t("home.add")}
         </Button>
+      }
+    >
+      {/* 관제센터 — 팀 보드(라이브) · 비용 · 활동 피드 · 양식/연결 요약 */}
+      <div className="grid gap-3 lg:grid-cols-3">
+        <TeamBoard className="lg:col-span-2" runs={running} projects={list} />
+        <CostPanel />
+        <ActivityFeed className="lg:col-span-2" runs={allRuns} projects={list} onOpen={onOpen} />
+        <OfficeSummary onOpenTab={onOpenTab} />
+      </div>
+
+      <div className="mt-8 flex items-end justify-between">
+        <div>
+          <h2 className="font-display text-lg font-semibold">{t("home.projects")}</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t("home.projectsSub")}</p>
+        </div>
       </div>
 
       {adding ? (
@@ -75,8 +90,11 @@ export function HomePage({ onOpen, onOpenTab }: { onOpen: (projectId: string) =>
               className="group relative flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]"
             >
               <div className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-xl border border-border bg-background text-primary">
+                <span className="relative flex size-10 items-center justify-center rounded-xl border border-border bg-background text-primary">
                   <FolderGit2 className="size-5" />
+                  {running.some((r) => r.projectId === p.id) ? (
+                    <StatusDot tone="busy" className="absolute -right-0.5 -top-0.5 ring-2 ring-card" />
+                  ) : null}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-display text-base font-semibold">{p.name}</span>
@@ -120,72 +138,75 @@ export function HomePage({ onOpen, onOpenTab }: { onOpen: (projectId: string) =>
           onCancel={() => setPendingDel(null)}
         />
       ) : null}
-    </main>
+    </PageShell>
   );
 }
 
-// ── 회사 현황 카드 — 인원(에이전트)·양식(office 정의)·연결(CLI)·사용량(30일) ──────
-function CompanyCards({ onOpenTab }: { onOpenTab: (tab: "office" | "connections") => void }) {
+// ── 팀 보드 — 누가 지금 어느 프로젝트에서 뭘 하고 있나 (관제센터의 심장) ─────────
+function TeamBoard({ runs, projects, className }: { runs: RunInfo[]; projects: Project[]; className?: string }) {
+  const { t } = useI18n();
+  const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
+  const agents = office.data?.office.agents ?? [];
+  const projName = (id: string | null) => projects.find((p) => p.id === id)?.name ?? null;
+  // 에이전트별 현재 running run(최신 1개).
+  const liveOf = (name: string) => runs.filter((r) => r.agent === name).sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0];
+  const busy = runs.length;
+
+  return (
+    <Panel
+      icon={<Users />}
+      title={t("home.people")}
+      count={agents.length}
+      glow={busy > 0}
+      className={className}
+      actions={busy > 0 ? (
+        <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+          <StatusDot tone="busy" /> {t("home.working", { n: String(busy) })}
+        </span>
+      ) : null}
+    >
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {agents.map((a) => {
+          const live = liveOf(a.name);
+          return (
+            <div key={a.name} className={cn("flex items-center gap-2.5 rounded-xl px-2.5 py-2", live ? "bg-primary/5 ring-1 ring-primary/20" : "")}>
+              <span className="relative shrink-0">
+                <AgentAvatar adapter={a.adapter} size={30} className="rounded-lg" />
+                <StatusDot tone={live ? "busy" : "idle"} className="absolute -bottom-0.5 -right-0.5 ring-2 ring-card" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-1.5">
+                  <span className="truncate text-sm font-medium">{a.label || a.name}</span>
+                  <span className="truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+                </span>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  {live
+                    ? `${projName(live.projectId) ? `${projName(live.projectId)} · ` : ""}${live.prompt.split("\n")[0]}`
+                    : t("home.idle")}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+        {agents.length === 0 ? <p className="text-xs text-muted-foreground">{t("office.empty")}</p> : null}
+      </div>
+    </Panel>
+  );
+}
+
+// ── 비용 패널 — 30일 총액 + 월 예산 진행 + 에이전트 상위 막대 ────────────────────
+function CostPanel() {
   const { t } = useI18n();
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => api.getUsage(30), staleTime: 60_000 });
-  const o = office.data?.office;
   const u = usage.data;
-  // 사용량 막대 — 비용 기준 상위 4 에이전트, 최대값 대비 비율.
   const topAgents = (u?.byAgent ?? []).slice(0, 4);
   const maxCost = Math.max(...topAgents.map((a) => a.costUsd), 0.0001);
-  const adapterOf = (name: string) => o?.agents.find((a) => a.name === name)?.adapter;
-
-  const cardCls =
-    "flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]";
-  const headCls = "flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground";
+  const adapterOf = (name: string) => office.data?.office.agents.find((a) => a.name === name)?.adapter;
 
   return (
-    <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {/* 인원 */}
-      <button type="button" onClick={() => onOpenTab("office")} className={cardCls}>
-        <span className={headCls}><Users className="size-3.5 text-primary" />{t("home.people")}</span>
-        <span className="flex items-center gap-2">
-          <span className="font-display text-2xl font-bold tabular-nums">{o?.agents.length ?? "…"}</span>
-          <span className="flex -space-x-1.5">
-            {(o?.agents ?? []).slice(0, 6).map((a) => (
-              <AgentAvatar key={a.name} adapter={a.adapter} size={22} className="rounded-full ring-2 ring-card" />
-            ))}
-          </span>
-        </span>
-        <span className="text-[11px] text-muted-foreground">{t("home.peopleSub")}</span>
-      </button>
-
-      {/* 양식 */}
-      <button type="button" onClick={() => onOpenTab("office")} className={cardCls}>
-        <span className={headCls}><FileText className="size-3.5 text-primary" />{t("home.forms")}</span>
-        <span className="flex flex-wrap gap-1.5 text-[11px]">
-          {o ? (
-            <>
-              <FormChip label={t("office.section.rules")} n={o.rules.length} />
-              <FormChip label={t("office.section.skills")} n={o.skills.length} />
-              <FormChip label={t("office.section.workflows")} n={o.workflows.length} />
-              <FormChip label="MCP" n={o.mcp.length} />
-            </>
-          ) : "…"}
-        </span>
-        <span className="text-[11px] text-muted-foreground">{t("home.formsSub")}</span>
-      </button>
-
-      {/* 연결 */}
-      <button type="button" onClick={() => onOpenTab("connections")} className={cardCls}>
-        <span className={headCls}><Plug className="size-3.5 text-primary" />{t("home.connections")}</span>
-        <span className="flex items-center gap-1.5">
-          {[...new Set((o?.agents ?? []).map((a) => a.adapter))].map((ad) => (
-            <AgentAvatar key={ad} adapter={ad} size={22} className="rounded-md" />
-          ))}
-        </span>
-        <span className="text-[11px] text-muted-foreground">{t("home.connectionsSub")}</span>
-      </button>
-
-      {/* 사용량 — loom 기록 기준 소비량(30일) */}
-      <button type="button" onClick={() => onOpenTab("connections")} className={cardCls}>
-        <span className={headCls}><CircleDollarSign className="size-3.5 text-primary" />{t("home.usage")}</span>
+    <Panel icon={<CircleDollarSign />} title={t("home.usage")}>
+      <div className="flex flex-col gap-2.5">
         <span className="flex items-baseline gap-2">
           <span className="font-display text-2xl font-bold tabular-nums">${(u?.totals.costUsd ?? 0).toFixed(2)}</span>
           <span className="text-[11px] text-muted-foreground">{t("home.usageRuns", { n: String(u?.totals.runs ?? 0) })}</span>
@@ -206,8 +227,87 @@ function CompanyCards({ onOpenTab }: { onOpenTab: (tab: "office" | "connections"
             );
           })}
         </span>
-      </button>
-    </div>
+      </div>
+    </Panel>
+  );
+}
+
+// ── 활동 피드 — 전 프로젝트 최근 run (클릭 = 그 프로젝트로 진입) ─────────────────
+function ActivityFeed({ runs, projects, onOpen, className }: { runs: RunInfo[]; projects: Project[]; onOpen: (id: string) => void; className?: string }) {
+  const { t, lang } = useI18n();
+  const projName = (id: string | null) => projects.find((p) => p.id === id)?.name ?? null;
+  const recent = runs.slice(0, 9);
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US", { hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <Panel icon={<Sparkles />} title={t("talk.team.activity")} count={recent.length} className={className} noPad>
+      {recent.length === 0 ? (
+        <p className="p-4 text-xs text-muted-foreground">{t("home.noActivity")}</p>
+      ) : (
+        <div className="divide-y divide-border/40">
+          {recent.map((r) => {
+            const pn = projName(r.projectId);
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => r.projectId && onOpen(r.projectId)}
+                className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-xs transition-colors hover:bg-muted/40"
+              >
+                <span className="w-10 shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60">{fmt(r.startedAt)}</span>
+                <StatusDot tone={r.status === "running" ? "busy" : r.status === "succeeded" ? "ok" : r.status === "cancelled" ? "idle" : "bad"} />
+                <span className="shrink-0 font-medium">@{r.agent}</span>
+                {pn ? <span className="shrink-0 rounded-full bg-muted/60 px-1.5 text-[10px] text-muted-foreground">{pn}</span> : null}
+                {r.workflow ? <span className="shrink-0 rounded-full bg-primary/10 px-1.5 text-[10px] text-primary">{r.workflow}</span> : null}
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">{r.prompt.split("\n")[0]}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ── 오피스·연결 요약 — 양식 칩 + CLI 아이콘, 클릭으로 탭 이동 ────────────────────
+function OfficeSummary({ onOpenTab }: { onOpenTab: (tab: "office" | "connections") => void }) {
+  const { t } = useI18n();
+  const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
+  const o = office.data?.office;
+  return (
+    <Panel
+      icon={<FileText />}
+      title={t("home.forms")}
+      className="lg:self-start"
+      actions={
+        <button type="button" onClick={() => onOpenTab("office")} className="text-[10px] text-muted-foreground transition-colors hover:text-primary">
+          {t("nav.office")} →
+        </button>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <span className="flex flex-wrap gap-1.5 text-[11px]">
+          {o ? (
+            <>
+              <FormChip label={t("office.section.rules")} n={o.rules.length} />
+              <FormChip label={t("office.section.skills")} n={o.skills.length} />
+              <FormChip label={t("office.section.workflows")} n={o.workflows.length} />
+              <FormChip label="MCP" n={o.mcp.length} />
+            </>
+          ) : "…"}
+        </span>
+        <button type="button" onClick={() => onOpenTab("connections")} className="group flex items-center gap-1.5 text-left">
+          <Plug className="size-3.5 text-primary" />
+          <span className="flex items-center gap-1.5">
+            {[...new Set((o?.agents ?? []).map((a) => a.adapter))].map((ad) => (
+              <AgentAvatar key={ad} adapter={ad} size={20} className="rounded-md" />
+            ))}
+          </span>
+          <span className="text-[10px] text-muted-foreground transition-colors group-hover:text-primary">{t("nav.connections")} →</span>
+        </button>
+      </div>
+    </Panel>
   );
 }
 

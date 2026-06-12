@@ -260,6 +260,8 @@ export const api = {
   /** threadId 스코프가 Talk 의 기본. 없으면 빈 스레드로 간주해 호출하지 않는다. */
   listRuns: (threadId: string) =>
     request<{ runs: RunInfo[] }>(`/api/runs?threadId=${encodeURIComponent(threadId)}`),
+  /** 전체 run (프로젝트 무관) — 관제센터의 팀 보드·활동 피드. */
+  listRunsAll: () => request<{ runs: RunInfo[] }>("/api/runs"),
 
   startRun: (body: { agent: string; prompt: string; cwd?: string; projectId?: string | null; threadId?: string; skills?: string[] }) =>
     request<{ run: RunInfo }>("/api/runs", {

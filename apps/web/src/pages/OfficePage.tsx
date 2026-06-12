@@ -9,7 +9,7 @@ import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Markdown } from "../components/Markdown.js";
 import { WorkflowEditor } from "../components/WorkflowEditor.js";
-import { Badge, Button } from "../components/ui.js";
+import { Badge, Button, PageShell, Panel } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
 
@@ -38,13 +38,8 @@ export function OfficePage() {
   ];
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <header>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">{t("office.title")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t("office.subtitle")}</p>
-      </header>
-
-      <div className="mt-7 grid gap-6 md:grid-cols-[220px_1fr]">
+    <PageShell title={t("office.title")} subtitle={t("office.subtitle")}>
+      <div className="grid gap-5 md:grid-cols-[220px_1fr]">
         {/* 사이드 레일 */}
         <nav className="flex gap-1.5 md:flex-col">
           {tabs.map((tb) => (
@@ -73,12 +68,14 @@ export function OfficePage() {
           ))}
         </nav>
 
-        {/* 콘텐츠 */}
-        <div className="min-w-0">
-          <div className="mb-4">
-            <h2 className="font-display text-lg font-semibold">{t(`office.section.${section}`)}</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">{t(`office.section.${section}.desc`)}</p>
-          </div>
+        {/* 콘텐츠 — 홈 관제센터와 같은 패널 문법 */}
+        <Panel
+          icon={tabs.find((tb) => tb.key === section)?.icon}
+          title={t(`office.section.${section}`)}
+          count={tabs.find((tb) => tb.key === section)?.count}
+          className="min-w-0"
+        >
+          <p className="mb-4 text-sm text-muted-foreground">{t(`office.section.${section}.desc`)}</p>
           {!data ? (
             <p className="text-sm text-muted-foreground">{t("common.checking")}</p>
           ) : section === "rules" ? (
@@ -94,9 +91,9 @@ export function OfficePage() {
           ) : (
             <McpSection office={data} />
           )}
-        </div>
+        </Panel>
       </div>
-    </main>
+    </PageShell>
   );
 }
 

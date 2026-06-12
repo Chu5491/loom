@@ -8,7 +8,7 @@ import { Zap } from "lucide-react";
 import type { AdapterManifest, TestAdapterResult } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "../components/AdapterIcon.js";
-import { Badge, Button } from "../components/ui.js";
+import { Badge, Button, PageShell } from "../components/ui.js";
 import { Skeleton } from "../components/ui/skeleton.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
@@ -22,13 +22,8 @@ export function ConnectionsPage() {
   });
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight">
-        {t("conn.title")}
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">{t("conn.subtitle")}</p>
-
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+    <PageShell title={t("conn.title")} subtitle={t("conn.subtitle")}>
+      <div className="grid gap-4 md:grid-cols-2">
         {adapters.isLoading
           ? [0, 1, 2, 3].map((i) => (
               <div key={i} className="rounded-xl border border-border bg-card p-5">
@@ -49,7 +44,7 @@ export function ConnectionsPage() {
       {adapters.isError ? (
         <p className="mt-6 text-sm text-destructive">{adapters.error.message}</p>
       ) : null}
-    </main>
+    </PageShell>
   );
 }
 
