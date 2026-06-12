@@ -19,6 +19,9 @@ export interface AntigravityConfig extends AdapterConfig {
 export function buildAntigravityCommand(config: AntigravityConfig = {}): BuiltCommand {
   const command = config.command ?? "agy";
   const args: string[] = [];
+  // 모델은 --model 플래그로 — ANTIGRAVITY_MODEL env 는 현행 agy 바이너리가
+  // 참조하지 않아(strings 검사 0건) 조용히 기본 모델로 돌아가는 함정이었다.
+  if (config.model) args.push("--model", config.model);
   if (config.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
   if (config.sandbox) args.push("--sandbox");
   if (config.extraArgs?.length) args.push(...config.extraArgs);
@@ -127,11 +130,7 @@ export const antigravityAdapter = defineCliAdapter<AntigravityConfig>({
   supportsMcpServers: false,
   buildCommand: buildAntigravityCommand,
   prompt: { via: "arg", flag: "--print" },
-  resolveEnv: (cfg) => {
-    const env: Record<string, string> = { ...(cfg.env ?? {}) };
-    if (cfg.model) env["ANTIGRAVITY_MODEL"] = cfg.model;
-    return env;
-  },
+  resolveEnv: (cfg) => cfg.env ?? {},
   applyResume: (args, sessionId) => [...args, "--conversation", sessionId],
   extractSessionId: extractAntigravitySessionId,
   extractTouchedPaths: extractAntigravityTouchedPaths,

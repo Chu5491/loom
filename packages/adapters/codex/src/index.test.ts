@@ -76,8 +76,9 @@ describe("buildCodexCommand", () => {
     expect(args[i + 1]).toBe('model_reasoning_effort="high"');
   });
 
-  it("inserts --search when enabled", () => {
-    expect(buildCodexCommand({ search: true }).args).toContain("--search");
+  it("puts --search before exec — root-level flag, exec rejects it", () => {
+    const { args } = buildCodexCommand({ search: true });
+    expect(args.indexOf("--search")).toBeLessThan(args.indexOf("exec"));
   });
 
   it("inserts bypass flag only when enabled", () => {

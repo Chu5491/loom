@@ -6,7 +6,7 @@ import type { AdapterSelectOption } from "@loom/core";
  * Used as the fallback when `agy models` (live fetch in models.ts) is
  * unavailable, and as the label→id map for the live labels (agy prints
  * display labels, not ids). The actual model id may differ from the picker
- * label, so these ids are the source of truth fed to ANTIGRAVITY_MODEL.
+ * label, so these ids are the source of truth fed to `--model`.
  *
  * "High / Medium / Low" suffixes refer to the thinking-budget tier.
  */

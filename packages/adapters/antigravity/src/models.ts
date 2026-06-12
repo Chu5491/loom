@@ -4,7 +4,7 @@ import { ANTIGRAVITY_PRESET_MODELS } from "./preset-models.js";
 
 // `agy models` prints one *display label* per line (e.g. "Claude Opus 4.6
 // (Thinking)") — no machine ids. The model VALUE that antigravity actually
-// consumes is an id (via ANTIGRAVITY_MODEL), so we map each live label back to
+// consumes is an id (via `--model`), so we map each live label back to
 // a preset id by normalised-label match. Recognised models keep their correct
 // id; unrecognised lines are surfaced as-is so the user at least sees them.
 

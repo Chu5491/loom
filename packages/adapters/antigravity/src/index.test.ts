@@ -24,6 +24,11 @@ describe("buildAntigravityCommand", () => {
     ]);
   });
 
+  it("passes model via --model flag", () => {
+    const { args } = buildAntigravityCommand({ model: "gemini-3.1-pro" });
+    expect(args[args.indexOf("--model") + 1]).toBe("gemini-3.1-pro");
+  });
+
   it("respects sandbox toggle", () => {
     expect(buildAntigravityCommand({ sandbox: true }).args).toContain("--sandbox");
     expect(buildAntigravityCommand().args).not.toContain("--sandbox");

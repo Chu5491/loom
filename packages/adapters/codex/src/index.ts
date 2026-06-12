@@ -23,8 +23,9 @@ export interface CodexConfig extends AdapterConfig {
 export function buildCodexCommand(config: CodexConfig = {}): BuiltCommand {
   const command = config.command ?? "codex";
   // Trailing `-` tells `codex exec` to read the prompt from stdin.
-  const args: string[] = ["exec", "--json"];
-  if (config.search) args.push("--search");
+  // `--search` 는 exec 서브커맨드가 아닌 루트 전역 플래그 — exec 뒤에 두면
+  // `unexpected argument` (exit 2) 로 모든 run 이 즉사한다.
+  const args: string[] = config.search ? ["--search", "exec", "--json"] : ["exec", "--json"];
   if (config.dangerouslyBypassApprovalsAndSandbox || config.dangerouslySkipPermissions) {
     args.push("--dangerously-bypass-approvals-and-sandbox");
   }
