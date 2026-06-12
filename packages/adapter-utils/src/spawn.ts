@@ -4,13 +4,27 @@ import type { RunHandle } from "@loom/core";
 
 const IS_WIN = process.platform === "win32";
 
+/** SIGTERM 을 무시하는 CLI 대비 — 이 유예 안에 안 죽으면 SIGKILL 승격. */
+const KILL_GRACE_MS = 5_000;
+
 function killProc(pid: number | undefined): void {
   if (pid === undefined) return;
   if (IS_WIN) {
     try { exec(`taskkill /PID ${pid} /T /F`).unref(); } catch { /* process may have exited */ }
-  } else {
-    try { process.kill(pid, "SIGTERM"); } catch { /* process may have exited */ }
+    return;
   }
+  // detached spawn 으로 자식이 프로세스 그룹 리더 — 음수 pid 시그널로 CLI 가
+  // 띄운 손자(MCP stdio 서버, bash 도구)까지 함께 종료. 직계만 죽이면 고아가 남는다.
+  const group = -pid;
+  try {
+    process.kill(group, "SIGTERM");
+  } catch {
+    return; // 이미 종료된 그룹
+  }
+  const escalate = setTimeout(() => {
+    try { process.kill(group, "SIGKILL"); } catch { /* 유예 중 종료됨 */ }
+  }, KILL_GRACE_MS);
+  escalate.unref();
 }
 
 export interface SpawnProcessOptions {
@@ -33,20 +47,20 @@ export async function spawnProcess(opts: SpawnProcessOptions): Promise<RunHandle
     ? `${opts.command}.cmd`
     : opts.command;
 
+  // detached: POSIX 에서 자식을 프로세스 그룹 리더로 — killProc 의 그룹 시그널 전제.
+  const spawnOpts = {
+    cwd: opts.cwd,
+    env: { ...process.env, ...opts.env },
+    stdio: ["pipe", "pipe", "pipe"] as ["pipe", "pipe", "pipe"],
+    detached: !IS_WIN,
+  };
+
   let proc;
   try {
-    proc = spawn(resolvedCmd, opts.args, {
-      cwd: opts.cwd,
-      env: { ...process.env, ...opts.env },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    proc = spawn(resolvedCmd, opts.args, spawnOpts);
   } catch {
     // .cmd resolution failed — fall back to original command name.
-    proc = spawn(opts.command, opts.args, {
-      cwd: opts.cwd,
-      env: { ...process.env, ...opts.env },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    proc = spawn(opts.command, opts.args, spawnOpts);
   }
 
   if (opts.signal) {
@@ -67,12 +81,25 @@ export async function spawnProcess(opts: SpawnProcessOptions): Promise<RunHandle
   const promise = new Promise<{ exitCode: number; signal: NodeJS.Signals | null }>(
     (resolve, reject) => {
       proc.on("error", reject);
-      proc.on("exit", (code, signal) =>
-        resolve({ exitCode: code ?? -1, signal }),
+      // 'exit' 시점엔 stdio 버퍼에 미전달 데이터가 남을 수 있다 — 'close'(전 스트림
+      // flush 후)에서 resolve 해야 마지막 출력이 run 마감 전에 consume 된다.
+      // 단, 손자가 stdout 파이프를 물려받아 안 닫으면 'close' 가 영영 안 오므로
+      // 'exit' 후 유예 타이머를 폴백으로 둔다 (먼저 오는 쪽이 이긴다).
+      let exited: { exitCode: number; signal: NodeJS.Signals | null } | null = null;
+      proc.on("close", (code, signal) =>
+        resolve(exited ?? { exitCode: code ?? -1, signal }),
       );
+      proc.on("exit", (code, signal) => {
+        exited = { exitCode: code ?? -1, signal };
+        const fallback = setTimeout(() => resolve(exited!), 2_000);
+        fallback.unref();
+      });
     },
   );
 
+  // EPIPE 가드 — 자식이 stdin 을 읽기 전에 죽으면(인증 실패 즉시 종료 등) 스트림
+  // 'error' 가 뜨고, 리스너가 없으면 uncaught exception 으로 서버 전체가 죽는다.
+  proc.stdin.on("error", () => {});
   if (opts.stdin) proc.stdin.write(opts.stdin);
   proc.stdin.end();
 

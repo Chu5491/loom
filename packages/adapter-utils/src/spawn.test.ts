@@ -91,6 +91,55 @@ describe("spawnProcess", () => {
     expect((await handle.promise).signal).toBe("SIGTERM");
   });
 
+  it("delivers all stdout before the exit promise resolves ('close' flush)", async () => {
+    const { onStdout, onStderr, stdout } = captureStreams();
+    // 'exit' 기반 resolve 였다면 마지막 버퍼가 promise 해소 후 도착해 유실됐다.
+    const handle = await spawnProcess({
+      command: "/bin/sh",
+      args: ["-c", "printf 'x%.0s' $(seq 1 100000)"],
+      cwd: process.cwd(),
+      env: {},
+      onStdout,
+      onStderr,
+    });
+    await handle.promise;
+    expect(stdout.join("").length).toBe(100000);
+  });
+
+  it("survives the child exiting before reading large stdin (EPIPE guard)", async () => {
+    const { onStdout, onStderr } = captureStreams();
+    // stdin 'error' 리스너가 없으면 EPIPE 가 uncaught exception 으로 프로세스를 죽인다.
+    const handle = await spawnProcess({
+      command: "/bin/sh",
+      args: ["-c", "exit 0"],
+      cwd: process.cwd(),
+      env: {},
+      stdin: "x".repeat(1 << 20),
+      onStdout,
+      onStderr,
+    });
+    expect((await handle.promise).exitCode).toBe(0);
+  });
+
+  it("kills grandchildren via process-group signal", async () => {
+    const { onStdout, onStderr, stdout } = captureStreams();
+    const handle = await spawnProcess({
+      command: "/bin/sh",
+      args: ["-c", "sleep 30 & echo $!; wait"],
+      cwd: process.cwd(),
+      env: {},
+      onStdout,
+      onStderr,
+    });
+    await new Promise((r) => setTimeout(r, 100)); // 손자 pid 출력 대기
+    const grandchild = Number(stdout.join("").trim());
+    expect(grandchild).toBeGreaterThan(0);
+    handle.kill();
+    await handle.promise;
+    await new Promise((r) => setTimeout(r, 100)); // init 의 좀비 수거 대기
+    expect(() => process.kill(grandchild, 0)).toThrow(); // ESRCH = 그룹째 죽었음
+  });
+
   it("merges env: process < adapter < spawn (spawn wins)", async () => {
     const { onStdout, onStderr, stdout } = captureStreams();
     process.env.LOOM_TEST_BASELINE = "from-process";
