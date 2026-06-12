@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowUp, Bot, CalendarClock, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
+  ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
   Paperclip, Pencil, Plug, ScanSearch, Sparkles, Terminal, Trash2, Workflow, Wrench, X,
 } from "lucide-react";
@@ -117,22 +117,61 @@ export function TalkPage({ project }: { project: Project }) {
     [runs.data, byId],
   );
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, pending]);
+  // 바닥 고정(sticky-bottom) — 진입/스레드 전환 시 켜지고, 사용자가 위로 스크롤해
+  // 바닥에서 멀어지면 꺼진다. 버블들이 SSE replay 로 비동기로 자라며 smooth 스크롤을
+  // 추월해 중간에 멈추던 버그의 해법: 고정 모드 동안은 모든 성장에 즉시 점프.
+  const stickRef = useRef(true);
+  // 진입 직후엔 로딩 화면이라 scrollRef 가 null — 채팅 패널이 실제로 마운트된 뒤에
+  // 아래 effect 들이 다시 붙도록 마운트 조건을 deps 로 끌어온다.
+  const chatReady = !!office.data && !!threads.data && (!threadId || !!runs.data) && view === "talk";
+  const chatEmpty = messages.length === 0;
 
-  // 스트리밍으로 버블이 자라는 동안에도 바닥을 따라간다(메시지 수 변화 없이 높이만
-  // 변하는 경우). 사용자가 위로 한참 스크롤했으면(>200px) 강제하지 않는다.
+  useEffect(() => {
+    if (!chatReady) return;
+    stickRef.current = true;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [threadId, chatReady]);
+
   useEffect(() => {
     const el = scrollRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages, pending]);
+
+  useEffect(() => {
+    if (!chatReady) return;
+    const el = scrollRef.current;
+    // 내용 래퍼(firstElementChild)는 빈 상태 ↔ 메시지 목록 전환 시 교체된다 —
+    // chatEmpty 를 deps 에 둬서 교체될 때 RO 를 새 래퍼에 다시 붙인다.
     const content = el?.firstElementChild;
     if (!el || !content) return;
+    // 고정 해제는 "사용자 입력"만 — 프로그램 점프의 scroll 이벤트는 전달되는 사이
+    // 콘텐츠가 또 자라면 거리가 커 보여서, 거리 기반 해제는 자기 점프를 사용자
+    // 스크롤로 오판한다(실측). scroll 은 바닥 복귀 시 다시 켜는 용도로만 쓴다.
+    const dist = () => el.scrollHeight - el.scrollTop - el.clientHeight;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) stickRef.current = false;
+    };
+    const onTouchMove = () => {
+      if (dist() >= 80) stickRef.current = false;
+    };
+    const onScroll = () => {
+      if (dist() < 80) stickRef.current = true;
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
     const ro = new ResizeObserver(() => {
-      if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) el.scrollTop = el.scrollHeight;
+      if (stickRef.current) el.scrollTop = el.scrollHeight;
     });
     ro.observe(content);
-    return () => ro.disconnect();
-  }, [threadId]);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, [threadId, chatReady, chatEmpty]);
 
   async function send(rawText: string, skills: string[], files: string[] = []) {
     // 첨부 파일은 프롬프트에 명시적으로 — 칩으로 고른 것이 그대로 보이게(주입 아님).
@@ -289,7 +328,8 @@ export function TalkPage({ project }: { project: Project }) {
 
       {/* 채팅 컬럼 */}
       <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
+        {/* overflow-anchor 끔 — 브라우저 앵커링이 scrollTop 을 임의 조정해 바닥 고정과 충돌 */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto py-6 [overflow-anchor:none]">
           {messages.length === 0 && !pending ? (
             <Welcome activeAgent={agents.find((a) => a.name === active)} />
           ) : (
@@ -528,10 +568,22 @@ function TeamPanel({
       .filter((h): h is { from: string; to: string } => !!h.from);
   }, [runs]);
 
+  const workingCount = workingAgents.size;
+
   return (
-    <aside className="hidden w-60 shrink-0 overflow-y-auto py-6 xl:block">
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
-      <div className="space-y-1">
+    <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto border-l border-border/60 py-4 pl-4 xl:flex">
+      {/* 팀 현황 — 누가 일하고 있나 (선택이 아니라 상태 보드) */}
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
+        {workingCount > 0 ? (
+          <span className="flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+            {workingCount}
+          </span>
+        ) : null}
+        <span className="ml-auto text-[10px] text-muted-foreground/70">{agents.length}</span>
+      </div>
+      <div className="space-y-0.5">
         {agents.map((a) => {
           const working = workingAgents.has(a.name);
           const on = a.name === active;
@@ -542,28 +594,32 @@ function TeamPanel({
               key={a.name}
               type="button"
               onClick={() => onActive(a.name)}
+              title={t("talk.target.change")}
               className={cn(
-                "flex w-full flex-col gap-1 rounded-xl border px-2.5 py-2 text-left transition-all",
-                on ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-muted/50",
-                working && "border-primary/30 shadow-[var(--shadow-glow-sm)]",
+                "group/ag flex w-full flex-col gap-1 rounded-xl px-2 py-1.5 text-left transition-colors",
+                on ? "bg-primary/5 ring-1 ring-primary/30" : "hover:bg-muted/50",
               )}
             >
               <span className="flex w-full items-center gap-2.5">
-                <Avatar agent={a} size={28} />
+                <span className="relative shrink-0">
+                  <Avatar agent={a} size={30} />
+                  {/* 상태 점 — 작업 중(펄스 프라이머리) / 대기(회색) */}
+                  <span className={cn(
+                    "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-background",
+                    working ? "animate-pulse bg-primary" : "bg-muted-foreground/30",
+                  )} />
+                </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{a.label || a.name}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-medium">{a.label || a.name}</span>
+                    {on ? <span className="shrink-0 rounded-full bg-primary/15 px-1.5 text-[9px] font-semibold uppercase text-primary">{t("talk.talkingTo")}</span> : null}
+                  </span>
                   <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
                 </span>
-                {working ? (
-                  <span className="flex items-center gap-1 text-[10px] font-medium text-primary">
-                    <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-                    {t("talk.team.working")}
-                  </span>
-                ) : null}
               </span>
               {/* 라이브 — 지금 어떤 도구로 뭘 하는지 */}
               {working && act && ActIcon ? (
-                <span className="flex w-full items-center gap-1 rounded-md bg-primary/5 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                <span className="ml-[38px] flex items-center gap-1 rounded-md bg-primary/5 px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   <ActIcon className="size-2.5 shrink-0 text-primary" />
                   <span className="shrink-0">{act.name}</span>
                   {act.target ? <span className="truncate font-mono opacity-75">{act.target.split("/").pop()}</span> : null}
@@ -587,30 +643,32 @@ function TeamPanel({
 
       {workflows.length > 0 ? (
         <>
-          <h3 className="mb-2 mt-5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <h3 className="mb-2 mt-6 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <Workflow className="size-3.5" />
             {t("talk.team.workflows")}
+            <span className="ml-auto text-[10px] text-muted-foreground/70">{workflows.length}</span>
           </h3>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {workflows.map((w) => (
-              <div key={w.name} className="group/wf flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-2 text-xs transition-colors hover:border-primary/40">
+              <button
+                key={w.name}
+                type="button"
+                title={t("talk.workflow.run")}
+                onClick={() => onRunWorkflow(w.name)}
+                className="group/wf flex w-full items-center gap-2 rounded-xl border border-border/60 bg-card px-2.5 py-2 text-left text-xs transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]"
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover/wf:bg-primary/20">
+                  <CirclePlay className="size-3.5" />
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{w.name}</span>
                   <span className="block truncate text-[10px] text-muted-foreground">
                     {w.trigger
-                      ? `@${w.trigger.agent} · ${w.trigger.on} · ${w.trigger.mode}`
+                      ? `${w.trigger.on} · ${w.trigger.mode === "auto" ? "auto" : "ask"}`
                       : t("talk.team.manual")}
                   </span>
                 </span>
-                <button
-                  type="button"
-                  title={t("talk.workflow.run")}
-                  onClick={() => onRunWorkflow(w.name)}
-                  className="shrink-0 rounded-md border border-primary/40 p-1 text-primary opacity-0 transition hover:bg-primary/10 group-hover/wf:opacity-100"
-                >
-                  <CirclePlay className="size-3.5" />
-                </button>
-              </div>
+              </button>
             ))}
           </div>
         </>
@@ -618,7 +676,7 @@ function TeamPanel({
 
       {/* 스레드 총 비용 — CLI 가 보고한 run 만 합산 */}
       {totalCost > 0 ? (
-        <div className="mt-5 flex items-center justify-between rounded-lg border border-border/60 px-2.5 py-1.5 text-xs">
+        <div className="mt-auto flex items-center justify-between rounded-xl border border-border/60 px-2.5 py-2 text-xs">
           <span className="text-muted-foreground">{t("talk.team.cost")}</span>
           <span className="font-mono font-medium">${totalCost.toFixed(4)}</span>
         </div>
@@ -1225,6 +1283,61 @@ function suggestedWorkflows(workflows: WorkflowSpec[], agent: string, status: st
   });
 }
 
+// ── 대상 선택 — 컴포저 인라인 단일 드롭다운(팀 패널과 중복 제거). ──────────────────
+// "보내는 곳 = @에이전트" 한 곳에서만 고른다. 팀 패널은 현황 보드(클릭=바로가기).
+function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; active: string; onActive: (name: string) => void }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [open]);
+  const cur = agents.find((a) => a.name === active) ?? agents[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title={t("talk.target.change")}
+        className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-0.5 pr-1.5 text-xs font-medium text-foreground transition-colors hover:bg-primary/15"
+      >
+        {cur ? <Avatar agent={cur} size={20} /> : null}
+        <span className="max-w-28 truncate">{cur?.label || cur?.name || "—"}</span>
+        <ChevronDown className={cn("size-3.5 text-primary transition-transform", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-56 rounded-xl border border-border bg-card p-1 shadow-lg">
+          <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("talk.target.change")}</p>
+          {agents.map((a) => (
+            <button
+              key={a.name}
+              type="button"
+              onClick={() => { onActive(a.name); setOpen(false); }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
+                a.name === active ? "bg-primary/10" : "hover:bg-muted/60",
+              )}
+            >
+              <Avatar agent={a} size={22} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{a.label || a.name}</span>
+                <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+              </span>
+              {a.name === active ? <Check className="size-3.5 shrink-0 text-primary" /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ── Composer — @ 하나로 에이전트(라우팅)·스킬(첨부)·파일(경로 삽입) 검색 ─────────
 type MenuItem =
   | { kind: "agent"; agent: AgentSpec }
@@ -1438,28 +1551,6 @@ function Composer({
         </div>
       ) : null}
 
-      {/* 대상 에이전트 칩 + 첨부 스킬 칩 */}
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] text-muted-foreground">{t("talk.talkingTo")}</span>
-        {agents.map((a) => {
-          const on = a.name === active;
-          return (
-            <button
-              key={a.name}
-              type="button"
-              onClick={() => onActive(a.name)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-xs font-medium transition-colors",
-                on ? "border-primary/50 bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:bg-muted/60",
-              )}
-            >
-              <Avatar agent={a} size={20} />
-              {a.label || a.name}
-            </button>
-          );
-        })}
-      </div>
-
       {/* 입력 — 파일/이미지를 끌어다 놓거나(드롭) 붙여넣으면 첨부된다 */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -1483,9 +1574,14 @@ function Composer({
           </div>
         ) : null}
 
-        {/* 선택된 스킬·파일 — 입력창 안에서 메시지의 일부처럼 */}
-        {attached.length > 0 || attachedFiles.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5 px-1 pb-1.5">
+        {/* 상단 줄 — 대상 선택(단일, 컴포저 인라인) + 첨부 스킬·파일 칩 */}
+        <div className="flex flex-wrap items-center gap-1.5 px-1 pb-1.5">
+          <TargetSelector agents={agents} active={active} onActive={onActive} />
+          {attached.length > 0 || attachedFiles.length > 0 ? (
+            <span className="mx-0.5 h-4 w-px bg-border" />
+          ) : null}
+          {attached.length > 0 || attachedFiles.length > 0 ? (
+            <>
             {attached.map((s) => (
               <span key={s} className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2 pr-1 text-xs font-medium text-primary">
                 <Sparkles className="size-3" />
@@ -1508,8 +1604,9 @@ function Composer({
                 </span>
               );
             })}
-          </div>
-        ) : null}
+            </>
+          ) : null}
+        </div>
 
         <div className="flex items-end gap-2">
         {/* 파일 선택 폴백 */}
