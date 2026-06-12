@@ -20,10 +20,21 @@ export const projectFilesRoute = new Hono();
 const SKIP = new Set([".git", "node_modules", "dist", "build", ".next", "__pycache__", ".venv", "data"]);
 const MAX_FILE_BYTES = 1024 * 1024; // 뷰어 1MB cap
 
-// 프로젝트 루트 밖으로 못 나가게 — 상대경로를 resolve 해 prefix 검증.
-function resolveInside(root: string, rel: string): string {
+// 프로젝트 루트 밖으로 못 나가게 — 상대경로 resolve 후 prefix 검증 + 심볼릭 링크 해소.
+// prefix 만 검사하면 프로젝트 안의 심링크(ln -s ~/.ssh evil)로 외부 파일을 읽을 수 있다.
+export function resolveInside(root: string, rel: string): string {
   const abs = path.resolve(root, rel);
   if (abs !== root && !abs.startsWith(root + path.sep)) throw new Error(`path escapes project: ${rel}`);
+  try {
+    const real = fs.realpathSync(abs);
+    const realRoot = fs.realpathSync(root);
+    if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
+      throw new Error(`symlink escapes project: ${rel}`);
+    }
+  } catch (e) {
+    // 아직 없는 경로(신규 쓰기 대상)는 통과 — 실존하는 링크만 검사할 수 있다.
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
   return abs;
 }
 

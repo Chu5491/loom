@@ -623,6 +623,9 @@ function spawnTriggeredWorkflows(state: RunState, fired: import("@loom/core").Wo
 const EVICT_AFTER_MS = 5 * 60_000;
 
 function finish(state: RunState, status: RunInfo["status"], exitCode: number | null): void {
+  // 재진입 가드 — cancelAllRunning(서버 종료)과 비동기 concludeRun 이 같은 state 에
+  // 둘 다 도달할 수 있다. 두 번째 호출은 DB 중복 UPDATE·done 중복 발송만 만든다.
+  if (state.info.status !== "running") return;
   state.info.status = status;
   state.info.exitCode = exitCode;
   state.info.endedAt = new Date().toISOString();

@@ -49,7 +49,7 @@ function fire(s: Schedule): void {
       logger.warn({ schedule: s.id, name: s.name }, "standup schedule has no project — skipped");
       return;
     }
-    void runStandup(s.projectId, s.agent, "ko")
+    void runStandup(s.projectId, s.agent, "ko", (runId) => lastFired.set(s.id, runId))
       .then((r) => {
         if (!r.ok) logger.warn({ schedule: s.id, name: s.name, error: r.error }, "scheduled standup failed");
         else logger.info({ schedule: s.id, name: s.name, runId: r.standup.runId }, "scheduled standup generated");
