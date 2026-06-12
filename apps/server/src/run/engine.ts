@@ -614,6 +614,11 @@ function spawnTriggeredWorkflows(state: RunState, fired: import("@loom/core").Wo
   }
 }
 
+// 완료 run 을 인메모리에 들고 있는 유예 — 직후의 SSE 재구독/위임 결과 조회는
+// 메모리에서, 그 뒤는 디스크 기록(getPersistedRun 폴백)이 답한다. 무한 보유 시
+// 장기 운영에서 events 가 누적돼 메모리가 자란다.
+const EVICT_AFTER_MS = 5 * 60_000;
+
 function finish(state: RunState, status: RunInfo["status"], exitCode: number | null): void {
   state.info.status = status;
   state.info.exitCode = exitCode;
@@ -632,4 +637,11 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
       // ignore
     }
   }
+  const evict = setTimeout(() => {
+    // deleteRun 이 먼저 지웠거나 같은 id 로 다른 상태가 들어섰으면 건드리지 않는다.
+    if (runs.get(state.info.id) === state && state.info.status !== "running") {
+      runs.delete(state.info.id);
+    }
+  }, EVICT_AFTER_MS);
+  evict.unref?.();
 }
