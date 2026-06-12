@@ -19,6 +19,7 @@ import { FilesView } from "../components/FilesView.js";
 import { SchedulesView } from "../components/SchedulesView.js";
 import { GitView } from "../components/GitView.js";
 import { Markdown } from "../components/Markdown.js";
+import { WorkflowLiveGraph } from "../components/WorkflowLiveGraph.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
@@ -1015,14 +1016,18 @@ function WorkflowProgress({ runs, workflows, gates, onGate }: { runs: RunInfo[];
     }
     return [...chains.values()]
       .map(({ name, list }) => ({ name, list: list.sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1)) }))
-      .filter(({ list }) => list.some((r) => r.status === "running"));
-  }, [runs]);
+      // 게이트에서 멈춘 체인은 running run 이 없다 — 게이트가 있으면 같이 살린다.
+      .filter(({ name, list }) => list.some((r) => r.status === "running") || gates.some((g) => g.workflow === name));
+  }, [runs, gates]);
   if (active.length === 0 && gates.length === 0) return null;
+
+  // 그래프에 노드가 그려지는 체인은 게이트 버튼도 그래프 안에 있다 — 스트립 중복 방지.
+  const graphedWorkflows = new Set(active.map((c) => c.name));
 
   return (
     <div className="space-y-1.5 pt-3">
-      {/* 휴먼 게이트 — 사람이 결정할 차례 */}
-      {gates.map((g) => (
+      {/* 휴먼 게이트 — 사람이 결정할 차례 (그래프 밖의 게이트만 스트립으로) */}
+      {gates.filter((g) => !graphedWorkflows.has(g.workflow)).map((g) => (
         <div key={g.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2">
           <span className="text-sm">⏸</span>
           <span className="text-xs font-semibold">{g.workflow}</span>
@@ -1045,38 +1050,73 @@ function WorkflowProgress({ runs, workflows, gates, onGate }: { runs: RunInfo[];
           </span>
         </div>
       ))}
-      {active.map(({ name, list }) => {
-        const wf = workflows.find((w) => w.name === name);
-        const total = wf?.nodes.length;
-        return (
-          <div key={name} className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 shadow-[var(--shadow-glow-sm)]">
-            <Workflow className="size-3.5 animate-pulse text-primary" />
-            <span className="text-xs font-semibold">{name}</span>
-            <span className="text-[10px] text-muted-foreground">
-              {t("talk.wfProgress", { done: String(list.filter((r) => r.status !== "running").length), total: String(total ?? list.length) })}
+      {active.map(({ name, list }) => (
+        <WorkflowChainCard
+          key={`${name}:${list[0]?.id ?? ""}`}
+          name={name}
+          list={list}
+          wf={workflows.find((w) => w.name === name)}
+          gates={gates.filter((g) => g.workflow === name)}
+          onGate={onGate}
+        />
+      ))}
+    </div>
+  );
+}
+
+// 체인 1개 = 진행 칩 스트립 + 접을 수 있는 라이브 그래프(좌표가 있는 정의만).
+function WorkflowChainCard({ name, list, wf, gates, onGate }: {
+  name: string;
+  list: RunInfo[];
+  wf?: WorkflowSpec;
+  gates: import("@loom/core").WorkflowGate[];
+  onGate: (id: string, ok: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(true);
+  const total = wf?.nodes.length;
+  return (
+    <div className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 shadow-[var(--shadow-glow-sm)]">
+      <div className="flex flex-wrap items-center gap-2">
+        <Workflow className={cn("size-3.5 text-primary", list.some((r) => r.status === "running") && "animate-pulse")} />
+        <span className="text-xs font-semibold">{name}</span>
+        <span className="text-[10px] text-muted-foreground">
+          {t("talk.wfProgress", { done: String(list.filter((r) => r.status !== "running").length), total: String(total ?? list.length) })}
+        </span>
+        <span className="flex flex-wrap items-center gap-1">
+          {list.map((r, i) => (
+            <span key={r.id} className="flex items-center gap-1">
+              {i > 0 ? <span className="text-[10px] text-muted-foreground">→</span> : null}
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                  r.status === "running"
+                    ? "border-primary/50 bg-primary/15 text-primary"
+                    : r.status === "succeeded"
+                      ? "border-success/40 bg-success/10 text-success"
+                      : "border-destructive/40 bg-destructive/10 text-destructive",
+                )}
+              >
+                {r.node ?? "?"} @{r.agent}{r.status === "running" ? " ⋯" : r.status === "succeeded" ? " ✓" : " ✗"}
+              </span>
             </span>
-            <span className="flex flex-wrap items-center gap-1">
-              {list.map((r, i) => (
-                <span key={r.id} className="flex items-center gap-1">
-                  {i > 0 ? <span className="text-[10px] text-muted-foreground">→</span> : null}
-                  <span
-                    className={cn(
-                      "rounded-full border px-2 py-0.5 text-[10px] font-medium",
-                      r.status === "running"
-                        ? "border-primary/50 bg-primary/15 text-primary"
-                        : r.status === "succeeded"
-                          ? "border-success/40 bg-success/10 text-success"
-                          : "border-destructive/40 bg-destructive/10 text-destructive",
-                    )}
-                  >
-                    {r.node ?? "?"} @{r.agent}{r.status === "running" ? " ⋯" : r.status === "succeeded" ? " ✓" : " ✗"}
-                  </span>
-                </span>
-              ))}
-            </span>
-          </div>
-        );
-      })}
+          ))}
+        </span>
+        {wf ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="ml-auto rounded-md border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            {open ? t("talk.wfGraph.hide") : t("talk.wfGraph.show")}
+          </button>
+        ) : null}
+      </div>
+      {wf && open ? (
+        <div className="mt-2">
+          <WorkflowLiveGraph wf={wf} chainRuns={list} gates={gates} onGate={onGate} />
+        </div>
+      ) : null}
     </div>
   );
 }

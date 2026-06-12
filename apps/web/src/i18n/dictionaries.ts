@@ -167,6 +167,9 @@ const en = {
   "talk.detail.raw": "Raw log",
   "talk.detail.rawMissing": "No raw log for this run.",
   "talk.wfProgress": "{done}/{total} steps",
+  "talk.wfGraph.show": "Graph",
+  "talk.wfGraph.hide": "Hide graph",
+  "talk.wfNode.running": "running",
 
   "conn.header.tooltip": "{count} CLI(s) connected — click for details",
   "talk.noOutput": "No output.",
@@ -490,6 +493,9 @@ const ko: Dictionary = {
   "talk.detail.raw": "Raw 로그",
   "talk.detail.rawMissing": "이 run의 raw 로그가 없어요.",
   "talk.wfProgress": "스텝 {done}/{total}",
+  "talk.wfGraph.show": "그래프",
+  "talk.wfGraph.hide": "그래프 접기",
+  "talk.wfNode.running": "실행 중",
 
   "conn.header.tooltip": "{count}개 CLI 연결됨 — 클릭하면 상세",
   "talk.noOutput": "출력 없음.",
