@@ -3,7 +3,7 @@
 
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Upload, Workflow, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { FileText, Plus, Sparkles, Trash2, Bot, Plug, AlertTriangle, Upload, Workflow, ChevronDown, Eye, SlidersHorizontal } from "lucide-react";
 import type { AdapterKind, AgentSpec, McpServer, McpServerKind, Office } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
@@ -446,8 +446,46 @@ function AgentCard({
       </div>
 
       {err ? <p className="mt-3 text-xs text-destructive">{err}</p> : null}
+      {/* 프리뷰는 저장된 정의 기준 — 신규(미저장)는 저장 후에. */}
+      {!isNew ? <PromptPreview agent={agent.name} /> : null}
       <SaveRow onSave={submit} pending={pending} />
     </CollapsibleCard>
+  );
+}
+
+// 합성 프롬프트 프리뷰 — 이 에이전트로 run 을 시작하면 CLI 에 실제로 들어갈
+// 텍스트(규약 + 지침 + loadout 인덱스). 스킬·규약 작성 직후 주입 확인용.
+function PromptPreview({ agent }: { agent: string }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const q = useQuery({
+    queryKey: ["runPreview", agent],
+    queryFn: () => api.previewRun({ agent }),
+    enabled: open,
+    staleTime: 0, // office 정의가 바뀌었을 수 있어 열 때마다 재조립
+  });
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+      >
+        <Eye className="size-3" />
+        {open ? t("office.agent.previewHide") : t("office.agent.preview")}
+      </button>
+      {open ? (
+        q.isLoading ? (
+          <p className="mt-2 text-xs text-muted-foreground">…</p>
+        ) : q.isError ? (
+          <p className="mt-2 text-xs text-destructive">{q.error instanceof Error ? q.error.message : String(q.error)}</p>
+        ) : (
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/30 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            {q.data?.prompt}
+          </pre>
+        )
+      ) : null}
+    </div>
   );
 }
 

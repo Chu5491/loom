@@ -7,7 +7,7 @@ import { isResponse, parseBody } from "./helpers.js";
 import { readAgents, readSkills, readWorkflows } from "../office.js";
 import { pickAgent } from "../run/dispatch.js";
 import { startWorkflow } from "../run/workflow.js";
-import { cancelRun, deleteRun, fireWorkflowFromRun, getPersistedRun, getRun, getRunPromptText, getRunRawText, listRuns, startRun, subscribe } from "../run/engine.js";
+import { cancelRun, deleteRun, fireWorkflowFromRun, getPersistedRun, getRun, getRunPromptText, getRunRawText, listRuns, previewRunPrompt, startRun, subscribe } from "../run/engine.js";
 
 export const runsRoute = new Hono();
 
@@ -53,6 +53,21 @@ runsRoute.post("/workflow", async (c) => {
   const result = await startWorkflow(wf, { input: data.input, projectId: data.projectId, threadId: data.threadId });
   if (!result.ok) return c.json({ error: result.error }, result.status);
   return c.json({ run: result.run }, 201);
+});
+
+// 프리뷰 — run 없이 합성 프롬프트만(스킬·규약 작성 시 주입 확인용).
+// (":id" 라우트보다 먼저.)
+const previewSchema = z.object({
+  agent: z.string().min(1),
+  prompt: z.string().default(""),
+  skills: z.array(z.string()).optional(),
+});
+runsRoute.post("/preview", async (c) => {
+  const data = await parseBody(c, previewSchema);
+  if (isResponse(data)) return data;
+  const result = previewRunPrompt(data.agent, data.prompt || "(your message here)", data.skills ?? []);
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json({ prompt: result.prompt });
 });
 
 runsRoute.get("/:id", (c) => {

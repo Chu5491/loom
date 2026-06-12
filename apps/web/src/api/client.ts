@@ -270,6 +270,9 @@ export const api = {
   /** 투명성 — 이 run 에서 CLI 에 실제로 들어간 합성 프롬프트. */
   getRunPrompt: (id: string) =>
     request<{ prompt: string }>(`/api/runs/${id}/prompt`),
+  /** 프리뷰 — run 없이, 이 에이전트로 시작하면 들어갈 합성 프롬프트(스킬 작성 확인용). */
+  previewRun: (body: { agent: string; prompt?: string; skills?: string[] }) =>
+    request<{ prompt: string }>("/api/runs/preview", { method: "POST", body: JSON.stringify(body) }),
   /** CLI raw 출력(진실) — run 상세의 Raw 탭. */
   getRunRaw: (id: string) =>
     request<{ raw: string }>(`/api/runs/${id}/raw`),

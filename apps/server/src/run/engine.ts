@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { AdapterConfig, McpServer, OfficeEvent, RunInfo } from "@loom/core";
+import type { AdapterConfig, AgentSpec, McpServer, OfficeEvent, RunInfo, RuleSpec, SkillSpec } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { config, paths } from "../config.js";
 import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEventsDb, getThreadDb, insertRun, lastSessionId, listRunsDb, monthCostUsd, type RunFilter } from "../db.js";
@@ -190,6 +190,35 @@ function resolveServer(s: McpServer): McpServer {
   return { ...s, env: resolveRefs(s.env), headers: resolveRefs(s.headers) };
 }
 
+// 에이전트가 office 에서 끌어올 rules·skills·mcp — startRun 과 프리뷰가 같은 선택.
+function selectSpecs(agent: AgentSpec, extraSkills: string[]): { rules: string[]; skills: SkillSpec[]; mcp: McpServer[] } {
+  const allRules = readRules();
+  const allSkills = readSkills();
+  const allMcp = readMcp();
+  const rules = (agent.rules ?? []).map((n) => allRules.find((r: RuleSpec) => r.name === n)).filter(Boolean).map((r) => r!.body);
+  // 에이전트 정의 스킬 + 이 run 에 사용자가 명시 첨부한 스킬(중복 제거).
+  const skillNames = [...new Set([...(agent.skills ?? []), ...extraSkills])];
+  const skills = skillNames.map((n) => allSkills.find((s) => s.name === n)).filter(Boolean).map((s) => s!);
+  const mcp = (agent.mcp ?? []).map((n) => allMcp.find((m) => m.name === n)).filter(Boolean).map((m) => resolveServer(m!));
+  return { rules, skills, mcp };
+}
+
+/** 프리뷰 — run 없이, 이 에이전트로 시작하면 CLI 에 들어갈 합성 프롬프트.
+ *  loadout 도 실제처럼 펼친다(매 run 재생성되는 디렉토리라 부작용 없음).
+ *  위임 도구(runId 가 필요)는 제외 — delegate 에이전트는 MCP 인덱스에 loom 한 줄이 더 붙는 차이만. */
+export function previewRunPrompt(
+  agentName: string,
+  userPrompt: string,
+  extraSkills: string[] = [],
+): { ok: true; prompt: string } | { ok: false; status: 404; error: string } {
+  const agent = readAgents().find((a) => a.name === agentName);
+  if (!agent) return { ok: false, status: 404, error: "agent_not_found" };
+  const { rules, skills, mcp } = selectSpecs(agent, extraSkills);
+  const loadout = materializeLoadout(agent, skills, mcp, null);
+  const prompt = composePrompt({ userPrompt, rules, agentPrompt: agent.prompt, loadout });
+  return { ok: true, prompt };
+}
+
 export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const agent = readAgents().find((a) => a.name === input.agent);
   if (!agent) return { ok: false, status: 404, error: "agent_not_found" };
@@ -230,14 +259,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const resumeSessionId = input.threadId ? lastSessionId(input.threadId, agent.name) : null;
 
   // office 에서 이 에이전트가 끌어올 rules·skills·mcp 만 추린다.
-  const allRules = readRules();
-  const allSkills = readSkills();
-  const allMcp = readMcp();
-  const rules = (agent.rules ?? []).map((n) => allRules.find((r) => r.name === n)).filter(Boolean).map((r) => r!.body);
-  // 에이전트 정의 스킬 + 이 run 에 사용자가 명시 첨부한 스킬(중복 제거).
-  const skillNames = [...new Set([...(agent.skills ?? []), ...(input.skills ?? [])])];
-  const skills = skillNames.map((n) => allSkills.find((s) => s.name === n)).filter(Boolean).map((s) => s!);
-  const mcp = (agent.mcp ?? []).map((n) => allMcp.find((m) => m.name === n)).filter(Boolean).map((m) => resolveServer(m!));
+  const { rules, skills, mcp } = selectSpecs(agent, input.skills ?? []);
 
   const id = randomUUID();
 
