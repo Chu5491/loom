@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **CLI 그대로** — 래핑하되 변형하지 않는다.
 2. **자동 주입은 죄** — 사용자가 적은 prompt + 명시적으로 첨부한 spec(rules/skills/mcp)이 입력의 전부. 어댑터가 몰래 끼워넣지 말 것.
 3. **CLI root 불가침** — `~/.claude` `~/.gemini` 같은 CLI 전역 설정을 절대 건드리지 않는다. 주입은 run별 loadout/플래그로.
-4. **정의는 git, 기록은 로컬** — `office/`(rules·skills·mcp·agents·harness)는 커밋, `data/`(sqlite·로그·loadout)는 gitignore.
+4. **정의는 git, 기록은 로컬** — `office/`(rules·skills·mcp·agents·workflows·prompts·budget)는 커밋, `data/`(sqlite·로그·loadout·standup)는 gitignore.
 5. **Raw는 진실, Parsed는 경험** — CLI 원본 출력은 항상 디스크 보존, parseEvents는 그 위의 뷰.
 
 ---
@@ -40,7 +40,7 @@ pnpm --filter @loom/adapter-claude-code test   # 어댑터 단일 테스트
 
 단일 테스트 파일:
 ```bash
-cd apps/server && npx vitest run test/harness.test.ts
+cd apps/server && npx vitest run test/workflow.test.ts
 cd packages/adapters/claude-code && npx vitest run src/index.test.ts
 ```
 
@@ -71,12 +71,15 @@ office/                      ← git 커밋되는 정의 (이름 = 식별자, id
   rules/<name>.md            항상 붙는 규약
   skills/<name>.md           단일 스킬 — 또는 skills/<name>/SKILL.md + 딸린 파일(폴더 스킬)
   mcp/servers.json           MCP 서버 (secret 은 "${ENV}" 참조)
-  agents/<name>.json         에이전트 = CLI + 모델 + 끌고 갈 rules/skills/mcp + roles
+  agents/<name>.json         에이전트 = CLI + 모델 + 끌고 갈 rules/skills/mcp + roles (+delegate)
   workflows/<name>.json      워크플로우 = 노드(에이전트+프롬프트) 그래프 + 트리거(옛 하네스 흡수)
+  prompts/<feature>.md       기능 프롬프트(standup 등) — 서버 하드코딩 대신 git 으로 손질
+  budget.json                월 예산 상한(USD, 전체 + perAgent) — 없으면 무제한
 data/                        ← gitignore 되는 기록
-  loom.db                    runs + run_events (슬림 sqlite — 마이그레이션 프레임워크 없음)
+  loom.db                    runs + run_events + threads + schedules (슬림 sqlite — 마이그레이션 프레임워크 없음)
   logs/<runId>.log           CLI raw 출력 (진실)
   loadouts/<agent>/          매 run 직전 재생성되는 스킬·mcp 묶음
+  standup/<projectId>.json   데일리 스탠드업 리포트 + 히스토리
 ```
 
 로더/세이버는 `apps/server/src/office.ts` (zod 경계 검증, safeName 으로 traversal 차단).
@@ -85,12 +88,16 @@ data/                        ← gitignore 되는 기록
 
 - **시작**: `routes/runs.ts` POST → `run/engine.ts startRun` — office 에서 에이전트의 rules/skills/mcp 추림(+`skills[]` 명시 첨부) → `run/loadout.ts` 디스크 펼침 → `run/compose.ts` 프롬프트 조립(스킬은 인덱스만 — 본문은 에이전트가 필요할 때 Read) → 어댑터 `spawn()`
 - **스트림**: stdout 라인 → `run/parse.ts parseEvents`(5 CLI 포맷 → OfficeEvent 단일 모델) → 인메모리 + sqlite 영속 → SSE(`/:id/events`, replay→live→done)
-- **워크플로우**: `run/workflow.ts` — 다단계 그래프(노드=스텝, 엣지=success/fail/always 분기, `{{input}}`/`{{result}}` 치환). 시작은 ① Talk 수동 버튼(`POST /api/runs/workflow`) ② 트리거 — 에이전트 run 종료 시 auto(즉시)/ask(UI 제안 → `POST /:id/workflow`). `MAX_CHAIN_HOPS=5` + `MAX_WORKFLOW_STEPS=20` 루프 방어. 1-hop 하네스(edges.json)는 이 개념에 흡수돼 제거됨.
-- **프로젝트**: 등록된 로컬 디렉토리(`data/` sqlite, 머신별) — run 의 cwd. office 는 전역 공유 "팀", 프로젝트는 "일할 곳".
+- **워크플로우**: `run/workflow.ts` — 다단계 그래프(노드=스텝, 엣지=success/fail/always 분기, `{{input}}`/`{{result}}` 치환). 노드 `kind: "gate"` = 휴먼 게이트 — 승인(success)/거부(fail)까지 정지, 대기 목록은 `routes/gates.ts`(인메모리 — 재시작 시 소실). 시작은 ① Talk 수동 버튼(`POST /api/runs/workflow`) ② 트리거 — 에이전트 run 종료 시 auto(즉시)/ask(UI 제안 → `POST /:id/workflow`) ③ 스케줄. `MAX_CHAIN_HOPS=5` + `MAX_WORKFLOW_STEPS=20` 루프 방어. 1-hop 하네스(edges.json)는 이 개념에 흡수돼 제거됨.
+- **스레드**: 대화 단위(sqlite 영속, `routes/threads.ts`) — 같은 스레드의 연속 턴은 CLI 세션(`sessionId`)이 이어진다.
+- **스케줄**: `run/scheduler.ts` — croner 로 cron 발화(서버 프로세스 수명 동안만, 머신-로컬). 직전 run 이 아직 돌면 tick 건너뜀. `feature: "standup"` 은 `run/standup.ts` — 지난 24h run 기록 + git log 근거의 데일리 리포트.
+- **디스패치/위임**: `run/dispatch.ts` — 작업 텍스트 ↔ 에이전트 label·prompt·스킬의 키워드 겹침 점수로 적임자 추천(라우팅일 뿐 주입 아님). 에이전트 `delegate: true` 면 run 에 loom 의 delegate MCP 도구가 실려 작업 중 팀원에게 위임 가능(MCP 불가 CLI 는 loadout 의 `delegate.sh` 셸 브리지).
+- **프로젝트**: 등록된 로컬 디렉토리(`data/` sqlite, 머신별) — run 의 cwd. office 는 전역 공유 "팀", 프로젝트는 "일할 곳". 사람·에이전트 공유 메모는 `<project>/.loom/notes.md`.
+- **평가/거버넌스**: run 별 👍👎(`POST /:id/rating`, runs.rating 컬럼) → 에이전트 30일 실적. 월 예산은 `office/budget.json`, 사용량 집계는 `routes/usage.ts`.
 
 ### 3.4 프론트엔드
 
-탭 셸 3개(Talk / Office / Connections) + 헤더(CLI 인증 표시 · 프로젝트 셀렉터). TanStack Query + i18n/Theme Context, API 는 `api/client.ts` 단일 파일, SSE 는 `hooks/useRunStream.ts`. 마크다운 렌더는 `components/Markdown.tsx`(react-markdown — raw HTML 미실행). Talk 스레드는 runs 데이터 단일 진실에서 파생.
+탭 셸 4개(Home / Projects / Office / Connections) + 헤더(CLI 인증 표시 · 프로젝트 전환 칩) + ⌘K 커맨드 팔레트. 프로젝트 선택 시 Home 은 Talk 워크스페이스(`TalkPage` — 스레드 독·스테이지·팀 패널), 미선택 시 미션 컨트롤(`HomePage`). TanStack Query + i18n/Theme Context, API 는 `api/client.ts` 단일 파일, SSE 는 `hooks/useRunStream.ts`. 마크다운 렌더는 `components/Markdown.tsx`(react-markdown — raw HTML 미실행). 라우터 없음 — 탭 상태는 `App.tsx` 로컬 state.
 
 ### 3.5 어댑터 아키텍처
 
