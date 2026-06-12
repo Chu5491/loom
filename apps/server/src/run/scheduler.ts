@@ -6,10 +6,12 @@ import type { Schedule } from "@loom/core";
 import { listSchedulesDb, touchScheduleLastRun } from "../db.js";
 import { logger } from "../logger.js";
 import { readWorkflows } from "../office.js";
-import { startRun } from "./engine.js";
+import { getRun, startRun } from "./engine.js";
 import { startWorkflow } from "./workflow.js";
 
 const jobs = new Map<string, Cron>();
+// 직전 발화의 run id — 아직 돌고 있으면 이번 tick 은 건너뛴다(중복 실행 방지).
+const lastFired = new Map<string, string>();
 
 /** cron 식 검증 — 라우트가 저장 전에 부른다. 잘못된 식이면 에러 메시지 반환. */
 export function validateCron(expr: string): string | null {
@@ -33,6 +35,11 @@ export function nextRunAt(expr: string): string | null {
 }
 
 function fire(s: Schedule): void {
+  const prev = lastFired.get(s.id);
+  if (prev && getRun(prev)?.status === "running") {
+    logger.warn({ schedule: s.id, name: s.name, runId: prev }, "previous scheduled run still running — skipping tick");
+    return;
+  }
   touchScheduleLastRun(s.id, new Date().toISOString());
   // fire-and-forget — 실패해도 스케줄러는 계속 돈다.
   // workflow 지정 시 prompt 는 {{input}} 값이 되어 그래프가 이어받는다.
@@ -47,7 +54,10 @@ function fire(s: Schedule): void {
   void start()
     .then((r) => {
       if (!r.ok) logger.warn({ schedule: s.id, name: s.name, error: r.error }, "scheduled run did not start");
-      else logger.info({ schedule: s.id, name: s.name, runId: r.run.id }, "scheduled run fired");
+      else {
+        lastFired.set(s.id, r.run.id);
+        logger.info({ schedule: s.id, name: s.name, runId: r.run.id }, "scheduled run fired");
+      }
     })
     .catch((err) => logger.error({ err, schedule: s.id }, "scheduled run threw"));
 }

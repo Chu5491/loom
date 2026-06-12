@@ -35,12 +35,17 @@ async function acquireSlot(): Promise<void> {
     activeSlots++;
     return;
   }
+  // 대기자는 releaseSlot 이 슬롯을 넘겨주며 깨운다 — 여기서 다시 세지 않는다.
+  // (release 후 새 acquire 가 먼저 끼어들어 한도를 넘는 race 방지.)
   await new Promise<void>((resolve) => slotWaiters.push(resolve));
-  activeSlots++;
 }
 function releaseSlot(): void {
+  const next = slotWaiters.shift();
+  if (next) {
+    next(); // 슬롯을 그대로 넘긴다 — activeSlots 변동 없음
+    return;
+  }
   activeSlots = Math.max(0, activeSlots - 1);
-  slotWaiters.shift()?.();
 }
 
 export interface StartRunInput {
@@ -521,6 +526,8 @@ export async function delegateFromRun(
     }
     return { ok: true, result: result?.text ?? "(no output)", childRunId: started.run.id };
   } catch (e) {
+    // 타임아웃이면 자식이 아직 도는 중 — 끊지 않으면 부모 종료 후 고아가 된다.
+    cancelRun(started.run.id);
     return { ok: false, error: (e as Error).message };
   }
 }

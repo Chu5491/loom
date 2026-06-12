@@ -15,10 +15,11 @@ import {
 } from "../db.js";
 import { logger } from "../logger.js";
 import { readWorkflows } from "../office.js";
-import { startRun, waitForRun, type StartRunResult } from "./engine.js";
+import { cancelRun, startRun, waitForRun, type StartRunResult } from "./engine.js";
 
 export const MAX_WORKFLOW_STEPS = 20;
-const STEP_TIMEOUT_MS = 10 * 60_000;
+// 위임(10분)보다 길게 — 워크플로우 스텝은 코딩 에이전트의 실제 작업 단위.
+const STEP_TIMEOUT_MS = 30 * 60_000;
 
 // ── 트리거 판정 (순수) — run 이 끝났을 때 어떤 워크플로우가 발화하는지 ─────────
 export interface RunOutcome {
@@ -169,6 +170,7 @@ function lastResultText(runId: string): string | null {
 }
 
 // run 완료를 기다렸다가 outcome 에 맞는 다음 노드들로 퍼져나간다.
+// 타임아웃·예외도 fail 경로로 흘려보낸다 — 조용히 멈추면 게이트·join 이 영구 대기.
 async function watchRun(exec: Exec, nodeId: string, run: RunInfo): Promise<void> {
   const log = logger.child({ workflow: exec.wf.name, node: nodeId, runId: run.id });
   try {
@@ -177,7 +179,14 @@ async function watchRun(exec: Exec, nodeId: string, run: RunInfo): Promise<void>
     const outcome = done.status === "succeeded" ? "success" : "fail";
     await fanOut(exec, nodeId, outcome, lastResultText(run.id) ?? "", run.id);
   } catch (err) {
-    log.error({ err }, "workflow step threw");
+    // 타임아웃이면 run 이 아직 도는 중 — 끊어서 좀비를 막고 fail 경로로 진행.
+    log.error({ err }, "workflow step timed out or threw — taking fail edges");
+    cancelRun(run.id);
+    try {
+      await fanOut(exec, nodeId, "fail", `(step timed out after ${STEP_TIMEOUT_MS / 60_000}m)`, run.id);
+    } catch (fanErr) {
+      log.error({ err: fanErr }, "fail fan-out threw");
+    }
   }
 }
 
@@ -265,7 +274,10 @@ async function enterNode(exec: Exec, nodeId: string, result: string, prevRunId: 
     node: nodeId,
   });
   if (!started.ok) {
-    log.warn({ error: started.error }, "workflow step did not start");
+    // 시작 실패(에이전트 삭제·프로젝트 소실 등)도 fail 엣지로 — 그래프가 멈추지 않게.
+    // 재귀는 steps 카운터가 MAX_WORKFLOW_STEPS 에서 끊는다.
+    log.warn({ error: started.error }, "workflow step did not start — taking fail edges");
+    await fanOut(exec, nodeId, "fail", `(step failed to start: ${started.error})`, prevRunId);
     return;
   }
   void watchRun(exec, nodeId, started.run);
