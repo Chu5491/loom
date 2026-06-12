@@ -17,6 +17,9 @@ const en = {
   "nav.switchConfirm": "Move to project \"{name}\"?",
   "nav.switchGo": "Move",
   "common.cancel": "Cancel",
+  "err.page": "This view failed to render",
+  "err.bubble": "This message failed to render",
+  "err.retry": "Retry",
   "nav.connections": "Connections",
   "nav.office": "Office",
 
@@ -337,6 +340,9 @@ const ko: Dictionary = {
   "nav.switchConfirm": "\"{name}\" 프로젝트로 이동할까요?",
   "nav.switchGo": "이동",
   "common.cancel": "취소",
+  "err.page": "이 화면을 그리다 오류가 났어요",
+  "err.bubble": "이 메시지를 그리다 오류가 났어요",
+  "err.retry": "다시 시도",
   "nav.connections": "연결",
   "nav.office": "오피스",
 

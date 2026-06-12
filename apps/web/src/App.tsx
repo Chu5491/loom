@@ -8,6 +8,7 @@ import { Check, ChevronDown, ChevronLeft, FolderGit2, House, Languages, Moon, Pl
 import { api } from "./api/client.js";
 import { CliStatus } from "./components/CliStatus.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { LoomLogo } from "./components/LoomLogo.js";
 import { Button } from "./components/ui.js";
 import { useI18n } from "./context/I18nContext.js";
@@ -192,15 +193,17 @@ export function App() {
         />
       ) : null}
 
-      {tab === "office" ? (
-        <OfficePage />
-      ) : tab === "connections" ? (
-        <ConnectionsPage />
-      ) : project ? (
-        <TalkPage project={project} />
-      ) : (
-        <HomePage onOpen={setProject} onOpenTab={(tb) => setTab(tb)} />
-      )}
+      <ErrorBoundary label={t("err.page")} retryLabel={t("err.retry")}>
+        {tab === "office" ? (
+          <OfficePage />
+        ) : tab === "connections" ? (
+          <ConnectionsPage />
+        ) : project ? (
+          <TalkPage project={project} />
+        ) : (
+          <HomePage onOpen={setProject} onOpenTab={(tb) => setTab(tb)} />
+        )}
+      </ErrorBoundary>
     </div>
   );
 }

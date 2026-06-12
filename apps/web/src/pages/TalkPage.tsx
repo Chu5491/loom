@@ -14,6 +14,7 @@ import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, Workf
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
 import { AnalysisView } from "../components/AnalysisView.js";
+import { ErrorBoundary } from "../components/ErrorBoundary.js";
 import { FilesView } from "../components/FilesView.js";
 import { SchedulesView } from "../components/SchedulesView.js";
 import { GitView } from "../components/GitView.js";
@@ -341,6 +342,7 @@ export function TalkPage({ project }: { project: Project }) {
                   <div key={msg.id}>
                     {/* 에이전트 간 핸드오프 커넥터 — 누가 누구에게 넘겼는지 한눈에 */}
                     {msg.fromAgent ? <HandoffDivider from={msg.fromAgent} to={msg.agent} /> : null}
+                    <ErrorBoundary label={t("err.bubble")} retryLabel={t("err.retry")}>
                     <AgentBubble
                       agent={agents.find((a) => a.name === msg.agent)}
                       fromAgent={msg.fromAgent}
@@ -352,6 +354,7 @@ export function TalkPage({ project }: { project: Project }) {
                       onDone={() => void runs.refetch()}
                       onActivity={reportActivity}
                     />
+                    </ErrorBoundary>
                   </div>
                 ),
               )}
