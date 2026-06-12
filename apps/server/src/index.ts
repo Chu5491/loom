@@ -21,6 +21,7 @@ import { schedulesRoute } from "./routes/schedules.js";
 import { usageRoute } from "./routes/usage.js";
 import { cancelAllRunning } from "./run/engine.js";
 import { reschedule, stopScheduler } from "./run/scheduler.js";
+import { restoreWorkflowState } from "./run/workflow.js";
 import { threadsRoute } from "./routes/threads.js";
 import { uploadsRoute } from "./routes/uploads.js";
 
@@ -29,6 +30,7 @@ ensureOffice();
 const orphans = failOrphanRuns();
 if (orphans > 0) logger.warn({ orphans }, "marked orphan running runs as failed");
 reschedule(); // 저장된 활성 스케줄을 cron 으로 무장 (서버 프로세스 수명 동안)
+restoreWorkflowState(); // 재시작 전에 멈춰 있던 게이트·join 도착분 복원
 
 const app = new Hono();
 

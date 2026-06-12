@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, Play, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, Play, Plus, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import type { Project, Schedule } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
@@ -35,7 +35,7 @@ export function SchedulesView({ project }: { project: Project }) {
   const onErr = (e: unknown) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e));
 
   const create = useMutation({
-    mutationFn: (body: { name: string; agent: string; prompt: string; cron: string }) =>
+    mutationFn: (body: { name: string; agent: string; prompt: string; cron: string; workflow: string | null }) =>
       api.createSchedule({ ...body, projectId: project.id }),
     onSuccess: () => { setAdding(false); setErr(null); invalidate(); },
     onError: onErr,
@@ -67,6 +67,7 @@ export function SchedulesView({ project }: { project: Project }) {
       {adding ? (
         <ScheduleForm
           agents={agents.map((a) => a.name)}
+          workflows={(agentsQ.data?.office.workflows ?? []).map((w) => w.name)}
           pending={create.isPending}
           onSubmit={(body) => create.mutate(body)}
           onCancel={() => setAdding(false)}
@@ -89,13 +90,19 @@ export function SchedulesView({ project }: { project: Project }) {
           return (
             <div key={s.id} className={cn("rounded-xl border bg-card p-3.5", s.enabled ? "border-border" : "border-border/50 opacity-60")}>
               <div className="flex items-center gap-2.5">
-                {adapter ? <AgentAvatar adapter={adapter} size={22} className="rounded-md" /> : null}
+                {s.workflow ? (
+                  <span className="flex size-[22px] shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><WorkflowIcon className="size-3.5" /></span>
+                ) : adapter ? (
+                  <AgentAvatar adapter={adapter} size={22} className="rounded-md" />
+                ) : null}
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{s.name}</span>
                     <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{s.cron}</code>
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">@{s.agent} · {s.prompt}</span>
+                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                    {s.workflow ? `▶ ${s.workflow}` : `@${s.agent}`} · {s.prompt}
+                  </span>
                 </span>
                 {/* enabled 토글 */}
                 <button
@@ -140,33 +147,60 @@ export function SchedulesView({ project }: { project: Project }) {
 }
 
 function ScheduleForm({
-  agents, pending, onSubmit, onCancel,
+  agents, workflows, pending, onSubmit, onCancel,
 }: {
   agents: string[];
+  workflows: string[];
   pending: boolean;
-  onSubmit: (body: { name: string; agent: string; prompt: string; cron: string }) => void;
+  onSubmit: (body: { name: string; agent: string; prompt: string; cron: string; workflow: string | null }) => void;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
   const [name, setName] = useState("");
+  // 대상 — 에이전트 1회 run 또는 워크플로우 시작(prompt 가 {{input}} 이 된다).
+  const [target, setTarget] = useState<"agent" | "workflow">("agent");
   const [agent, setAgent] = useState(agents[0] ?? "");
+  const [workflow, setWorkflow] = useState(workflows[0] ?? "");
   const [prompt, setPrompt] = useState("");
   const [preset, setPreset] = useState<(typeof PRESETS)[number]["key"]>("daily9");
   const [customCron, setCustomCron] = useState("");
   const cron = preset === "custom" ? customCron : PRESETS.find((p) => p.key === preset)!.cron;
   const inputCls = "rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+  const targetOk = target === "agent" ? !!agent : !!workflow;
 
   return (
     <div className="mt-3 space-y-2.5 rounded-xl border border-primary/30 bg-card p-4">
       <div className="flex flex-wrap gap-2">
         <input className={cn(inputCls, "min-w-40 flex-1")} placeholder={t("sched.namePh")} value={name} onChange={(e) => setName(e.target.value)} />
-        <select className={cn(inputCls, "h-9")} value={agent} onChange={(e) => setAgent(e.target.value)}>
-          {agents.map((a) => <option key={a} value={a}>@{a}</option>)}
-        </select>
+        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+          {(["agent", "workflow"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              disabled={k === "workflow" && workflows.length === 0}
+              onClick={() => setTarget(k)}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-all disabled:opacity-40",
+                target === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t(`sched.target.${k}`)}
+            </button>
+          ))}
+        </div>
+        {target === "agent" ? (
+          <select className={cn(inputCls, "h-9")} value={agent} onChange={(e) => setAgent(e.target.value)}>
+            {agents.map((a) => <option key={a} value={a}>@{a}</option>)}
+          </select>
+        ) : (
+          <select className={cn(inputCls, "h-9")} value={workflow} onChange={(e) => setWorkflow(e.target.value)}>
+            {workflows.map((w) => <option key={w} value={w}>▶ {w}</option>)}
+          </select>
+        )}
       </div>
       <textarea
         className={cn(inputCls, "min-h-16 w-full")}
-        placeholder={t("sched.promptPh")}
+        placeholder={target === "agent" ? t("sched.promptPh") : t("sched.inputPh")}
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
       />
@@ -199,8 +233,16 @@ function ScheduleForm({
         <Button variant="secondary" size="sm" onClick={onCancel}>{t("common.cancel")}</Button>
         <Button
           size="sm"
-          disabled={!name.trim() || !agent || !prompt.trim() || !cron.trim() || pending}
-          onClick={() => onSubmit({ name: name.trim(), agent, prompt: prompt.trim(), cron: cron.trim() })}
+          disabled={!name.trim() || !targetOk || !prompt.trim() || !cron.trim() || pending}
+          onClick={() =>
+            onSubmit({
+              name: name.trim(),
+              agent: target === "agent" ? agent : "",
+              workflow: target === "workflow" ? workflow : null,
+              prompt: prompt.trim(),
+              cron: cron.trim(),
+            })
+          }
         >
           {pending ? "…" : t("sched.create")}
         </Button>

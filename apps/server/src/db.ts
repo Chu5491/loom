@@ -55,10 +55,32 @@ export function getDb(): DB {
       agent       TEXT NOT NULL,
       prompt      TEXT NOT NULL,
       cron        TEXT NOT NULL,
+      workflow    TEXT,
       project_id  TEXT,
       enabled     INTEGER NOT NULL DEFAULT 1,
       last_run_at TEXT,
       created_at  TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS gates (
+      id          TEXT PRIMARY KEY,
+      workflow    TEXT NOT NULL,
+      node_id     TEXT NOT NULL,
+      prev_run_id TEXT,
+      project_id  TEXT,
+      thread_id   TEXT,
+      result      TEXT NOT NULL,
+      chain_id    TEXT NOT NULL,
+      input       TEXT NOT NULL,
+      steps       INTEGER NOT NULL,
+      created_at  TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS join_arrivals (
+      chain_id    TEXT NOT NULL,
+      node_id     TEXT NOT NULL,
+      seq         INTEGER NOT NULL,
+      result      TEXT NOT NULL,
+      last_run_id TEXT,
+      PRIMARY KEY (chain_id, node_id, seq)
     );
   `);
   // 이전 버전 db 에 없던 컬럼 자가치유(기록은 disposable이지만 안전하게).
@@ -76,6 +98,10 @@ export function getDb(): DB {
   if (!cols.some((c) => c.name === "workflow")) {
     db.exec(`ALTER TABLE runs ADD COLUMN workflow TEXT`);
     db.exec(`ALTER TABLE runs ADD COLUMN node TEXT`);
+  }
+  const schedCols = db.prepare<[], { name: string }>(`PRAGMA table_info(schedules)`).all();
+  if (schedCols.length > 0 && !schedCols.some((c) => c.name === "workflow")) {
+    db.exec(`ALTER TABLE schedules ADD COLUMN workflow TEXT`);
   }
   _db = db;
   return db;
@@ -328,6 +354,7 @@ interface ScheduleRow {
   agent: string;
   prompt: string;
   cron: string;
+  workflow: string | null;
   project_id: string | null;
   enabled: number;
   last_run_at: string | null;
@@ -340,6 +367,7 @@ function toSchedule(r: ScheduleRow): Schedule {
     agent: r.agent,
     prompt: r.prompt,
     cron: r.cron,
+    workflow: r.workflow,
     projectId: r.project_id,
     enabled: !!r.enabled,
     lastRunAt: r.last_run_at,
@@ -364,18 +392,18 @@ export function getScheduleDb(id: string): Schedule | null {
 export function insertSchedule(s: Schedule): void {
   getDb()
     .prepare(
-      `INSERT INTO schedules (id, name, agent, prompt, cron, project_id, enabled, last_run_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO schedules (id, name, agent, prompt, cron, workflow, project_id, enabled, last_run_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(s.id, s.name, s.agent, s.prompt, s.cron, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.createdAt);
+    .run(s.id, s.name, s.agent, s.prompt, s.cron, s.workflow ?? null, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.createdAt);
 }
 
 export function updateScheduleDb(s: Schedule): void {
   getDb()
     .prepare(
-      `UPDATE schedules SET name = ?, agent = ?, prompt = ?, cron = ?, project_id = ?, enabled = ?, last_run_at = ? WHERE id = ?`,
+      `UPDATE schedules SET name = ?, agent = ?, prompt = ?, cron = ?, workflow = ?, project_id = ?, enabled = ?, last_run_at = ? WHERE id = ?`,
     )
-    .run(s.name, s.agent, s.prompt, s.cron, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.id);
+    .run(s.name, s.agent, s.prompt, s.cron, s.workflow ?? null, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.id);
 }
 
 export function deleteScheduleDb(id: string): boolean {
@@ -384,4 +412,76 @@ export function deleteScheduleDb(id: string): boolean {
 
 export function touchScheduleLastRun(id: string, at: string): void {
   getDb().prepare(`UPDATE schedules SET last_run_at = ? WHERE id = ?`).run(at, id);
+}
+
+// ── 워크플로우 일시정지 상태 — 게이트·join 도착분 (서버 재시작 생존용) ────────────
+// exec 컨텍스트(워크플로우 spec·counter)는 복원 시 office 에서 재구성하므로,
+// 여기엔 재구성에 필요한 원시 값만 둔다.
+export interface GateRow {
+  id: string;
+  workflow: string;
+  nodeId: string;
+  prevRunId: string | null;
+  projectId: string | null;
+  threadId: string | null;
+  result: string;
+  chainId: string;
+  input: string;
+  steps: number;
+  createdAt: string;
+}
+
+export function insertGateDb(g: GateRow): void {
+  getDb()
+    .prepare(
+      `INSERT INTO gates (id, workflow, node_id, prev_run_id, project_id, thread_id, result, chain_id, input, steps, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(g.id, g.workflow, g.nodeId, g.prevRunId, g.projectId, g.threadId, g.result, g.chainId, g.input, g.steps, g.createdAt);
+}
+
+export function deleteGateDb(id: string): void {
+  getDb().prepare(`DELETE FROM gates WHERE id = ?`).run(id);
+}
+
+export function listGatesDb(): GateRow[] {
+  interface Row {
+    id: string; workflow: string; node_id: string; prev_run_id: string | null;
+    project_id: string | null; thread_id: string | null; result: string;
+    chain_id: string; input: string; steps: number; created_at: string;
+  }
+  return getDb()
+    .prepare<[], Row>(`SELECT * FROM gates ORDER BY created_at ASC`)
+    .all()
+    .map((r) => ({
+      id: r.id, workflow: r.workflow, nodeId: r.node_id, prevRunId: r.prev_run_id,
+      projectId: r.project_id, threadId: r.thread_id, result: r.result,
+      chainId: r.chain_id, input: r.input, steps: r.steps, createdAt: r.created_at,
+    }));
+}
+
+export function insertJoinArrivalDb(chainId: string, nodeId: string, seq: number, result: string, lastRunId: string | null): void {
+  getDb()
+    .prepare(`INSERT OR REPLACE INTO join_arrivals (chain_id, node_id, seq, result, last_run_id) VALUES (?, ?, ?, ?, ?)`)
+    .run(chainId, nodeId, seq, result, lastRunId);
+}
+
+export function deleteJoinArrivalsDb(chainId: string, nodeId: string): void {
+  getDb().prepare(`DELETE FROM join_arrivals WHERE chain_id = ? AND node_id = ?`).run(chainId, nodeId);
+}
+
+export function listJoinArrivalsDb(): { chainId: string; nodeId: string; results: string[]; lastRunId: string | null }[] {
+  interface Row { chain_id: string; node_id: string; seq: number; result: string; last_run_id: string | null }
+  const rows = getDb()
+    .prepare<[], Row>(`SELECT * FROM join_arrivals ORDER BY chain_id, node_id, seq ASC`)
+    .all();
+  const grouped = new Map<string, { chainId: string; nodeId: string; results: string[]; lastRunId: string | null }>();
+  for (const r of rows) {
+    const key = `${r.chain_id}:${r.node_id}`;
+    const g = grouped.get(key) ?? { chainId: r.chain_id, nodeId: r.node_id, results: [], lastRunId: null };
+    g.results.push(r.result);
+    g.lastRunId = r.last_run_id ?? g.lastRunId;
+    grouped.set(key, g);
+  }
+  return [...grouped.values()];
 }

@@ -284,7 +284,7 @@ export const api = {
   // ── schedules — cron 반복 실행 (머신-로컬) ─────────────────────────────────
   listSchedules: (projectId: string | null) =>
     request<{ schedules: Schedule[] }>(`/api/schedules?projectId=${projectId ?? "none"}`),
-  createSchedule: (body: { name: string; agent: string; prompt: string; cron: string; projectId: string | null; enabled?: boolean }) =>
+  createSchedule: (body: { name: string; agent: string; prompt: string; cron: string; workflow?: string | null; projectId: string | null; enabled?: boolean }) =>
     request<{ schedule: Schedule }>("/api/schedules", { method: "POST", body: JSON.stringify(body) }),
   patchSchedule: (id: string, body: Partial<{ name: string; agent: string; prompt: string; cron: string; enabled: boolean }>) =>
     request<{ schedule: Schedule }>(`/api/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

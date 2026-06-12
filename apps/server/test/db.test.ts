@@ -88,3 +88,41 @@ describe("threads + session resume lookup", () => {
     expect(db.getRunEventsDb("tr1")).toEqual([]);
   });
 });
+
+// 워크플로우 일시정지 상태(게이트·join) — 재시작 생존의 근거가 되는 라운드트립.
+describe("gates & join arrivals", () => {
+  it("gate roundtrip: insert → list restores all fields → delete", () => {
+    const gate = {
+      id: "g1",
+      workflow: "review-chain",
+      nodeId: "n2",
+      prevRunId: "run-1",
+      projectId: "p1",
+      threadId: "t9",
+      result: "branch result",
+      chainId: "chain-1",
+      input: "original input",
+      steps: 3,
+      createdAt: "2026-06-12T00:00:00.000Z",
+    };
+    db.insertGateDb(gate);
+    expect(db.listGatesDb()).toContainEqual(gate);
+    db.deleteGateDb("g1");
+    expect(db.listGatesDb().some((g) => g.id === "g1")).toBe(false);
+  });
+
+  it("join arrivals: per-(chain,node) grouping in seq order, delete clears the group", () => {
+    db.insertJoinArrivalDb("c1", "n4", 0, "first", "run-a");
+    db.insertJoinArrivalDb("c1", "n4", 1, "second", "run-b");
+    db.insertJoinArrivalDb("c2", "n4", 0, "other-chain", null);
+
+    const groups = db.listJoinArrivalsDb();
+    const c1 = groups.find((g) => g.chainId === "c1" && g.nodeId === "n4");
+    expect(c1?.results).toEqual(["first", "second"]);
+    expect(c1?.lastRunId).toBe("run-b");
+    expect(groups.some((g) => g.chainId === "c2")).toBe(true);
+
+    db.deleteJoinArrivalsDb("c1", "n4");
+    expect(db.listJoinArrivalsDb().some((g) => g.chainId === "c1")).toBe(false);
+  });
+});

@@ -17,9 +17,9 @@
 
 ## Overview
 
-loom is a local Node.js + React workspace for running multiple CLI coding agents — **Claude Code, Codex, OpenCode, Devin, Antigravity** — as one team.
+loom is a local Node.js + React workspace for running multiple CLI coding agents — **Claude Code, Codex, OpenCode, Devin, Antigravity** — as one company.
 
-You define the team once (agents, rules, skills, MCP servers, hand-off rules) as plain files in `office/`, commit them to git, and talk to the team in a chat. Each turn spawns the real CLI in your project directory; output streams back as structured events. The CLIs stay the CLIs — loom is the office they share.
+You define the team once (agents, rules, skills, MCP servers, workflows, feature prompts) as plain files in `office/`, commit them to git, and talk to the team in a chat. Each turn spawns the real CLI in your project directory; output streams back as structured events. Agents delegate to teammates mid-run, workflows pick up when runs finish, and humans approve at gates. The CLIs stay the CLIs — loom is the office they share.
 
 ## Constitution
 
@@ -33,11 +33,15 @@ You define the team once (agents, rules, skills, MCP servers, hand-off rules) as
 
 | Surface | What it does |
 |---|---|
-| **Talk** | Chat with any agent. `@` mentions agents (routing), skills (attach to this run), and project files (live search). Markdown-rendered replies, live tool/file traces, stop button, cost rollup, hand-off suggestions. |
-| **Office** | Define the team as files: rules (always-on context), skills (single `.md` or folder with bundled references), MCP servers (form editor), agents (CLI + model + what they carry), harness edges (who hands off to whom, when). |
+| **Company home** | Dashboard of people (agents), forms (office definitions), connections (CLIs) and usage (30-day cost/runs) + your projects. You step *into* a project to work (the header becomes a `Company / Project` breadcrumb). |
+| **Talk** | Chat with agents (thread sidebar, session resume keeps context). One `@` mentions agents, skills (attach to this run) and project files; drag-and-drop/paste attachments. Live tool/file traces, team status board, run details (sent prompt · raw log), stop button, cost rollup. |
+| **Files · Git** | Monaco code/diff viewer, an activity feed of which agent touched which file, stage/commit with AI-generated commit messages. |
+| **Analysis** | An analyst agent reads the project and returns a structured report — health score ring, language mix, severity-tagged risks/suggestions. History with a trend chart. |
+| **Schedules** | Run agents on cron (hourly/daily/custom presets, run-now, enable toggle). |
+| **Workflows** | Node graphs (canvas editor): wire agent steps with `success / fail / always` edges, plus **triggers** (auto/suggest when an agent's run ends), **human gates** (pause for approve/reject) and **parallel joins** (merge branch results). Run manually from Talk with a live progress board. |
+| **Delegation** | Agents with `delegate` enabled call teammates as sub-agents mid-run (with recorded reasons). Via MCP tool (claude/codex/opencode/devin) or a shell bridge (antigravity) — 5/5 CLIs covered. |
+| **Office** | Define the team as files: rules, skills (single `.md` or folder), MCP servers, agents (CLI + model + roles + permissions), workflows, feature prompts (commit-message/analysis guidance — output format stays fixed in code). |
 | **Connections** | Discover · authenticate · pick models · smoke-test every CLI on the machine. The header shows authenticated CLIs at all times. |
-| **Harness** | `on_success / on_fail / on_changes` edges auto-fire the next agent (loop-guarded); `ask / manual` edges become one-click suggestions. Results carry over in explicitly marked blocks. |
-| **Projects** | Register local working directories; runs execute there. The office is global ("the team"), projects are where it works. |
 
 ## Quick start
 
@@ -50,16 +54,16 @@ pnpm dev
 ```
 
 1. **Connections** — check your CLIs are detected and authenticated.
-2. **Office** — create an agent (CLI + model are required), optionally rules/skills/MCP.
-3. Pick a **project** in the header (a local directory) and start talking.
+2. **Office** — create an agent (CLI + model are required), optionally rules/skills/MCP/workflows.
+3. Register a **project** (a local directory) on the company home, step in and start talking.
 
 ## Project layout
 
 ```
-office/                git-committed definitions (rules / skills / mcp / agents / harness)
-data/                  gitignored records (sqlite history, raw logs, per-run loadouts)
-apps/server/           Hono — office loader, run engine, SSE, harness
-apps/web/              React + Vite + Tailwind 4 — Talk / Office / Connections
+office/                git-committed definitions (rules / skills / mcp / agents / workflows / prompts)
+data/                  gitignored records (sqlite history, raw logs & prompts, per-run loadouts, analyses)
+apps/server/           Hono — office loader, run engine, workflows & scheduler, SSE
+apps/web/              React + Vite + Tailwind 4 — company home / project workspace / office / connections
 packages/core/         shared types (zero runtime deps)
 packages/adapter-utils/ spawnProcess + defineCliAdapter
 packages/adapters/     claude-code · antigravity · codex · opencode · devin
@@ -72,6 +76,7 @@ packages/adapters/     claude-code · antigravity · codex · opencode · devin
 | `LOOM_PORT` | Server port. Default `3200`. |
 | `LOOM_HOST` | Bind address. Default `127.0.0.1`. |
 | `LOOM_HOME` | Office root (where `office/` and `data/` live). Default: repo root. |
+| `LOOM_MAX_RUNS` | Concurrent CLI run cap (FIFO queue; delegation children bypass). Default `4`. |
 
 MCP secrets are written as `"${ENV_NAME}"` references in `office/mcp/servers.json` and resolved from the server's environment at spawn time — never stored as literals.
 

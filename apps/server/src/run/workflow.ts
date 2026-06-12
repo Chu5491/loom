@@ -4,8 +4,17 @@
 
 import { randomUUID } from "node:crypto";
 import type { RunInfo, RunStatus, WorkflowGate, WorkflowSpec, WorkflowTrigger } from "@loom/core";
-import { getRunEventsDb } from "../db.js";
+import {
+  deleteGateDb,
+  deleteJoinArrivalsDb,
+  getRunEventsDb,
+  insertGateDb,
+  insertJoinArrivalDb,
+  listGatesDb,
+  listJoinArrivalsDb,
+} from "../db.js";
 import { logger } from "../logger.js";
+import { readWorkflows } from "../office.js";
 import { startRun, waitForRun, type StartRunResult } from "./engine.js";
 
 export const MAX_WORKFLOW_STEPS = 20;
@@ -67,7 +76,7 @@ interface Exec {
   chainId: string;
 }
 
-// 휴먼 게이트 — 인메모리(서버 재시작 시 소실, v1 한계). 승인=success/거부=fail 경로.
+// 휴먼 게이트 — 인메모리 Map + sqlite 영속(재시작 생존). 승인=success/거부=fail 경로.
 interface PendingGate extends WorkflowGate {
   exec: Exec;
 }
@@ -82,13 +91,56 @@ export async function resolveGate(id: string, approved: boolean): Promise<{ ok: 
   const gate = gates.get(id);
   if (!gate) return { ok: false, error: "gate_not_found" };
   gates.delete(id);
+  deleteGateDb(id);
   await fanOut(gate.exec, gate.nodeId, approved ? "success" : "fail", gate.result, gate.prevRunId);
   return { ok: true };
 }
 
 // 병렬 join — 들어오는 엣지가 2개 이상인 노드는 모든 분기가 도착해야 실행.
-// 키 = chainId:nodeId. 한계: 도착하지 않는 분기(실패로 끊김)가 있으면 join 은 영원히 대기.
+// 도착분은 sqlite 에도 적어 재시작을 견딘다(게이트와 짝을 이루는 시나리오:
+// 한 분기는 join 도착, 다른 분기는 게이트 대기 중 재시작 → 승인 시 합쳐져야 함).
+// 한계: 도착하지 않는 분기(실패로 끊김)가 있으면 join 은 영원히 대기.
 const joinArrivals = new Map<string, { results: string[]; lastRunId: string | null }>();
+
+/** 서버 부팅 시 — DB 에 남은 게이트·join 도착분을 인메모리로 복원.
+ *  exec 는 office 의 현재 워크플로우 정의로 재구성(편집됐다면 최신 기준).
+ *  counter 는 저장된 steps 부터 다시 세므로 분기 간 공유가 끊기지만, 한도는 여전히 유효. */
+export function restoreWorkflowState(): { gates: number; joins: number } {
+  const wfs = readWorkflows();
+  let restored = 0;
+  for (const row of listGatesDb()) {
+    const wf = wfs.find((w) => w.name === row.workflow);
+    if (!wf) {
+      logger.warn({ gate: row.id, workflow: row.workflow }, "gate workflow no longer exists — dropping");
+      deleteGateDb(row.id);
+      continue;
+    }
+    gates.set(row.id, {
+      id: row.id,
+      workflow: row.workflow,
+      nodeId: row.nodeId,
+      prevRunId: row.prevRunId,
+      projectId: row.projectId,
+      threadId: row.threadId,
+      result: row.result,
+      createdAt: row.createdAt,
+      exec: {
+        wf,
+        runInput: { input: row.input, projectId: row.projectId, threadId: row.threadId },
+        counter: { steps: row.steps },
+        chainId: row.chainId,
+      },
+    });
+    restored++;
+  }
+  let joins = 0;
+  for (const j of listJoinArrivalsDb()) {
+    joinArrivals.set(`${j.chainId}:${j.nodeId}`, { results: j.results, lastRunId: j.lastRunId });
+    joins++;
+  }
+  if (restored > 0 || joins > 0) logger.info({ gates: restored, joins }, "workflow paused state restored");
+  return { gates: restored, joins };
+}
 
 /** entry 노드를 시작하고 첫 run 을 즉시 반환 — 나머지 스텝은 비동기로 이어진다. */
 export async function startWorkflow(wf: WorkflowSpec, runInput: WorkflowRunInput): Promise<StartRunResult> {
@@ -154,11 +206,13 @@ async function enterNode(exec: Exec, nodeId: string, result: string, prevRunId: 
     arrival.results.push(result);
     arrival.lastRunId = prevRunId ?? arrival.lastRunId;
     joinArrivals.set(key, arrival);
+    insertJoinArrivalDb(exec.chainId, nodeId, arrival.results.length - 1, result, arrival.lastRunId);
     if (arrival.results.length < incoming) {
       log.info({ arrived: arrival.results.length, incoming }, "join waiting for branches");
       return;
     }
     joinArrivals.delete(key);
+    deleteJoinArrivalsDb(exec.chainId, nodeId);
     joinedResult = arrival.results.join("\n\n---\n\n");
     prevRunId = arrival.lastRunId;
   }
@@ -183,6 +237,19 @@ async function enterNode(exec: Exec, nodeId: string, result: string, prevRunId: 
       exec,
     };
     gates.set(gate.id, gate);
+    insertGateDb({
+      id: gate.id,
+      workflow: gate.workflow,
+      nodeId: gate.nodeId,
+      prevRunId: gate.prevRunId,
+      projectId: gate.projectId,
+      threadId: gate.threadId,
+      result: gate.result,
+      chainId: exec.chainId,
+      input: exec.runInput.input,
+      steps: exec.counter.steps,
+      createdAt: gate.createdAt,
+    });
     log.info({ gateId: gate.id }, "workflow paused at human gate");
     return;
   }

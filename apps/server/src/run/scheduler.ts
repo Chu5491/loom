@@ -5,7 +5,9 @@ import { Cron } from "croner";
 import type { Schedule } from "@loom/core";
 import { listSchedulesDb, touchScheduleLastRun } from "../db.js";
 import { logger } from "../logger.js";
+import { readWorkflows } from "../office.js";
 import { startRun } from "./engine.js";
+import { startWorkflow } from "./workflow.js";
 
 const jobs = new Map<string, Cron>();
 
@@ -33,7 +35,16 @@ export function nextRunAt(expr: string): string | null {
 function fire(s: Schedule): void {
   touchScheduleLastRun(s.id, new Date().toISOString());
   // fire-and-forget — 실패해도 스케줄러는 계속 돈다.
-  void startRun({ agent: s.agent, prompt: s.prompt, projectId: s.projectId })
+  // workflow 지정 시 prompt 는 {{input}} 값이 되어 그래프가 이어받는다.
+  const start = () => {
+    if (s.workflow) {
+      const wf = readWorkflows().find((w) => w.name === s.workflow);
+      if (!wf) return Promise.resolve({ ok: false as const, error: `workflow_not_found: ${s.workflow}` });
+      return startWorkflow(wf, { input: s.prompt, projectId: s.projectId });
+    }
+    return startRun({ agent: s.agent, prompt: s.prompt, projectId: s.projectId });
+  };
+  void start()
     .then((r) => {
       if (!r.ok) logger.warn({ schedule: s.id, name: s.name, error: r.error }, "scheduled run did not start");
       else logger.info({ schedule: s.id, name: s.name, runId: r.run.id }, "scheduled run fired");

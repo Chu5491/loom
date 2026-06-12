@@ -164,9 +164,13 @@ export interface Thread {
 export interface Schedule {
   id: string;
   name: string;
+  /** workflow 가 지정되면 무시 — 워크플로우 스케줄은 그래프가 에이전트를 정한다. */
   agent: string;
+  /** 에이전트 스케줄이면 보낼 프롬프트, 워크플로우 스케줄이면 {{input}} 값. */
   prompt: string;
   cron: string;
+  /** 지정 시 에이전트 run 대신 이 워크플로우를 시작한다. */
+  workflow?: string | null;
   projectId: string | null;
   enabled: boolean;
   lastRunAt: string | null;

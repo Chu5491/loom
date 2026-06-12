@@ -194,6 +194,11 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const project = input.projectId ? getProjectDb(input.projectId) : null;
   if (input.projectId && !project) return { ok: false, status: 404, error: "project_not_found" };
   const cwd = project?.path ?? input.cwd ?? config.home;
+  // cwd 가 사라졌으면(예: /tmp 프로젝트를 macOS 가 청소) Node 의 spawn 이
+  // "spawn claude ENOENT" 라는 오해 소지 큰 에러를 던진다 — 여기서 명확히 거른다.
+  if (!fs.existsSync(cwd)) {
+    return { ok: false, status: 400, error: `project_dir_missing: ${cwd}` };
+  }
 
   if (input.threadId && !getThreadDb(input.threadId)) {
     return { ok: false, status: 404, error: "thread_not_found" };
