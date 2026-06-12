@@ -8,10 +8,11 @@ import path from "node:path";
 import type { AdapterConfig, McpServer, OfficeEvent, RunInfo } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { config, paths } from "../config.js";
-import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEventsDb, getThreadDb, insertRun, lastSessionId, listRunsDb, type RunFilter } from "../db.js";
+import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEventsDb, getThreadDb, insertRun, lastSessionId, listRunsDb, monthCostUsd, type RunFilter } from "../db.js";
 import { logger } from "../logger.js";
 import {
   readAgents,
+  readBudget,
   readMcp,
   readRules,
   readSkills,
@@ -194,6 +195,22 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   if (!agent) return { ok: false, status: 404, error: "agent_not_found" };
   const adapter = getAdapter(agent.adapter);
   if (!adapter) return { ok: false, status: 400, error: `adapter_not_registered: ${agent.adapter}` };
+
+  // 월 예산 가드 — 초과 시 새 run 거부(이미 도는 run 은 끝까지). office/budget.json.
+  const budget = readBudget();
+  if (budget.monthlyUsd != null) {
+    const spent = monthCostUsd();
+    if (spent >= budget.monthlyUsd) {
+      return { ok: false, status: 400, error: `budget_exceeded: $${spent.toFixed(2)} / $${budget.monthlyUsd} this month` };
+    }
+  }
+  const agentCap = budget.perAgent[agent.name];
+  if (agentCap != null) {
+    const spent = monthCostUsd(agent.name);
+    if (spent >= agentCap) {
+      return { ok: false, status: 400, error: `agent_budget_exceeded: @${agent.name} $${spent.toFixed(2)} / $${agentCap} this month` };
+    }
+  }
 
   // 프로젝트 지정 시 그 디렉토리가 cwd. 검증 실패면 거절(엉뚱한 곳에서 돌지 않게).
   const project = input.projectId ? getProjectDb(input.projectId) : null;

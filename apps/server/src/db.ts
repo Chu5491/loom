@@ -56,6 +56,7 @@ export function getDb(): DB {
       prompt      TEXT NOT NULL,
       cron        TEXT NOT NULL,
       workflow    TEXT,
+      feature     TEXT,
       project_id  TEXT,
       enabled     INTEGER NOT NULL DEFAULT 1,
       last_run_at TEXT,
@@ -102,6 +103,9 @@ export function getDb(): DB {
   const schedCols = db.prepare<[], { name: string }>(`PRAGMA table_info(schedules)`).all();
   if (schedCols.length > 0 && !schedCols.some((c) => c.name === "workflow")) {
     db.exec(`ALTER TABLE schedules ADD COLUMN workflow TEXT`);
+  }
+  if (schedCols.length > 0 && !schedCols.some((c) => c.name === "feature")) {
+    db.exec(`ALTER TABLE schedules ADD COLUMN feature TEXT`);
   }
   _db = db;
   return db;
@@ -355,6 +359,7 @@ interface ScheduleRow {
   prompt: string;
   cron: string;
   workflow: string | null;
+  feature: string | null;
   project_id: string | null;
   enabled: number;
   last_run_at: string | null;
@@ -368,6 +373,7 @@ function toSchedule(r: ScheduleRow): Schedule {
     prompt: r.prompt,
     cron: r.cron,
     workflow: r.workflow,
+    feature: r.feature === "standup" ? "standup" : null,
     projectId: r.project_id,
     enabled: !!r.enabled,
     lastRunAt: r.last_run_at,
@@ -392,18 +398,18 @@ export function getScheduleDb(id: string): Schedule | null {
 export function insertSchedule(s: Schedule): void {
   getDb()
     .prepare(
-      `INSERT INTO schedules (id, name, agent, prompt, cron, workflow, project_id, enabled, last_run_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO schedules (id, name, agent, prompt, cron, workflow, feature, project_id, enabled, last_run_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(s.id, s.name, s.agent, s.prompt, s.cron, s.workflow ?? null, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.createdAt);
+    .run(s.id, s.name, s.agent, s.prompt, s.cron, s.workflow ?? null, s.feature ?? null, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.createdAt);
 }
 
 export function updateScheduleDb(s: Schedule): void {
   getDb()
     .prepare(
-      `UPDATE schedules SET name = ?, agent = ?, prompt = ?, cron = ?, workflow = ?, project_id = ?, enabled = ?, last_run_at = ? WHERE id = ?`,
+      `UPDATE schedules SET name = ?, agent = ?, prompt = ?, cron = ?, workflow = ?, feature = ?, project_id = ?, enabled = ?, last_run_at = ? WHERE id = ?`,
     )
-    .run(s.name, s.agent, s.prompt, s.cron, s.workflow ?? null, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.id);
+    .run(s.name, s.agent, s.prompt, s.cron, s.workflow ?? null, s.feature ?? null, s.projectId, s.enabled ? 1 : 0, s.lastRunAt, s.id);
 }
 
 export function deleteScheduleDb(id: string): boolean {
@@ -412,6 +418,24 @@ export function deleteScheduleDb(id: string): boolean {
 
 export function touchScheduleLastRun(id: string, at: string): void {
   getDb().prepare(`UPDATE schedules SET last_run_at = ? WHERE id = ?`).run(at, id);
+}
+
+/** 이번 달(UTC, 1일 0시 기준) 누적 비용 — 예산 가드용. agent 지정 시 그 에이전트만. */
+export function monthCostUsd(agent?: string): number {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const row = agent
+    ? getDb()
+        .prepare<[string, string], { c: number | null }>(
+          `SELECT SUM(COALESCE(cost_usd, 0)) c FROM runs WHERE started_at >= ? AND agent = ?`,
+        )
+        .get(monthStart, agent)
+    : getDb()
+        .prepare<[string], { c: number | null }>(
+          `SELECT SUM(COALESCE(cost_usd, 0)) c FROM runs WHERE started_at >= ?`,
+        )
+        .get(monthStart);
+  return row?.c ?? 0;
 }
 
 // ── 워크플로우 일시정지 상태 — 게이트·join 도착분 (서버 재시작 생존용) ────────────

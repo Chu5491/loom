@@ -190,6 +190,7 @@ function CompanyCards({ onOpenTab }: { onOpenTab: (tab: "office" | "connections"
           <span className="font-display text-2xl font-bold tabular-nums">${(u?.totals.costUsd ?? 0).toFixed(2)}</span>
           <span className="text-[11px] text-muted-foreground">{t("home.usageRuns", { n: String(u?.totals.runs ?? 0) })}</span>
         </span>
+        {u ? <BudgetLine month={u.month} /> : null}
         <span className="space-y-1">
           {topAgents.map((a) => {
             const adapter = adapterOf(a.agent);
@@ -207,6 +208,74 @@ function CompanyCards({ onOpenTab }: { onOpenTab: (tab: "office" | "connections"
         </span>
       </button>
     </div>
+  );
+}
+
+// 월 예산 진행 — office/budget.json. 카드(button) 안이라 편집 트리거는 span[role=button].
+function BudgetLine({ month }: { month: { costUsd: number; budgetUsd: number | null } }) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(month.budgetUsd?.toString() ?? "");
+  const save = useMutation({
+    // perAgent 한도를 덮어쓰지 않게 — 현재 값을 읽어 monthlyUsd 만 바꾼다.
+    mutationFn: async (monthlyUsd: number | null) => {
+      const cur = await api.getBudget();
+      return api.putBudget({ ...cur.budget, monthlyUsd });
+    },
+    onSuccess: () => { setEditing(false); void qc.invalidateQueries({ queryKey: ["usage"] }); },
+  });
+  const pct = month.budgetUsd ? Math.min(100, (month.costUsd / month.budgetUsd) * 100) : 0;
+  const tone = pct >= 100 ? "bg-destructive" : pct >= 80 ? "bg-warning" : "bg-success";
+
+  if (editing) {
+    return (
+      <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+        <input
+          autoFocus
+          inputMode="decimal"
+          value={value}
+          placeholder={t("home.budgetPh")}
+          onChange={(e) => setValue(e.target.value.replace(/[^0-9.]/g, ""))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save.mutate(value ? Number(value) : null);
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="h-6 w-20 rounded-md border border-primary/50 bg-background px-1.5 text-[11px] tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={() => save.mutate(value ? Number(value) : null)}
+          className="rounded-md border border-success/40 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success"
+        >
+          {save.isPending ? "…" : t("home.budgetSave")}
+        </span>
+      </span>
+    );
+  }
+  if (month.budgetUsd == null) {
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        className="self-start rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+      >
+        + {t("home.budgetSet")}
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1.5" onClick={(e) => { e.stopPropagation(); setEditing(true); }}>
+      <span className="text-[10px] text-muted-foreground">{t("home.budgetMonth")}</span>
+      <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/60">
+        <span className={cn("block h-full rounded-full", tone)} style={{ width: `${Math.max(3, pct)}%` }} />
+      </span>
+      <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+        ${month.costUsd.toFixed(2)} / ${month.budgetUsd}
+      </span>
+    </span>
   );
 }
 

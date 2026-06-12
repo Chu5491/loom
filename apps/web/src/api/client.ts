@@ -4,6 +4,7 @@ import type {
   AdapterManifest,
   AdapterProbeResult,
   AgentSpec,
+  BudgetSpec,
   McpServer,
   ModelListResult,
   Office,
@@ -16,6 +17,14 @@ import type {
   WorkflowGate,
   WorkflowSpec,
 } from "@loom/core";
+
+/** 스탠드업 — 서버 run/standup.ts 와 동일 형태. report 는 마크다운. */
+export interface Standup {
+  generatedAt: string;
+  agent: string;
+  runId: string;
+  report: string;
+}
 
 /** 분석 리포트 — 서버 zod 스키마(project-files.ts)와 동일 형태. */
 export interface AnalysisReport {
@@ -279,12 +288,27 @@ export const api = {
       totals: { runs: number; costUsd: number };
       byAgent: { agent: string; runs: number; costUsd: number }[];
       byDay: { day: string; runs: number; costUsd: number }[];
+      month: { costUsd: number; budgetUsd: number | null };
     }>(`/api/usage?days=${days}`),
+
+  // ── 예산 — office/budget.json (초과 시 새 run 거부) ──────────────────────────
+  getBudget: () => request<{ budget: BudgetSpec }>("/api/office/budget"),
+  putBudget: (budget: BudgetSpec) =>
+    request<{ budget: BudgetSpec }>("/api/office/budget", { method: "PUT", body: JSON.stringify(budget) }),
+
+  // ── 스탠드업 — 지난 24h run 기록 기반 데일리 리포트 ─────────────────────────
+  getStandup: (projectId: string) =>
+    request<{ standup: Standup | null; history: Standup[] }>(`/api/projects/${projectId}/standup`),
+  runStandup: (projectId: string, agent: string, lang: "en" | "ko") =>
+    request<{ standup: Standup }>(`/api/projects/${projectId}/standup`, {
+      method: "POST",
+      body: JSON.stringify({ agent, lang }),
+    }),
 
   // ── schedules — cron 반복 실행 (머신-로컬) ─────────────────────────────────
   listSchedules: (projectId: string | null) =>
     request<{ schedules: Schedule[] }>(`/api/schedules?projectId=${projectId ?? "none"}`),
-  createSchedule: (body: { name: string; agent: string; prompt: string; cron: string; workflow?: string | null; projectId: string | null; enabled?: boolean }) =>
+  createSchedule: (body: { name: string; agent: string; prompt: string; cron: string; workflow?: string | null; feature?: "standup" | null; projectId: string | null; enabled?: boolean }) =>
     request<{ schedule: Schedule }>("/api/schedules", { method: "POST", body: JSON.stringify(body) }),
   patchSchedule: (id: string, body: Partial<{ name: string; agent: string; prompt: string; cron: string; enabled: boolean }>) =>
     request<{ schedule: Schedule }>(`/api/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

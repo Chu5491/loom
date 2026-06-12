@@ -11,6 +11,7 @@ import { paths } from "../config.js";
 import { getProjectDb, getRunEventsDb, listAgentFileActivity } from "../db.js";
 import { readFeaturePrompt } from "../office.js";
 import { startRun, waitForRun } from "../run/engine.js";
+import { getStandup, runStandup } from "../run/standup.js";
 import { isResponse, parseBody } from "./helpers.js";
 
 const exec = promisify(execFile);
@@ -341,4 +342,21 @@ projectFilesRoute.post("/:id/analyze", async (c) => {
   } catch (e) {
     return c.json({ error: (e as Error).message }, 504);
   }
+});
+
+// ── 스탠드업 — 지난 24h run 기록 + git log 로 데일리 리포트 (run/standup.ts) ────
+projectFilesRoute.get("/:id/standup", (c) => {
+  const p = project(c);
+  if (!p) return c.json({ error: "not_found" }, 404);
+  return c.json(getStandup(p.id));
+});
+
+projectFilesRoute.post("/:id/standup", async (c) => {
+  const p = project(c);
+  if (!p) return c.json({ error: "not_found" }, 404);
+  const data = await parseBody(c, z.object({ agent: z.string().min(1), lang: z.enum(["en", "ko"]).default("en") }));
+  if (isResponse(data)) return data;
+  const r = await runStandup(p.id, data.agent, data.lang);
+  if (!r.ok) return c.json({ error: r.error }, r.status as 400);
+  return c.json({ standup: r.standup });
 });

@@ -7,6 +7,7 @@ import { importRulesArchive, importSkillArchive } from "../office-import.js";
 import { isResponse, parseBody } from "./helpers.js";
 import {
   agentSchema,
+  budgetSchema,
   deleteAgent,
   deleteRule,
   deleteSkill,
@@ -16,6 +17,7 @@ import {
   type FeaturePromptName,
   mcpListSchema,
   readAgents,
+  readBudget,
   readOffice,
   readSkillFile,
   ruleSchema,
@@ -23,6 +25,7 @@ import {
   skillSchema,
   workflowSchema,
   writeAgent,
+  writeBudget,
   writeFeaturePrompt,
   writeMcp,
   writeRule,
@@ -35,6 +38,14 @@ export const officeRoute = new Hono();
 
 // 전체 오피스 (Office 화면이 한 번에 로드).
 officeRoute.get("/", (c) => c.json({ office: readOffice() }));
+
+// ── budget — 월 예산 (office/budget.json) ───────────────────────────────────
+officeRoute.get("/budget", (c) => c.json({ budget: readBudget() }));
+officeRoute.put("/budget", async (c) => {
+  const data = await parseBody(c, budgetSchema);
+  if (isResponse(data)) return data;
+  return c.json({ budget: writeBudget(data) });
+});
 
 // ── rules ──────────────────────────────────────────────────────────────────
 officeRoute.put("/rules/:name", async (c) => {

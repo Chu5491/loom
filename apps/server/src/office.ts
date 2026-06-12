@@ -6,6 +6,7 @@ import path from "node:path";
 import { z } from "zod";
 import type {
   AgentSpec,
+  BudgetSpec,
   McpServer,
   Office,
   RuleSpec,
@@ -27,6 +28,7 @@ const dir = {
   agents: () => path.join(paths.office, "agents"),
   workflows: () => path.join(paths.office, "workflows"),
   mcpFile: () => path.join(paths.office, "mcp", "servers.json"),
+  budgetFile: () => path.join(paths.office, "budget.json"),
 };
 
 // ── zod 스키마 (입력 경계 검증) ─────────────────────────────────────────────
@@ -210,10 +212,30 @@ export function readAgents(): AgentSpec[] {
   });
 }
 
+// ── 월 예산 — office/budget.json (정의 = git). 없으면 무제한.
+export const budgetSchema = z.object({
+  monthlyUsd: z.number().positive().nullable().default(null),
+  perAgent: z.record(z.string(), z.number().positive()).default({}),
+});
+
+export function readBudget(): BudgetSpec {
+  try {
+    return budgetSchema.parse(JSON.parse(fs.readFileSync(dir.budgetFile(), "utf8")));
+  } catch {
+    return { monthlyUsd: null, perAgent: {} }; // 파일 없음/깨짐 = 한도 없음
+  }
+}
+
+export function writeBudget(spec: BudgetSpec): BudgetSpec {
+  const parsed = budgetSchema.parse(spec);
+  fs.writeFileSync(dir.budgetFile(), JSON.stringify(parsed, null, 2) + "\n");
+  return parsed;
+}
+
 // ── 기능 프롬프트 — git 커밋·프로젝트 분석 같은 내장 기능의 지침(스타일·관점).
 // 양식(출력 형식)은 서버 코드에 고정, 이 파일은 그 앞에 붙는 조정 가능한 부분.
 // 에이전트 프롬프트와 분리 — 기능 실행 시 에이전트의 prompt 대신 이게 쓰인다.
-export const FEATURE_PROMPT_NAMES = ["git-commit", "analysis"] as const;
+export const FEATURE_PROMPT_NAMES = ["git-commit", "analysis", "standup"] as const;
 export type FeaturePromptName = (typeof FEATURE_PROMPT_NAMES)[number];
 
 const DEFAULT_FEATURE_PROMPTS: Record<FeaturePromptName, string> = {
@@ -223,6 +245,9 @@ const DEFAULT_FEATURE_PROMPTS: Record<FeaturePromptName, string> = {
   analysis:
     "You are analyzing this repository for its team dashboard.\n" +
     "Be honest and specific — scores should reflect reality, risks should be actionable, suggestions concrete.\n",
+  standup:
+    "You are writing the team's daily standup report for this project.\n" +
+    "Be factual and brief — pull from the run history provided and the git log; do not invent work that did not happen.\n",
 };
 
 function featurePromptFile(name: FeaturePromptName): string {

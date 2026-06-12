@@ -8,6 +8,7 @@ import { deleteScheduleDb, getProjectDb, getScheduleDb, insertSchedule, listSche
 import { readAgents, readWorkflows } from "../office.js";
 import { startRun } from "../run/engine.js";
 import { nextRunAt, reschedule, validateCron } from "../run/scheduler.js";
+import { runStandup } from "../run/standup.js";
 import { startWorkflow } from "../run/workflow.js";
 import { isResponse, parseBody } from "./helpers.js";
 
@@ -26,14 +27,23 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(100),
   // workflow 지정 시 agent 는 무시(그래프가 정함) — 빈 문자열 허용.
   agent: z.string().default(""),
-  prompt: z.string().trim().min(1).max(20_000),
+  // feature 스케줄(standup)은 서버가 프롬프트를 조립 — 빈 문자열 허용.
+  prompt: z.string().trim().max(20_000).default(""),
   cron: z.string().trim().min(1),
   workflow: z.string().nullable().default(null),
+  feature: z.enum(["standup"]).nullable().default(null),
   projectId: z.string().nullable().default(null),
   enabled: z.boolean().default(true),
 });
 
-function validateTarget(data: { agent: string; workflow: string | null }): string | null {
+type Target = { agent: string; workflow: string | null; feature: "standup" | null; prompt: string; projectId: string | null };
+function validateTarget(data: Target): string | null {
+  if (data.feature === "standup") {
+    if (!data.agent) return "agent_required_for_standup";
+    if (!data.projectId) return "project_required_for_standup";
+    return readAgents().some((a) => a.name === data.agent) ? null : "agent_not_found";
+  }
+  if (!data.prompt) return "prompt_required";
   if (data.workflow) {
     return readWorkflows().some((w) => w.name === data.workflow) ? null : "workflow_not_found";
   }
@@ -44,7 +54,7 @@ function validateTarget(data: { agent: string; workflow: string | null }): strin
 schedulesRoute.post("/", async (c) => {
   const data = await parseBody(c, createSchema);
   if (isResponse(data)) return data;
-  const targetErr = validateTarget(data);
+  const targetErr = validateTarget({ ...data, feature: data.feature ?? null, workflow: data.workflow ?? null });
   if (targetErr) return c.json({ error: targetErr }, 400);
   if (data.projectId && !getProjectDb(data.projectId)) return c.json({ error: "project_not_found" }, 400);
   const cronErr = validateCron(data.cron);
@@ -62,7 +72,7 @@ schedulesRoute.patch("/:id", async (c) => {
   const data = await parseBody(c, patchSchema);
   if (isResponse(data)) return data;
   const next: Schedule = { ...cur, ...data };
-  const targetErr = validateTarget({ agent: next.agent, workflow: next.workflow ?? null });
+  const targetErr = validateTarget({ agent: next.agent, workflow: next.workflow ?? null, feature: next.feature ?? null, prompt: next.prompt, projectId: next.projectId });
   if (targetErr) return c.json({ error: targetErr }, 400);
   if (data.cron) {
     const cronErr = validateCron(data.cron);
@@ -83,6 +93,12 @@ schedulesRoute.delete("/:id", (c) => {
 schedulesRoute.post("/:id/run", async (c) => {
   const s = getScheduleDb(c.req.param("id"));
   if (!s) return c.json({ error: "not_found" }, 404);
+  if (s.feature === "standup") {
+    if (!s.projectId) return c.json({ error: "project_required_for_standup" }, 400);
+    const r = await runStandup(s.projectId, s.agent, "ko");
+    if (!r.ok) return c.json({ error: r.error }, r.status as 400);
+    return c.json({ standup: r.standup }, 201);
+  }
   if (s.workflow) {
     const wf = readWorkflows().find((w) => w.name === s.workflow);
     if (!wf) return c.json({ error: "workflow_not_found" }, 400);

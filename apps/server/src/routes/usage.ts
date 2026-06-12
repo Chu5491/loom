@@ -2,7 +2,8 @@
 // 표준 조회 수단이 없어(각 CLI 가 비공개) 여기선 소비량·비용만 집계한다.
 
 import { Hono } from "hono";
-import { getDb } from "../db.js";
+import { getDb, monthCostUsd } from "../db.js";
+import { readBudget } from "../office.js";
 
 export const usageRoute = new Hono();
 
@@ -33,5 +34,9 @@ usageRoute.get("/", (c) => {
     { runs: 0, costUsd: 0 },
   );
 
-  return c.json({ days, totals, byAgent, byDay });
+  // 예산 진행 — 이번 달 누적 vs office/budget.json 한도(없으면 null).
+  const budget = readBudget();
+  const month = { costUsd: monthCostUsd(), budgetUsd: budget.monthlyUsd };
+
+  return c.json({ days, totals, byAgent, byDay, month });
 });

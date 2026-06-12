@@ -150,6 +150,14 @@ export interface Project {
   lastRunAt?: string | null;
 }
 
+/** 월 예산 — 정의이므로 office/budget.json(git 커밋). null=무제한.
+ *  초과 시 새 run 시작이 거부된다(이미 도는 run 은 끝까지). */
+export interface BudgetSpec {
+  monthlyUsd: number | null;
+  /** 에이전트별 월 한도 — 없는 에이전트는 전체 한도만 적용. */
+  perAgent: Record<string, number>;
+}
+
 /** 대화 스레드 — 같은 스레드의 연속 턴은 CLI 세션을 resume 해 맥락이 이어진다.
  *  기록이므로 data/(sqlite)에. 이름은 첫 프롬프트에서 파생. */
 export interface Thread {
@@ -171,6 +179,9 @@ export interface Schedule {
   cron: string;
   /** 지정 시 에이전트 run 대신 이 워크플로우를 시작한다. */
   workflow?: string | null;
+  /** 내장 기능 스케줄 — "standup" 이면 서버가 run 기록을 모아 agent 에게
+   *  스탠드업 리포트를 받는다(projectId 필수). */
+  feature?: "standup" | null;
   projectId: string | null;
   enabled: boolean;
   lastRunAt: string | null;

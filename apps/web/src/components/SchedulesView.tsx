@@ -3,10 +3,11 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, Play, Plus, Trash2, Workflow as WorkflowIcon } from "lucide-react";
+import { CalendarClock, Play, Plus, Sunrise, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import type { Project, Schedule } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
+import { Markdown } from "./Markdown.js";
 import { Button } from "./ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { cn } from "../lib/utils.js";
@@ -35,7 +36,7 @@ export function SchedulesView({ project }: { project: Project }) {
   const onErr = (e: unknown) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e));
 
   const create = useMutation({
-    mutationFn: (body: { name: string; agent: string; prompt: string; cron: string; workflow: string | null }) =>
+    mutationFn: (body: { name: string; agent: string; prompt: string; cron: string; workflow: string | null; feature?: "standup" | null }) =>
       api.createSchedule({ ...body, projectId: project.id }),
     onSuccess: () => { setAdding(false); setErr(null); invalidate(); },
     onError: onErr,
@@ -64,6 +65,15 @@ export function SchedulesView({ project }: { project: Project }) {
       </div>
       {err ? <p className="mt-2 text-xs text-destructive">{err}</p> : null}
 
+      <StandupCard
+        project={project}
+        agents={agents.map((a) => a.name)}
+        hasSchedule={list.some((s) => s.feature === "standup")}
+        onSchedule={(agent) =>
+          create.mutate({ name: "daily-standup", agent, prompt: "", cron: "0 9 * * *", workflow: null, feature: "standup" })
+        }
+      />
+
       {adding ? (
         <ScheduleForm
           agents={agents.map((a) => a.name)}
@@ -90,7 +100,9 @@ export function SchedulesView({ project }: { project: Project }) {
           return (
             <div key={s.id} className={cn("rounded-xl border bg-card p-3.5", s.enabled ? "border-border" : "border-border/50 opacity-60")}>
               <div className="flex items-center gap-2.5">
-                {s.workflow ? (
+                {s.feature === "standup" ? (
+                  <span className="flex size-[22px] shrink-0 items-center justify-center rounded-md bg-warning/10 text-warning"><Sunrise className="size-3.5" /></span>
+                ) : s.workflow ? (
                   <span className="flex size-[22px] shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><WorkflowIcon className="size-3.5" /></span>
                 ) : adapter ? (
                   <AgentAvatar adapter={adapter} size={22} className="rounded-md" />
@@ -101,7 +113,7 @@ export function SchedulesView({ project }: { project: Project }) {
                     <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{s.cron}</code>
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {s.workflow ? `▶ ${s.workflow}` : `@${s.agent}`} · {s.prompt}
+                    {s.feature === "standup" ? `${t("standup.title")} · @${s.agent}` : `${s.workflow ? `▶ ${s.workflow}` : `@${s.agent}`} · ${s.prompt}`}
                   </span>
                 </span>
                 {/* enabled 토글 */}
@@ -142,6 +154,82 @@ export function SchedulesView({ project }: { project: Project }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// 데일리 스탠드업 — 지난 24h run 기록 + git log 로 에이전트가 쓰는 리포트.
+// 수동 생성 버튼 + "매일 9시 자동" 원클릭 스케줄(feature:"standup").
+function StandupCard({
+  project, agents, hasSchedule, onSchedule,
+}: {
+  project: Project;
+  agents: string[];
+  hasSchedule: boolean;
+  onSchedule: (agent: string) => void;
+}) {
+  const { t, lang } = useI18n();
+  const qc = useQueryClient();
+  const [agent, setAgent] = useState("");
+  const [open, setOpen] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const standup = useQuery({ queryKey: ["standup", project.id], queryFn: () => api.getStandup(project.id) });
+  const gen = useMutation({
+    mutationFn: (a: string) => api.runStandup(project.id, a, lang === "ko" ? "ko" : "en"),
+    onSuccess: () => { setErr(null); void qc.invalidateQueries({ queryKey: ["standup", project.id] }); },
+    onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
+  });
+  const picked = agent || agents[0] || "";
+  const latest = standup.data?.standup ?? null;
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div className="mt-3 rounded-xl border border-warning/30 bg-warning/5 p-3.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Sunrise className="size-4 text-warning" />
+        <span className="text-sm font-semibold">{t("standup.title")}</span>
+        {latest ? (
+          <span className="text-[10px] text-muted-foreground">{t("standup.last")}: {fmt(latest.generatedAt)} · @{latest.agent}</span>
+        ) : null}
+        <span className="ml-auto flex items-center gap-1.5">
+          <select
+            value={picked}
+            onChange={(e) => setAgent(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            {agents.map((a) => <option key={a} value={a}>@{a}</option>)}
+          </select>
+          <Button size="sm" disabled={!picked || gen.isPending} onClick={() => gen.mutate(picked)}>
+            {gen.isPending ? "…" : t("standup.run")}
+          </Button>
+          {!hasSchedule ? (
+            <Button size="sm" variant="secondary" disabled={!picked} onClick={() => onSchedule(picked)}>
+              <CalendarClock className="size-3.5" />
+              {t("standup.schedule")}
+            </Button>
+          ) : null}
+        </span>
+      </div>
+      {err ? <p className="mt-2 text-xs text-destructive">{err}</p> : null}
+      {latest ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="text-[10px] text-muted-foreground transition-colors hover:text-primary"
+          >
+            {open ? t("standup.hide") : t("standup.show")}
+          </button>
+          {open ? (
+            <div className="mt-1.5 rounded-lg border border-border/60 bg-card px-3 py-2 text-sm">
+              <Markdown>{latest.report}</Markdown>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">{t("standup.empty")}</p>
+      )}
     </div>
   );
 }
