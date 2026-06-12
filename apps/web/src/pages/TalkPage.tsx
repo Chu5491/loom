@@ -83,6 +83,8 @@ export function TalkPage({ project }: { project: Project }) {
 
   // 라이브 활동 집계 — 각 버블(run)이 보고하는 "지금 하는 일"을 팀 패널에 흘린다.
   const [activities, setActivities] = useState<Record<string, { agent: string; item: TraceItem | null }>>({});
+  // 활동 스트림 — 보고가 바뀔 때마다 시간순 누적(최근 50). 스레드 전환 시 리셋.
+  const [feed, setFeed] = useState<{ at: number; runId: string; agent: string; item: TraceItem }[]>([]);
   const reportActivity = useCallback((runId: string, agent: string, item: TraceItem | null, running: boolean) => {
     setActivities((prev) => {
       if (!running) {
@@ -93,7 +95,15 @@ export function TalkPage({ project }: { project: Project }) {
       }
       return { ...prev, [runId]: { agent, item } };
     });
+    if (running && item) {
+      setFeed((prev) => {
+        const last = [...prev].reverse().find((f) => f.runId === runId);
+        if (last && last.item.name === item.name && last.item.target === item.target) return prev;
+        return [...prev, { at: Date.now(), runId, agent, item }].slice(-50);
+      });
+    }
   }, []);
+  useEffect(() => setFeed([]), [threadId]);
 
   // 첫 에이전트를 기본 대상으로.
   useEffect(() => {
@@ -402,6 +412,7 @@ export function TalkPage({ project }: { project: Project }) {
         workflows={office.data.office.workflows}
         runs={runs.data?.runs ?? []}
         activities={activities}
+        feed={feed}
         active={active}
         onActive={setActive}
         onRunWorkflow={(name) => setWfOpen(name)}
@@ -552,6 +563,7 @@ function TeamPanel({
   workflows,
   runs,
   activities,
+  feed,
   active,
   onActive,
   onRunWorkflow,
@@ -560,6 +572,7 @@ function TeamPanel({
   workflows: WorkflowSpec[];
   runs: RunInfo[];
   activities: Record<string, { agent: string; item: TraceItem | null }>;
+  feed: { at: number; runId: string; agent: string; item: TraceItem }[];
   active: string;
   onActive: (name: string) => void;
   onRunWorkflow: (name: string) => void;
@@ -657,6 +670,34 @@ function TeamPanel({
           <span className="ml-auto text-[10px] text-muted-foreground">{t("talk.team.handing")}</span>
         </div>
       ))}
+
+      {/* 활동 스트림 — 누가 언제 어떤 도구/파일을 만졌는지 (최근이 위) */}
+      {feed.length > 0 ? (
+        <>
+          <h3 className="mb-2 mt-6 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <Sparkles className="size-3.5" />
+            {t("talk.team.activity")}
+          </h3>
+          <div className="space-y-0.5">
+            {[...feed].reverse().slice(0, 12).map((f, i) => {
+              const Icon = traceIcon(f.item);
+              return (
+                <div key={`${f.runId}-${f.at}-${i}`} className={cn("flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10px]", i === 0 && "bg-primary/5")}>
+                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground/60">
+                    {new Date(f.at).toTimeString().slice(0, 8)}
+                  </span>
+                  <span className="shrink-0 font-medium text-foreground/80">@{f.agent}</span>
+                  <Icon className={cn("size-2.5 shrink-0", i === 0 ? "text-primary" : "text-muted-foreground")} />
+                  <span className="shrink-0 text-muted-foreground">{f.item.name}</span>
+                  {f.item.target ? (
+                    <span className="truncate font-mono text-muted-foreground/70">{f.item.target.split("/").pop()}</span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
 
       {workflows.length > 0 ? (
         <>
