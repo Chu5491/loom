@@ -61,11 +61,33 @@ export function FilesView({ project }: { project: Project }) {
   const adapterOf = (name: string) => agentsQ.data?.office.agents.find((a) => a.name === name)?.adapter;
 
   const editors = selected ? changedBy.get(selected) ?? [] : [];
+  const changedList = useMemo(() => [...changedBy.keys()].slice(0, 6), [changedBy]);
 
   return (
     <div className="flex h-full min-w-0 flex-1 gap-0 py-4">
       {/* 트리 */}
-      <div className="w-64 shrink-0 overflow-y-auto rounded-l-2xl border border-border bg-card/60 p-2">
+      <div className="flex w-64 shrink-0 flex-col overflow-y-auto rounded-l-2xl border border-border bg-card/60 p-2">
+        {/* 에이전트가 만진 파일 — 바로 점프 */}
+        {changedList.length > 0 ? (
+          <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 p-1.5">
+            <p className="mb-1 px-0.5 text-[10px] font-medium uppercase tracking-wide text-primary/80">
+              {t("files.touched", { n: String(changedBy.size) })}
+            </p>
+            <div className="space-y-0.5">
+              {changedList.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => { setSelected(p); setMode("diff"); }}
+                  className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left font-mono text-[10px] text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
+                >
+                  <span className={cn("size-1.5 shrink-0 rounded-full", changedBy.get(p)?.some((e) => e.action === "edit") ? "bg-warning" : "bg-success")} />
+                  <span className="truncate">{p.split("/").pop()}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <DirNode
           project={project}
           path="."
@@ -80,9 +102,22 @@ export function FilesView({ project }: { project: Project }) {
       <div className="min-w-0 flex-1 overflow-hidden rounded-r-2xl border border-l-0 border-border bg-card">
         {selected ? (
           <div className="flex h-full flex-col">
-            <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
+            <div className="flex items-center gap-1.5 border-b border-border/60 px-4 py-2">
+              {/* 경로 브레드크럼 — 마지막 세그먼트만 강조 */}
               <FileIcon className="size-3.5 shrink-0 text-primary" />
-              <span className="truncate font-mono text-xs">{selected}</span>
+              <span className="flex min-w-0 items-center gap-1 truncate font-mono text-xs">
+                {selected.split("/").map((seg, i, arr) => (
+                  <span key={i} className="flex items-center gap-1">
+                    {i > 0 ? <span className="text-muted-foreground/40">/</span> : null}
+                    <span className={i === arr.length - 1 ? "text-foreground" : "text-muted-foreground"}>{seg}</span>
+                  </span>
+                ))}
+              </span>
+              {selected.includes(".") ? (
+                <span className="shrink-0 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[9px] uppercase text-muted-foreground">
+                  {selected.split(".").pop()}
+                </span>
+              ) : null}
               {/* 이 파일을 바꾼 에이전트들 */}
               {editors.map((e) => {
                 const adapter = adapterOf(e.agent);
@@ -92,15 +127,17 @@ export function FilesView({ project }: { project: Project }) {
                   </span>
                 ) : null;
               })}
-              <div className="ml-auto inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+              <div className="ml-auto inline-flex shrink-0 gap-1">
                 {(["code", "diff"] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
                     onClick={() => setMode(m)}
                     className={cn(
-                      "flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors",
-                      mode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all",
+                      mode === m
+                        ? "bg-primary/15 text-foreground shadow-[var(--shadow-glow-sm)]"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                     )}
                   >
                     {m === "diff" ? <GitCompareArrows className="size-3" /> : <FileIcon className="size-3" />}

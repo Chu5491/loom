@@ -47,8 +47,8 @@ export function GitView({ project }: { project: Project }) {
   const adapterOf = (name: string) => agentsQ.data?.office.agents.find((a) => a.name === name)?.adapter;
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["git", project.id] });
-  const stage = useMutation({ mutationFn: (p: string) => api.gitStage(project.id, [p]), onSuccess: invalidate });
-  const unstage = useMutation({ mutationFn: (p: string) => api.gitUnstage(project.id, [p]), onSuccess: invalidate });
+  const stage = useMutation({ mutationFn: (ps: string[]) => api.gitStage(project.id, ps), onSuccess: invalidate });
+  const unstage = useMutation({ mutationFn: (ps: string[]) => api.gitUnstage(project.id, ps), onSuccess: invalidate });
   const commit = useMutation({
     mutationFn: () => api.gitCommit(project.id, message.trim()),
     onSuccess: () => { setMessage(""); setErr(null); invalidate(); },
@@ -78,13 +78,30 @@ export function GitView({ project }: { project: Project }) {
       {/* 좌: 변경 + 커밋 + 활동 */}
       <div className="flex w-80 shrink-0 flex-col overflow-y-auto rounded-l-2xl border border-border bg-card/60 p-3">
         <div className="flex items-center gap-1.5 text-sm">
-          <GitBranch className="size-4 text-primary" />
-          <span className="font-mono text-xs font-medium">{s?.branch ?? "…"}</span>
-          <span className="ml-auto text-[11px] text-muted-foreground">{t("git.changes", { n: String(s?.files.length ?? 0) })}</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5">
+            <GitBranch className="size-3.5 text-primary" />
+            <span className="font-mono text-xs font-medium">{s?.branch ?? "…"}</span>
+          </span>
+          <span className={cn(
+            "ml-auto rounded-full px-2 py-0.5 text-[11px] tabular-nums",
+            (s?.files.length ?? 0) > 0 ? "bg-warning/10 text-warning" : "text-muted-foreground",
+          )}>
+            {t("git.changes", { n: String(s?.files.length ?? 0) })}
+          </span>
         </div>
 
-        <FileGroup title={t("git.staged")} files={stagedFiles} action="unstage" selected={selected} onSelect={setSelected} onAct={(p) => unstage.mutate(p)} />
-        <FileGroup title={t("git.unstaged")} files={unstagedFiles} action="stage" selected={selected} onSelect={setSelected} onAct={(p) => stage.mutate(p)} />
+        <FileGroup
+          title={t("git.staged")} files={stagedFiles} action="unstage" selected={selected} onSelect={setSelected}
+          onAct={(p) => unstage.mutate([p])}
+          onActAll={stagedFiles.length > 1 ? () => unstage.mutate(stagedFiles.map((f) => f.path)) : undefined}
+          actAllLabel={t("git.unstageAll")}
+        />
+        <FileGroup
+          title={t("git.unstaged")} files={unstagedFiles} action="stage" selected={selected} onSelect={setSelected}
+          onAct={(p) => stage.mutate([p])}
+          onActAll={unstagedFiles.length > 1 ? () => stage.mutate(unstagedFiles.map((f) => f.path)) : undefined}
+          actAllLabel={t("git.stageAll")}
+        />
 
         {/* 커밋 */}
         <div className="mt-3 border-t border-border/60 pt-3">
@@ -110,10 +127,8 @@ export function GitView({ project }: { project: Project }) {
                 : t("git.suggest")
               }
               className={cn(
-                "flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-all",
-                suggest.isPending
-                  ? "border-primary/40 bg-primary/10 text-primary"
-                  : "border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-40",
+                "flex h-7 shrink-0 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium text-white transition-all",
+                "bg-gradient-accent shadow-[var(--shadow-glow-sm)] hover:opacity-90 disabled:opacity-40 disabled:shadow-none",
               )}
             >
               <Sparkles className={cn("size-3", suggest.isPending && "animate-pulse")} />
@@ -221,6 +236,8 @@ function FileGroup({
   selected,
   onSelect,
   onAct,
+  onActAll,
+  actAllLabel,
 }: {
   title: string;
   files: { status: string; path: string }[];
@@ -228,11 +245,24 @@ function FileGroup({
   selected: string | null;
   onSelect: (p: string) => void;
   onAct: (p: string) => void;
+  onActAll?: () => void;
+  actAllLabel?: string;
 }) {
   if (files.length === 0) return null;
   return (
     <div className="mt-3">
-      <h3 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title} · {files.length}</h3>
+      <h3 className="mb-1 flex items-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {title} · {files.length}
+        {onActAll ? (
+          <button
+            type="button"
+            onClick={onActAll}
+            className="ml-auto rounded px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+          >
+            {actAllLabel}
+          </button>
+        ) : null}
+      </h3>
       <div className="space-y-0.5">
         {files.map((f) => (
           <div

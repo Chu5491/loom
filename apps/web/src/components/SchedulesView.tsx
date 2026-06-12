@@ -52,6 +52,18 @@ export function SchedulesView({ project }: { project: Project }) {
   const list = schedules.data?.schedules ?? [];
   const fmt = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+  // 다음 실행까지 상대시간 — "3시간 후" 가 절대시각보다 빨리 읽힌다.
+  const rel = (iso: string | null | undefined) => {
+    if (!iso) return null;
+    const ms = new Date(iso).getTime() - Date.now();
+    if (ms <= 0) return null;
+    const rtf = new Intl.RelativeTimeFormat(lang === "ko" ? "ko" : "en", { numeric: "always" });
+    const min = Math.round(ms / 60_000);
+    if (min < 60) return rtf.format(min, "minute");
+    const hr = Math.round(min / 60);
+    if (hr < 48) return rtf.format(hr, "hour");
+    return rtf.format(Math.round(hr / 24), "day");
+  };
 
   return (
     <div className="min-w-0 flex-1 overflow-y-auto py-4">
@@ -146,8 +158,13 @@ export function SchedulesView({ project }: { project: Project }) {
                   <Trash2 className="size-3.5" />
                 </button>
               </div>
-              <div className="mt-2 flex gap-4 text-[11px] text-muted-foreground">
-                <span>{t("sched.next")}: <span className="font-mono">{s.enabled ? fmt(s.nextRunAt) : t("sched.paused")}</span></span>
+              <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  {t("sched.next")}: <span className="font-mono">{s.enabled ? fmt(s.nextRunAt) : t("sched.paused")}</span>
+                  {s.enabled && rel(s.nextRunAt) ? (
+                    <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{rel(s.nextRunAt)}</span>
+                  ) : null}
+                </span>
                 <span>{t("sched.last")}: <span className="font-mono">{fmt(s.lastRunAt)}</span></span>
               </div>
             </div>
@@ -200,9 +217,15 @@ function StandupCard({
           >
             {agents.map((a) => <option key={a} value={a}>@{a}</option>)}
           </select>
-          <Button size="sm" disabled={!picked || gen.isPending} onClick={() => gen.mutate(picked)}>
+          <button
+            type="button"
+            disabled={!picked || gen.isPending}
+            onClick={() => gen.mutate(picked)}
+            className="flex h-8 items-center gap-1.5 rounded-md bg-gradient-accent px-3 text-xs font-medium text-white shadow-[var(--shadow-glow-sm)] transition-all hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
+          >
+            <Sunrise className={cn("size-3.5", gen.isPending && "animate-pulse")} />
             {gen.isPending ? "…" : t("standup.run")}
-          </Button>
+          </button>
           {!hasSchedule ? (
             <Button size="sm" variant="secondary" disabled={!picked} onClick={() => onSchedule(picked)}>
               <CalendarClock className="size-3.5" />

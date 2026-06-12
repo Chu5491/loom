@@ -93,12 +93,7 @@ export function AnalysisView({ project }: { project: Project }) {
             type="button"
             disabled={!picked || analyze.isPending}
             onClick={() => analyze.mutate()}
-            className={cn(
-              "flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-all",
-              analyze.isPending
-                ? "border-primary/40 bg-primary/10 text-primary"
-                : "border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-40",
-            )}
+            className="flex h-8 items-center gap-1.5 rounded-md bg-gradient-accent px-3 text-xs font-medium text-white shadow-[var(--shadow-glow-sm)] transition-all hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
           >
             <Sparkles className={cn("size-3.5", analyze.isPending && "animate-pulse")} />
             {analyze.isPending ? t("analysis.running") : analysis ? t("analysis.rerun") : t("analysis.run")}
@@ -192,7 +187,8 @@ function ReportBoard({ report }: { report: AnalysisReport }) {
     <div className="mt-4 space-y-4">
       {/* 히어로 — 종합 링 + 카테고리 게이지 + 빅넘버 */}
       {overall !== null || report.metrics.files || report.metrics.loc ? (
-        <section className="flex flex-wrap items-center gap-6 rounded-2xl border border-primary/20 bg-card p-5">
+        <section className="relative flex flex-wrap items-center gap-6 overflow-hidden rounded-2xl border border-primary/20 bg-card p-5 shadow-[var(--shadow-glow-sm)]">
+          <span className="absolute inset-x-0 top-0 h-1 bg-gradient-accent opacity-60" />
           {overall !== null ? <ScoreRing score={overall} label={t("analysis.overall")} /> : null}
           {healthEntries.length ? (
             <div className="min-w-44 flex-1 space-y-2.5">
@@ -276,18 +272,25 @@ function ReportBoard({ report }: { report: AnalysisReport }) {
   );
 }
 
-// 종합 점수 — SVG 링 게이지.
+// 종합 점수 — SVG 링 게이지. 진행 호는 시그니처 violet→cyan 그라데이션,
+// 숫자는 점수 톤(성/주의/위험) — "브랜드"와 "판정"을 분리해 둘 다 읽힌다.
 function ScoreRing({ score, label }: { score: number; label: string }) {
   const R = 42;
   const C = 2 * Math.PI * R;
   return (
     <div className="relative flex size-28 shrink-0 items-center justify-center">
       <svg viewBox="0 0 100 100" className="size-28 -rotate-90">
+        <defs>
+          <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--color-primary)" />
+            <stop offset="100%" stopColor="var(--color-accent-2, #06b6d4)" />
+          </linearGradient>
+        </defs>
         <circle cx="50" cy="50" r={R} fill="none" strokeWidth="8" className="stroke-muted/60" />
         <circle
           cx="50" cy="50" r={R} fill="none" strokeWidth="8" strokeLinecap="round"
           strokeDasharray={`${(score / 100) * C} ${C}`}
-          className={cn("transition-all", scoreTone(score))} stroke="currentColor"
+          stroke="url(#ring-grad)" className="drop-shadow-[0_0_6px_var(--color-primary)] transition-all"
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
