@@ -387,8 +387,8 @@ function FormChip({ label, n }: { label: string; n: number }) {
   );
 }
 
-// ── 프로젝트 추가 — 폴더 피커 + 이름 ───────────────────────────────────────────
-function AddProject({ onDone }: { onDone: (openedId: string | null) => void }) {
+// ── 프로젝트 추가 — 폴더 피커 + 이름 (홈·프로젝트 화면 공용) ─────────────────────
+export function AddProject({ onDone }: { onDone: (openedId: string | null) => void }) {
   const { t } = useI18n();
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");

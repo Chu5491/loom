@@ -98,16 +98,30 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
   return (
     <section
       className={cn(
-        "flex flex-col rounded-xl border bg-card p-5 transition-shadow",
+        "relative flex flex-col overflow-hidden rounded-2xl border bg-card p-5 transition-shadow",
         ready
           ? "border-primary/25 shadow-[var(--shadow-glow-sm)]"
           : "border-border",
       )}
     >
+      {/* 연결 시그니처 — 살아있는 CLI 는 상단 그라데이션 띠 */}
+      {ready ? <span className="absolute inset-x-0 top-0 h-1 bg-gradient-accent" /> : null}
+
       {/* 아이덴티티 + 상태 */}
-      <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
-          <AdapterIcon manifest={manifest} size={24} />
+      <div className="flex items-start gap-3.5">
+        <span
+          className={cn(
+            "relative flex size-14 shrink-0 items-center justify-center rounded-2xl border bg-background",
+            ready ? "border-primary/40 shadow-[var(--shadow-glow-sm)]" : "border-border opacity-70",
+          )}
+        >
+          <AdapterIcon manifest={manifest} size={32} />
+          <span
+            className={cn(
+              "absolute -bottom-1 -right-1 size-3 rounded-full ring-2 ring-card",
+              ready ? "animate-pulse bg-success" : binary?.available ? "bg-warning" : "bg-muted-foreground/30",
+            )}
+          />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -220,22 +234,20 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
             <Zap className="size-3.5" />
             {test.isPending ? t("conn.test.running") : t("conn.test.run")}
           </Button>
-          {testResult ? (
-            <span
-              className={cn(
-                "min-w-0 truncate text-xs",
-                testResult.ok ? "text-success" : "text-destructive",
-              )}
-              title={testResult.output || testResult.stderr || testResult.error}
-            >
-              {testResult.ok
-                ? `${selectedModel ? selectedModel + " · " : ""}${t("conn.test.ok", { sec: (testResult.durationMs / 1000).toFixed(1) })} — “${testResult.output.slice(0, 60)}”`
-                : testResult.timedOut
-                  ? t("conn.test.timeout")
-                  : `${t("conn.test.fail")}: ${(testResult.error || testResult.stderr || `exit ${testResult.exitCode}`).slice(0, 80)}`}
-            </span>
-          ) : null}
         </div>
+        {/* 터미널풍 결과 블록 — CLI 와의 대화라는 정체성을 그대로 */}
+        {testResult ? (
+          <div className="mt-2.5 rounded-lg border border-border/60 bg-background/80 px-3 py-2 font-mono text-[11px] leading-relaxed">
+            <span className="text-muted-foreground">$ {manifest.kind} {selectedModel ? `--model ${selectedModel}` : ""}</span>
+            <p className={cn("mt-0.5 break-all", testResult.ok ? "text-success" : "text-destructive")}>
+              {testResult.ok
+                ? `✓ ${t("conn.test.ok", { sec: (testResult.durationMs / 1000).toFixed(1) })} — “${testResult.output.slice(0, 80)}”`
+                : testResult.timedOut
+                  ? `✗ ${t("conn.test.timeout")}`
+                  : `✗ ${t("conn.test.fail")}: ${(testResult.error || testResult.stderr || `exit ${testResult.exitCode}`).slice(0, 120)}`}
+            </p>
+          </div>
+        ) : null}
       </div>
     </section>
   );

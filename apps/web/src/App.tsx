@@ -18,9 +18,10 @@ import { cn } from "./lib/utils.js";
 import { ConnectionsPage } from "./pages/ConnectionsPage.js";
 import { HomePage } from "./pages/HomePage.js";
 import { OfficePage } from "./pages/OfficePage.js";
+import { ProjectsPage } from "./pages/ProjectsPage.js";
 import { TalkPage } from "./pages/TalkPage.js";
 
-type Tab = "home" | "office" | "connections";
+type Tab = "home" | "projects" | "office" | "connections";
 
 export function App() {
   const { t, lang, setLang } = useI18n();
@@ -80,6 +81,7 @@ export function App() {
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "home", label: t("nav.home"), icon: <House className="size-4" /> },
+    { key: "projects", label: t("nav.projects"), icon: <FolderGit2 className="size-4" /> },
     { key: "office", label: t("nav.office"), icon: <FolderCog className="size-4" /> },
     { key: "connections", label: t("nav.connections"), icon: <Plug className="size-4" /> },
   ];
@@ -230,6 +232,8 @@ export function App() {
           <OfficePage />
         ) : tab === "connections" ? (
           <ConnectionsPage />
+        ) : tab === "projects" ? (
+          <ProjectsPage onOpen={setProject} />
         ) : project ? (
           <TalkPage project={project} />
         ) : (

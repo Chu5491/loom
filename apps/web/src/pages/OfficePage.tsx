@@ -212,6 +212,7 @@ function Segmented<T extends string>({
 }
 
 // ── Agents ───────────────────────────────────────────────────────────────────
+// 에이전트 = 인물 카드 그리드 — 팀원 보드. 클릭하면 우측 드로어에서 편집.
 function AgentsSection({ office }: { office: Office }) {
   const { t } = useI18n();
   const invalidate = useInvalidate();
@@ -219,36 +220,78 @@ function AgentsSection({ office }: { office: Office }) {
   const [open, setOpen] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: (a: AgentSpec) => api.putAgent(a.name, a),
-    onSuccess: (_d, v) => { invalidate(); setDrafts((d) => d.filter((x) => x.name !== v.name)); },
+    onSuccess: (_d, v) => { invalidate(); setDrafts((d) => d.filter((x) => x.name !== v.name)); setOpen(null); },
   });
-  const del = useMutation({ mutationFn: api.deleteAgent, onSuccess: invalidate });
+  const del = useMutation({ mutationFn: api.deleteAgent, onSuccess: () => { invalidate(); setOpen(null); } });
 
   const items = [...office.agents, ...drafts];
+  const keyOf = (i: number) => (i >= office.agents.length ? `new-${i - office.agents.length}` : items[i]!.name);
+  const openIdx = items.findIndex((_a, i) => keyOf(i) === open);
 
   return (
-    <div className="space-y-2.5">
+    <div>
       <SectionHead
         label={t("office.new.agent")}
         onAdd={() => { setDrafts((d) => [...d, { name: "", adapter: "claude-code" }]); setOpen(`new-${drafts.length}`); }}
       />
       {items.length === 0 ? <Empty /> : null}
-      {items.map((a, i) => {
-        const isNew = i >= office.agents.length;
-        const key = isNew ? `new-${i - office.agents.length}` : a.name;
-        return (
-          <AgentCard
-            key={key}
-            agent={a}
-            isNew={isNew}
-            office={office}
-            open={open === key}
-            onToggle={() => setOpen((o) => (o === key ? null : key))}
-            onSave={(next) => save.mutate(next)}
-            onDelete={isNew ? undefined : () => confirm(t("office.deleteConfirm", { name: a.name })) && del.mutate(a.name)}
-            pending={save.isPending}
-          />
-        );
-      })}
+
+      {/* 인물 카드 그리드 */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {items.map((a, i) => {
+          const isNew = i >= office.agents.length;
+          const key = keyOf(i);
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setOpen(key)}
+              className="group relative flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-border bg-card px-4 pb-4 pt-6 text-center transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]"
+            >
+              {/* 상단 그라데이션 띠 — 인물 카드의 시그니처 */}
+              <span className="absolute inset-x-0 top-0 h-1 bg-gradient-accent opacity-60 transition-opacity group-hover:opacity-100" />
+              <AgentAvatar adapter={a.adapter} size={52} className="rounded-2xl shadow-[var(--shadow-glow-sm)]" />
+              <span className="min-w-0">
+                <span className="block truncate font-display text-base font-semibold">{a.label || a.name || t("office.untitled")}</span>
+                <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+              </span>
+              <span className="flex flex-wrap items-center justify-center gap-1">
+                <Badge tone="neutral">{a.adapter}</Badge>
+                {a.delegate ? <Badge tone="info">{t("office.agent.card.delegate")}</Badge> : null}
+                {(a.roles ?? []).map((r) => <Badge key={r} tone="success">{r}</Badge>)}
+                {!a.model && !isNew ? <Badge tone="warn">{t("office.agent.noModel")}</Badge> : null}
+              </span>
+              <span className="mt-0.5 flex items-center gap-2.5 text-[10px] text-muted-foreground">
+                <span>{t("office.section.rules")} {(a.rules ?? []).length}</span>
+                <span>{t("office.section.skills")} {(a.skills ?? []).length}</span>
+                <span>MCP {(a.mcp ?? []).length}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 편집 드로어 — 우측에서 슬라이드, 기존 편집 폼을 그대로 싣는다 */}
+      {open !== null && openIdx >= 0 ? (
+        <div
+          className="fixed inset-0 z-40 flex justify-end bg-background/60 backdrop-blur-sm"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(null); }}
+        >
+          <div className="h-full w-full max-w-xl overflow-y-auto border-l border-border bg-background p-4 shadow-2xl">
+            <AgentCard
+              key={open}
+              agent={items[openIdx]!}
+              isNew={openIdx >= office.agents.length}
+              office={office}
+              open
+              onToggle={() => setOpen(null)}
+              onSave={(next) => save.mutate(next)}
+              onDelete={openIdx >= office.agents.length ? undefined : () => confirm(t("office.deleteConfirm", { name: items[openIdx]!.name })) && del.mutate(items[openIdx]!.name)}
+              pending={save.isPending}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

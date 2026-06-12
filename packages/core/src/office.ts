@@ -148,6 +148,8 @@ export interface Project {
   /** 대시보드 통계 — 목록 API 가 채워줌(단건/생성 응답엔 없을 수 있음). */
   threadCount?: number;
   lastRunAt?: string | null;
+  runCount?: number;
+  costUsd?: number;
 }
 
 /** 월 예산 — 정의이므로 office/budget.json(git 커밋). null=무제한.

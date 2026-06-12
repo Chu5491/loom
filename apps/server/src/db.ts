@@ -320,15 +320,17 @@ const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, path: r
 export function listProjectsDb(): Project[] {
   // 대시보드용 통계 동봉 — 최근 활동 순(활동 없는 프로젝트는 뒤로).
   return getDb()
-    .prepare<[], ProjectRow & { thread_count: number; last_run_at: string | null }>(
+    .prepare<[], ProjectRow & { thread_count: number; last_run_at: string | null; run_count: number; cost_usd: number | null }>(
       `SELECT p.*,
          (SELECT COUNT(*) FROM threads t WHERE t.project_id = p.id) AS thread_count,
-         (SELECT MAX(r.started_at) FROM runs r WHERE r.project_id = p.id) AS last_run_at
+         (SELECT MAX(r.started_at) FROM runs r WHERE r.project_id = p.id) AS last_run_at,
+         (SELECT COUNT(*) FROM runs r WHERE r.project_id = p.id) AS run_count,
+         (SELECT SUM(COALESCE(r.cost_usd, 0)) FROM runs r WHERE r.project_id = p.id) AS cost_usd
        FROM projects p
        ORDER BY last_run_at IS NULL, last_run_at DESC, p.created_at DESC`,
     )
     .all()
-    .map((r) => ({ ...toProject(r), threadCount: r.thread_count, lastRunAt: r.last_run_at }));
+    .map((r) => ({ ...toProject(r), threadCount: r.thread_count, lastRunAt: r.last_run_at, runCount: r.run_count, costUsd: r.cost_usd ?? 0 }));
 }
 
 export function getProjectDb(id: string): Project | null {
