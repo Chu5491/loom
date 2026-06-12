@@ -301,6 +301,12 @@ export const api = {
   putBudget: (budget: BudgetSpec) =>
     request<{ budget: BudgetSpec }>("/api/office/budget", { method: "PUT", body: JSON.stringify(budget) }),
 
+  // ── 프로젝트 공유 메모 — <project>/.loom/notes.md (팀의 프로젝트 기억) ────────
+  getNotes: (projectId: string) =>
+    request<{ notes: string | null }>(`/api/projects/${projectId}/notes`),
+  putNotes: (projectId: string, notes: string) =>
+    request<{ ok: boolean }>(`/api/projects/${projectId}/notes`, { method: "PUT", body: JSON.stringify({ notes }) }),
+
   // ── 스탠드업 — 지난 24h run 기록 기반 데일리 리포트 ─────────────────────────
   getStandup: (projectId: string) =>
     request<{ standup: Standup | null; history: Standup[] }>(`/api/projects/${projectId}/standup`),

@@ -10,6 +10,9 @@ export interface ComposeInput {
   /** 에이전트 지시 프롬프트. */
   agentPrompt?: string;
   loadout?: AgentLoadout | null;
+  /** 프로젝트 공유 메모(<project>/.loom/notes.md) — 파일이 있을 때만 경로 안내.
+   *  본문은 주입하지 않는다(자동 주입 금지) — 에이전트가 필요할 때 Read. */
+  projectNotesPath?: string | null;
 }
 
 export function composePrompt(input: ComposeInput): string {
@@ -24,6 +27,15 @@ export function composePrompt(input: ComposeInput): string {
 
   if (input.loadout && (input.loadout.skills.length || input.loadout.mcpServerNames.length || input.loadout.delegate)) {
     sections.push(renderLoadout(input.loadout));
+  }
+
+  if (input.projectNotesPath) {
+    sections.push(
+      "=== Project Memory ===\n" +
+        `Shared team notes for this project: ${input.projectNotesPath}\n` +
+        "Read it when past context would help. After meaningful work, append concise durable notes (decisions, gotchas, conventions) — keep entries short.\n" +
+        "=== End Project Memory ===",
+    );
   }
 
   sections.push(input.userPrompt);

@@ -23,6 +23,14 @@ describe("composePrompt", () => {
     expect(out).not.toContain("=== Loadout ===");
   });
 
+  it("mentions project memory path only when provided — body never injected", () => {
+    const withNotes = composePrompt({ userPrompt: "p", rules: [], projectNotesPath: "/work/proj/.loom/notes.md" });
+    expect(withNotes).toContain("=== Project Memory ===");
+    expect(withNotes).toContain("/work/proj/.loom/notes.md");
+    const without = composePrompt({ userPrompt: "p", rules: [], projectNotesPath: null });
+    expect(without).not.toContain("Project Memory");
+  });
+
   it("renders the delegate shell bridge for MCP-less CLIs", () => {
     const out = composePrompt({
       userPrompt: "p",

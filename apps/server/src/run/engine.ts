@@ -289,12 +289,15 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   }
 
   const loadout = materializeLoadout(agent, skills, mcp, bridge);
+  // 프로젝트 공유 메모 — 파일이 있을 때만 경로 안내(없으면 침묵, 자동 생성 안 함).
+  const notesPath = project ? path.join(project.path, ".loom", "notes.md") : null;
   const prompt = composePrompt({
     userPrompt: input.prompt,
     rules,
     // 기능 실행(git 커밋·분석)은 에이전트 개성 대신 기능 프롬프트 — 출력 일관성.
     agentPrompt: input.promptOverride ?? agent.prompt,
     loadout,
+    projectNotesPath: notesPath && fs.existsSync(notesPath) ? notesPath : null,
   });
   const info: RunInfo = {
     id,

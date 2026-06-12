@@ -4,11 +4,11 @@
 // 자동주입 없음 — 스킬 첨부는 사용자의 명시적 선택, 파일은 텍스트로 경로만 들어간다.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
-  Paperclip, Pencil, Plug, ScanSearch, Sparkles, Terminal, Trash2, Workflow, Wrench, X,
+  NotebookPen, Paperclip, Pencil, Plug, ScanSearch, Sparkles, Terminal, Trash2, Workflow, Wrench, X,
 } from "lucide-react";
 import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, WorkflowSpec } from "@loom/core";
 import { api } from "../api/client.js";
@@ -20,6 +20,7 @@ import { SchedulesView } from "../components/SchedulesView.js";
 import { GitView } from "../components/GitView.js";
 import { Markdown } from "../components/Markdown.js";
 import { WorkflowLiveGraph } from "../components/WorkflowLiveGraph.js";
+import { Button } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
@@ -79,6 +80,7 @@ export function TalkPage({ project }: { project: Project }) {
   const [view, setView] = useState<WsView>("talk");
   // 워크플로우 실행 모달 — null=닫힘, ""=열림(선택 없음), "이름"=그 워크플로우 preselect.
   const [wfOpen, setWfOpen] = useState<string | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 라이브 활동 집계 — 각 버블(run)이 보고하는 "지금 하는 일"을 팀 패널에 흘린다.
@@ -288,20 +290,33 @@ export function TalkPage({ project }: { project: Project }) {
                 <option key={th.id} value={th.id}>{th.name}</option>
               ))}
             </select>
-            {(office.data?.office.workflows.length ?? 0) > 0 ? (
+            <span className="ml-auto flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
-                title={t("talk.workflow.run")}
-                onClick={() => setWfOpen("")}
-                className="ml-auto flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-primary/40 px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                title={t("notes.title")}
+                onClick={() => setNotesOpen(true)}
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
               >
-                <CirclePlay className="size-4" />
-                {t("talk.workflow.run")}
+                <NotebookPen className="size-4" />
+                {t("notes.title")}
               </button>
-            ) : null}
+              {(office.data?.office.workflows.length ?? 0) > 0 ? (
+                <button
+                  type="button"
+                  title={t("talk.workflow.run")}
+                  onClick={() => setWfOpen("")}
+                  className="flex h-8 items-center gap-1.5 rounded-md border border-primary/40 px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                >
+                  <CirclePlay className="size-4" />
+                  {t("talk.workflow.run")}
+                </button>
+              ) : null}
+            </span>
           </>
         ) : null}
       </div>
+
+      {notesOpen ? <NotesModal projectId={projectId} onClose={() => setNotesOpen(false)} /> : null}
 
       {wfOpen !== null ? (
         <WorkflowRunModal
@@ -421,6 +436,64 @@ export function TalkPage({ project }: { project: Project }) {
       />
         </>
       )}
+      </div>
+    </div>
+  );
+}
+
+// 프로젝트 공유 메모 — <project>/.loom/notes.md. 사람과 에이전트가 같은 파일을
+// 읽고 쓴다(run 프롬프트에는 파일이 있을 때만 경로 안내).
+function NotesModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const notes = useQuery({ queryKey: ["notes", projectId], queryFn: () => api.getNotes(projectId) });
+  const [draft, setDraft] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (text: string) => api.putNotes(projectId, text),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["notes", projectId] }); onClose(); },
+  });
+  const value = draft ?? notes.data?.notes ?? "";
+  const empty = !notes.isLoading && notes.data?.notes == null && draft === null;
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-2xl border border-border bg-card p-4 shadow-2xl">
+        <div className="mb-2 flex items-center gap-2">
+          <NotebookPen className="size-4 text-primary" />
+          <h2 className="font-display text-base font-semibold">{t("notes.title")}</h2>
+          <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">.loom/notes.md</code>
+          <button type="button" onClick={onClose} className="ml-auto text-muted-foreground hover:text-foreground" aria-label="close">
+            <X className="size-4" />
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">{t("notes.hint")}</p>
+        {empty ? (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border py-10 text-center">
+            <p className="max-w-sm text-sm text-muted-foreground">{t("notes.empty")}</p>
+            <Button size="sm" onClick={() => setDraft(`# ${t("notes.title")}\n\n`)}>
+              <NotebookPen className="size-3.5" />
+              {t("notes.start")}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <textarea
+              value={value}
+              autoFocus
+              onChange={(e) => setDraft(e.target.value)}
+              className="min-h-72 flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2.5 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={onClose}>{t("common.cancel")}</Button>
+              <Button size="sm" disabled={draft === null || save.isPending} onClick={() => save.mutate(value)}>
+                {save.isPending ? "…" : t("notes.save")}
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

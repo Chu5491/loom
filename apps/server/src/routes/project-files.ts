@@ -344,6 +344,32 @@ projectFilesRoute.post("/:id/analyze", async (c) => {
   }
 });
 
+// ── 프로젝트 공유 메모 — <project>/.loom/notes.md (팀의 프로젝트 기억) ──────────
+// run 프롬프트에는 파일이 있을 때만 경로가 안내된다(본문 주입 없음).
+function notesPath(projectPath: string): string {
+  return path.join(projectPath, ".loom", "notes.md");
+}
+
+projectFilesRoute.get("/:id/notes", (c) => {
+  const p = project(c);
+  if (!p) return c.json({ error: "not_found" }, 404);
+  try {
+    return c.json({ notes: fs.readFileSync(notesPath(p.path), "utf8") });
+  } catch {
+    return c.json({ notes: null }); // 아직 없음 — UI 가 "시작" 을 제안
+  }
+});
+
+projectFilesRoute.put("/:id/notes", async (c) => {
+  const p = project(c);
+  if (!p) return c.json({ error: "not_found" }, 404);
+  const data = await parseBody(c, z.object({ notes: z.string().max(200_000) }));
+  if (isResponse(data)) return data;
+  fs.mkdirSync(path.join(p.path, ".loom"), { recursive: true });
+  fs.writeFileSync(notesPath(p.path), data.notes);
+  return c.json({ ok: true });
+});
+
 // ── 스탠드업 — 지난 24h run 기록 + git log 로 데일리 리포트 (run/standup.ts) ────
 projectFilesRoute.get("/:id/standup", (c) => {
   const p = project(c);
