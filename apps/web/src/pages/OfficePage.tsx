@@ -48,7 +48,7 @@ export function OfficePage() {
               type="button"
               onClick={() => setSection(tb.key)}
               className={cn(
-                "group flex flex-1 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition-all md:flex-none",
+                "group flex flex-1 items-center gap-2.5 rounded-xl border px-3 py-2 text-left text-sm transition-all md:flex-none",
                 section === tb.key
                   ? "border-primary/40 bg-primary/10 text-foreground shadow-[var(--shadow-glow-sm)]"
                   : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground",
@@ -75,7 +75,7 @@ export function OfficePage() {
           count={tabs.find((tb) => tb.key === section)?.count}
           className="min-w-0"
         >
-          <p className="mb-4 text-sm text-muted-foreground">{t(`office.section.${section}.desc`)}</p>
+          <p className="mb-3 text-xs text-muted-foreground">{t(`office.section.${section}.desc`)}</p>
           {!data ? (
             <p className="text-sm text-muted-foreground">{t("common.checking")}</p>
           ) : section === "rules" ? (
@@ -151,7 +151,7 @@ function SectionHead({ onAdd, label, onImport }: { onAdd: () => void; label: str
   const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
   return (
-    <div className="mb-4 flex items-center justify-end gap-2">
+    <div className="mb-3 flex items-center justify-end gap-2">
       {onImport ? (
         <>
           <input
@@ -239,8 +239,8 @@ function AgentsSection({ office }: { office: Office }) {
       />
       {items.length === 0 ? <Empty /> : null}
 
-      {/* 인물 카드 그리드 */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {/* 인물 카드 그리드 — 가로형 컴팩트(좌 아바타 · 우 정보 2줄 + 실적) */}
+      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((a, i) => {
           const isNew = i >= office.agents.length;
           const key = keyOf(i);
@@ -249,27 +249,28 @@ function AgentsSection({ office }: { office: Office }) {
               key={key}
               type="button"
               onClick={() => setOpen(key)}
-              className="group relative flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-border bg-card px-4 pb-4 pt-6 text-center transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]"
+              className="group relative flex flex-col gap-1.5 overflow-hidden rounded-xl border border-border bg-card p-3 pt-3.5 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]"
             >
               {/* 상단 그라데이션 띠 — 인물 카드의 시그니처 */}
-              <span className="absolute inset-x-0 top-0 h-1 bg-gradient-accent opacity-60 transition-opacity group-hover:opacity-100" />
-              <AgentAvatar adapter={a.adapter} size={52} className="rounded-2xl shadow-[var(--shadow-glow-sm)]" />
-              <span className="min-w-0">
-                <span className="block truncate font-display text-base font-semibold">{a.label || a.name || t("office.untitled")}</span>
-                <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+              <span className="absolute inset-x-0 top-0 h-0.5 bg-gradient-accent opacity-60 transition-opacity group-hover:opacity-100" />
+              <span className="flex items-center gap-2.5">
+                <AgentAvatar adapter={a.adapter} size={36} className="shrink-0 rounded-xl" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-1.5">
+                    <span className="truncate font-display text-sm font-semibold">{a.label || a.name || t("office.untitled")}</span>
+                    {a.delegate ? <span className="shrink-0 rounded-full bg-info/10 px-1.5 text-[9px] font-medium text-info">{t("office.agent.card.delegate")}</span> : null}
+                    {(a.roles ?? []).map((r) => <span key={r} className="shrink-0 rounded-full bg-success/10 px-1.5 text-[9px] font-medium text-success">{r}</span>)}
+                    {!a.model && !isNew ? <span className="shrink-0 rounded-full bg-warning/10 px-1.5 text-[9px] font-medium text-warning">{t("office.agent.noModel")}</span> : null}
+                  </span>
+                  <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.adapter} · {a.model || "—"}</span>
+                </span>
               </span>
-              <span className="flex flex-wrap items-center justify-center gap-1">
-                <Badge tone="neutral">{a.adapter}</Badge>
-                {a.delegate ? <Badge tone="info">{t("office.agent.card.delegate")}</Badge> : null}
-                {(a.roles ?? []).map((r) => <Badge key={r} tone="success">{r}</Badge>)}
-                {!a.model && !isNew ? <Badge tone="warn">{t("office.agent.noModel")}</Badge> : null}
-              </span>
-              <span className="mt-0.5 flex items-center gap-2.5 text-[10px] text-muted-foreground">
+              <span className="flex items-center gap-2 text-[10px] text-muted-foreground">
                 <span>{t("office.section.rules")} {(a.rules ?? []).length}</span>
                 <span>{t("office.section.skills")} {(a.skills ?? []).length}</span>
                 <span>MCP {(a.mcp ?? []).length}</span>
+                <AgentRecordInline stat={statOf(a.name)} />
               </span>
-              <AgentRecord stat={statOf(a.name)} />
             </button>
           );
         })}
@@ -300,17 +301,17 @@ function AgentsSection({ office }: { office: Office }) {
   );
 }
 
-// 30일 실적 줄 — 성공률 미니 바 + run 수 + 사람 평가. 기록 없으면 조용히 생략.
-function AgentRecord({ stat }: { stat?: { runs: number; succeeded: number; failed: number; thumbsUp: number; thumbsDown: number } }) {
+// 30일 실적 — 카운트 줄 끝에 붙는 인라인(성공률 미니 바 + run 수 + 평가). 기록 없으면 생략.
+function AgentRecordInline({ stat }: { stat?: { runs: number; succeeded: number; failed: number; thumbsUp: number; thumbsDown: number } }) {
   const { t } = useI18n();
   if (!stat || stat.runs === 0) return null;
   const done = stat.succeeded + stat.failed;
   const pct = done > 0 ? Math.round((stat.succeeded / done) * 100) : null;
   return (
-    <span className="mt-1.5 flex w-full items-center gap-1.5 border-t border-border/40 pt-2 text-[10px] text-muted-foreground">
+    <span className="ml-auto flex shrink-0 items-center gap-1.5">
       {pct !== null ? (
         <>
-          <span className="h-1 w-12 overflow-hidden rounded-full bg-muted/60">
+          <span className="h-1 w-10 overflow-hidden rounded-full bg-muted/60">
             <span
               className={cn("block h-full rounded-full", pct >= 80 ? "bg-success" : pct >= 50 ? "bg-warning" : "bg-destructive")}
               style={{ width: `${pct}%` }}
@@ -319,7 +320,7 @@ function AgentRecord({ stat }: { stat?: { runs: number; succeeded: number; faile
           <span className="font-mono tabular-nums">{pct}%</span>
         </>
       ) : null}
-      <span className="ml-auto tabular-nums">{t("office.agent.record", { n: String(stat.runs) })}</span>
+      <span className="tabular-nums" title={t("office.agent.record", { n: String(stat.runs) })}>×{stat.runs}</span>
       {stat.thumbsUp > 0 ? <span className="tabular-nums text-success">👍{stat.thumbsUp}</span> : null}
       {stat.thumbsDown > 0 ? <span className="tabular-nums text-destructive">👎{stat.thumbsDown}</span> : null}
     </span>

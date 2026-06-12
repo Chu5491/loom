@@ -98,27 +98,27 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
   return (
     <section
       className={cn(
-        "relative flex flex-col overflow-hidden rounded-2xl border bg-card p-5 transition-shadow",
+        "relative flex flex-col overflow-hidden rounded-xl border bg-card p-4 transition-shadow",
         ready
           ? "border-primary/25 shadow-[var(--shadow-glow-sm)]"
           : "border-border",
       )}
     >
       {/* 연결 시그니처 — 살아있는 CLI 는 상단 그라데이션 띠 */}
-      {ready ? <span className="absolute inset-x-0 top-0 h-1 bg-gradient-accent" /> : null}
+      {ready ? <span className="absolute inset-x-0 top-0 h-0.5 bg-gradient-accent" /> : null}
 
       {/* 아이덴티티 + 상태 */}
-      <div className="flex items-start gap-3.5">
+      <div className="flex items-start gap-3">
         <span
           className={cn(
-            "relative flex size-14 shrink-0 items-center justify-center rounded-2xl border bg-background",
+            "relative flex size-10 shrink-0 items-center justify-center rounded-xl border bg-background",
             ready ? "border-primary/40 shadow-[var(--shadow-glow-sm)]" : "border-border opacity-70",
           )}
         >
-          <AdapterIcon manifest={manifest} size={32} />
+          <AdapterIcon manifest={manifest} size={24} />
           <span
             className={cn(
-              "absolute -bottom-1 -right-1 size-3 rounded-full ring-2 ring-card",
+              "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-card",
               ready ? "animate-pulse bg-success" : binary?.available ? "bg-warning" : "bg-muted-foreground/30",
             )}
           />
@@ -155,14 +155,14 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
               </>
             )}
           </div>
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground" title={manifest.description}>
             {manifest.description}
           </p>
         </div>
       </div>
 
       {/* 모델 */}
-      <div className="mt-4 flex-1">
+      <div className="mt-3 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
             {t("conn.models.title")}
@@ -196,10 +196,10 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
         </div>
 
         {models.isLoading ? (
-          <Skeleton className="mt-2 h-9 w-full rounded-md" />
+          <Skeleton className="mt-1.5 h-8 w-full rounded-md" />
         ) : (
           <select
-            className="mt-2 h-9 w-full rounded-md border border-input bg-background px-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1.5 h-8 w-full rounded-md border border-input bg-background px-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
             value={selectedModel}
             onChange={(e) => setSelectedModel(e.target.value)}
           >
@@ -222,7 +222,7 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
       </div>
 
       {/* 연동 테스트 */}
-      <div className="mt-4 border-t border-border pt-3">
+      <div className="mt-3 border-t border-border/60 pt-2.5">
         <div className="flex items-center gap-3">
           <Button
             size="sm"
