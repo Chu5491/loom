@@ -1,4 +1,5 @@
 import { spawn, exec } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import type { RunHandle } from "@loom/core";
 
 const IS_WIN = process.platform === "win32";
@@ -54,8 +55,14 @@ export async function spawnProcess(opts: SpawnProcessOptions): Promise<RunHandle
     else opts.signal.addEventListener("abort", onAbort, { once: true });
   }
 
-  proc.stdout.on("data", (b: Buffer) => opts.onStdout(b.toString("utf8")));
-  proc.stderr.on("data", (b: Buffer) => opts.onStderr(b.toString("utf8")));
+  // 청크가 UTF-8 멀티바이트 문자(한글 3바이트 등) 중간에서 잘리면 chunk 별
+  // toString 은 양쪽을 U+FFFD 로 깨뜨린다 — StringDecoder 가 경계를 이어붙인다.
+  const outDec = new StringDecoder("utf8");
+  const errDec = new StringDecoder("utf8");
+  proc.stdout.on("data", (b: Buffer) => opts.onStdout(outDec.write(b)));
+  proc.stderr.on("data", (b: Buffer) => opts.onStderr(errDec.write(b)));
+  proc.stdout.on("end", () => { const tail = outDec.end(); if (tail) opts.onStdout(tail); });
+  proc.stderr.on("end", () => { const tail = errDec.end(); if (tail) opts.onStderr(tail); });
 
   const promise = new Promise<{ exitCode: number; signal: NodeJS.Signals | null }>(
     (resolve, reject) => {

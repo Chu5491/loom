@@ -30,6 +30,23 @@ describe("spawnProcess", () => {
     expect(handle.pid).toBeGreaterThan(0);
   });
 
+  it("reassembles multibyte UTF-8 split across chunk boundaries (Korean survives)", async () => {
+    const { onStdout, onStderr, stdout } = captureStreams();
+    // dd bs=1 로 1바이트씩 흘려 한글(3바이트)이 반드시 청크 경계에서 잘리게 한다.
+    const handle = await spawnProcess({
+      command: "/bin/sh",
+      args: ["-c", "printf '연동 게이트 한글' | dd bs=1 2>/dev/null"],
+      cwd: process.cwd(),
+      env: {},
+      onStdout,
+      onStderr,
+    });
+    await handle.promise;
+    const text = stdout.join("");
+    expect(text).toBe("연동 게이트 한글");
+    expect(text).not.toContain("�");
+  });
+
   it("forwards stderr to onStderr", async () => {
     const { onStdout, onStderr, stdout, stderr } = captureStreams();
     const handle = await spawnProcess({

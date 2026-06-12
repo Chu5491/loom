@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { RunInfo } from "@loom/core";
 import { paths } from "../config.js";
-import { getRunEventsDb, listRunsDb } from "../db.js";
+import { getProjectDb, getRunEventsDb, listRunsDb } from "../db.js";
 import { readFeaturePrompt } from "../office.js";
 import { startRun, waitForRun } from "./engine.js";
 
@@ -45,12 +45,15 @@ export function runLine(r: RunInfo): string {
   return `- ${r.startedAt.slice(11, 16)} @${r.agent} ${r.status}${cost}${tag}: ${firstLine}`;
 }
 
-/** 순수 — 스탠드업 프롬프트 조립. 출력 골격(섹션)은 고정, 어조는 feature prompt 가. */
-export function composeStandupPrompt(runs: RunInfo[], lang: "en" | "ko"): string {
+/** 순수 — 스탠드업 프롬프트 조립. 출력 골격(섹션)은 고정, 어조는 feature prompt 가.
+ *  git 은 `-C <절대경로>` 로 고정 — 일부 CLI(antigravity)는 loadout add-dir 도
+ *  워크스페이스로 취급해 모델이 엉뚱한 repo 에서 셸을 돌릴 수 있다. */
+export function composeStandupPrompt(runs: RunInfo[], lang: "en" | "ko", projectPath: string): string {
   const lines = runs.map(runLine).join("\n");
   return (
     "Write the daily standup report for this project.\n" +
-    "First run `git log --since=24.hours --oneline --stat` (and `git status -s`) in the current directory to see code activity.\n" +
+    `The project root is: ${projectPath}\n` +
+    `First run \`git -C "${projectPath}" log --since=24.hours --oneline --stat\` (and \`git -C "${projectPath}" status -s\`) to see code activity. Report ONLY this project — ignore any other repository in your workspace.\n` +
     "Agent run history for the last 24 hours (from the team dashboard):\n" +
     (lines || "(no runs in the last 24 hours)") +
     "\n\nReply in markdown with exactly these sections:\n" +
@@ -66,9 +69,11 @@ export async function runStandup(
   agent: string,
   lang: "en" | "ko",
 ): Promise<{ ok: true; standup: Standup } | { ok: false; status: number; error: string }> {
+  const project = getProjectDb(projectId);
+  if (!project) return { ok: false, status: 404, error: "project_not_found" };
   const since = new Date(Date.now() - 86_400_000).toISOString();
   const recent = listRunsDb({ projectId }).filter((r) => r.startedAt >= since).slice(0, 50);
-  const prompt = composeStandupPrompt(recent, lang);
+  const prompt = composeStandupPrompt(recent, lang, project.path);
 
   const started = await startRun({ agent, prompt, projectId, promptOverride: readFeaturePrompt("standup") });
   if (!started.ok) return { ok: false, status: started.status, error: started.error };

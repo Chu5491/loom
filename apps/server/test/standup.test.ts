@@ -41,15 +41,21 @@ describe("runLine", () => {
 
 describe("composeStandupPrompt", () => {
   it("includes run lines and the fixed section skeleton", () => {
-    const p = composeStandupPrompt([run({})], "en");
+    const p = composeStandupPrompt([run({})], "en", "/work/proj");
     expect(p).toContain("@claude succeeded");
     expect(p).toContain("## Done");
     expect(p).toContain("## Blockers");
-    expect(p).toContain("git log --since=24.hours");
+    expect(p).toContain("log --since=24.hours");
+  });
+
+  it("anchors git to the project path — workspace ambiguity (antigravity add-dir) guard", () => {
+    const p = composeStandupPrompt([], "en", "/work/my proj");
+    expect(p).toContain('git -C "/work/my proj" log');
+    expect(p).toContain("The project root is: /work/my proj");
   });
 
   it("empty history says so and ko asks for Korean", () => {
-    const p = composeStandupPrompt([], "ko");
+    const p = composeStandupPrompt([], "ko", "/work/proj");
     expect(p).toContain("(no runs in the last 24 hours)");
     expect(p).toContain("Korean");
   });
