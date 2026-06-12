@@ -282,6 +282,16 @@ export const api = {
   cancelRun: (id: string) =>
     request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: "POST" }),
 
+  /** 품질 평가 — 1=👍 -1=👎 null=해제. 에이전트 성과 통계의 원천. */
+  rateRun: (id: string, rating: 1 | -1 | null) =>
+    request<{ ok: boolean }>(`/api/runs/${id}/rating`, { method: "POST", body: JSON.stringify({ rating }) }),
+
+  /** 에이전트 30일 성과 — 성공률 + 사람 평가. 오피스 인물 카드가 소비. */
+  agentStats: (days = 30) =>
+    request<{ days: number; stats: { agent: string; runs: number; succeeded: number; failed: number; thumbsUp: number; thumbsDown: number }[] }>(
+      `/api/usage/agents?days=${days}`,
+    ),
+
   /** 기록 삭제 — running 은 409(먼저 취소). user+agent 버블이 함께 사라진다. */
   deleteRun: (id: string) =>
     request<{ ok: boolean }>(`/api/runs/${id}`, { method: "DELETE" }),

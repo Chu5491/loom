@@ -214,4 +214,6 @@ export interface RunInfo {
   /** 워크플로우 스텝으로 돈 run 이면 워크플로우 이름/노드 id — 진행 보드용. */
   workflow?: string | null;
   node?: string | null;
+  /** 사람의 품질 평가 — 1=👍 -1=👎 null=미평가. 에이전트 성과 통계의 원천. */
+  rating?: 1 | -1 | null;
 }

@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isResponse, parseBody } from "./helpers.js";
+import { setRunRating } from "../db.js";
 import { readAgents, readSkills, readWorkflows } from "../office.js";
 import { pickAgent } from "../run/dispatch.js";
 import { startWorkflow } from "../run/workflow.js";
@@ -53,6 +54,18 @@ runsRoute.post("/workflow", async (c) => {
   const result = await startWorkflow(wf, { input: data.input, projectId: data.projectId, threadId: data.threadId });
   if (!result.ok) return c.json({ error: result.error }, result.status);
   return c.json({ run: result.run }, 201);
+});
+
+// 품질 평가 — 1=👍 -1=👎 null=해제. 완료된 run 에만(running 평가는 무의미).
+const ratingSchema = z.object({ rating: z.union([z.literal(1), z.literal(-1), z.null()]) });
+runsRoute.post("/:id/rating", async (c) => {
+  const data = await parseBody(c, ratingSchema);
+  if (isResponse(data)) return data;
+  const run = getRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not_found" }, 404);
+  if (run.status === "running") return c.json({ error: "still_running" }, 400);
+  setRunRating(run.id, data.rating);
+  return c.json({ ok: true, rating: data.rating });
 });
 
 // 프리뷰 — run 없이 합성 프롬프트만(스킬·규약 작성 시 주입 확인용).

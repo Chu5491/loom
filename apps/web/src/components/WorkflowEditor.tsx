@@ -4,7 +4,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, CirclePlay, Link2, Plus, Trash2, X, Zap } from "lucide-react";
+import { Check, CirclePlay, Link2, Plus, Trash2, Workflow, X, Zap } from "lucide-react";
 import type { AgentSpec, WorkflowEdge, WorkflowNode, WorkflowSpec } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
@@ -28,6 +28,76 @@ function newNodeId(nodes: WorkflowNode[]): string {
   while (nodes.some((n) => n.id === `n${i}`)) i++;
   return `n${i}`;
 }
+
+// ── 템플릿 갤러리 — 검증된 그래프 모양을 원클릭으로. 에이전트는 첫 에이전트로
+// 채워 시작(노드 패널에서 바꾸면 됨). 좌표는 모양이 한눈에 읽히게 미리 배치.
+interface WfTemplate {
+  key: string;
+  build: (name: string, agent: string) => WorkflowSpec;
+}
+const TEMPLATES: WfTemplate[] = [
+  {
+    key: "reviewChain",
+    build: (name, agent) => ({
+      name,
+      entry: "work",
+      nodes: [
+        { id: "work", agent, prompt: "{{input}}", x: 160, y: 200 },
+        { id: "review", agent, prompt: "Review the previous result critically. Point out bugs and risks, then give a verdict.\n\n{{result}}", x: 450, y: 200 },
+      ],
+      edges: [{ from: "work", to: "review", on: "success" }],
+    }),
+  },
+  {
+    key: "gatedShip",
+    build: (name, agent) => ({
+      name,
+      entry: "work",
+      nodes: [
+        { id: "work", agent, prompt: "{{input}}", x: 140, y: 200 },
+        { id: "approve", kind: "gate", agent: "", prompt: "", x: 400, y: 200 },
+        { id: "ship", agent, prompt: "Finalize and commit the approved work:\n\n{{result}}", x: 650, y: 110 },
+        { id: "revise", agent, prompt: "The work was rejected by a human reviewer. Revise it:\n\n{{result}}", x: 650, y: 300 },
+      ],
+      edges: [
+        { from: "work", to: "approve", on: "success" },
+        { from: "approve", to: "ship", on: "success" },
+        { from: "approve", to: "revise", on: "fail" },
+      ],
+    }),
+  },
+  {
+    key: "parallelJoin",
+    build: (name, agent) => ({
+      name,
+      entry: "plan",
+      nodes: [
+        { id: "plan", agent, prompt: "{{input}}\n\nSplit this into two independent angles and describe each briefly.", x: 130, y: 200 },
+        { id: "a", agent, prompt: "Take angle A from the plan and work it fully:\n\n{{result}}", x: 400, y: 100 },
+        { id: "b", agent, prompt: "Take angle B from the plan and work it fully:\n\n{{result}}", x: 400, y: 300 },
+        { id: "merge", agent, prompt: "Merge both results into one coherent answer:\n\n{{result}}", x: 670, y: 200 },
+      ],
+      edges: [
+        { from: "plan", to: "a", on: "success" },
+        { from: "plan", to: "b", on: "success" },
+        { from: "a", to: "merge", on: "success" },
+        { from: "b", to: "merge", on: "success" },
+      ],
+    }),
+  },
+  {
+    key: "fixOnFail",
+    build: (name, agent) => ({
+      name,
+      entry: "work",
+      nodes: [
+        { id: "work", agent, prompt: "{{input}}", x: 160, y: 160 },
+        { id: "debug", agent, prompt: "The previous step failed. Diagnose the failure and fix it:\n\n{{result}}", x: 450, y: 300 },
+      ],
+      edges: [{ from: "work", to: "debug", on: "fail" }],
+    }),
+  },
+];
 
 export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
   const { t } = useI18n();
@@ -56,16 +126,15 @@ export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
     setDirty(false);
     setErr(null);
   }
-  function create() {
+  function create(template?: WfTemplate) {
     const name = newName.trim();
     if (!name) return;
     const first = agents[0]?.name ?? "";
-    setEditing({
-      name,
-      entry: "n1",
-      nodes: [{ id: "n1", agent: first, prompt: "{{input}}", x: 120, y: 180 }],
-      edges: [],
-    });
+    setEditing(
+      template
+        ? template.build(name, first)
+        : { name, entry: "n1", nodes: [{ id: "n1", agent: first, prompt: "{{input}}", x: 120, y: 180 }], edges: [] },
+    );
     setCreating(false);
     setNewName("");
     setDirty(true);
@@ -90,8 +159,22 @@ export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
             <span className="text-[10px] text-muted-foreground">{w.nodes.length}</span>
           </button>
         ))}
-        {creating ? (
-          <span className="inline-flex items-center gap-1">
+        {!creating ? (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            <Plus className="size-3.5" />
+            {t("wf.new")}
+          </button>
+        ) : null}
+      </div>
+
+      {/* 새로 만들기 — 이름 + 템플릿 갤러리(빈 캔버스 또는 검증된 모양에서 시작) */}
+      {creating ? (
+        <div className="mt-3 rounded-2xl border border-primary/30 bg-card p-4">
+          <div className="flex items-center gap-2">
             <input
               autoFocus
               value={newName}
@@ -102,21 +185,40 @@ export function WorkflowEditor({ agents }: { agents: AgentSpec[] }) {
                 if (e.key === "Enter") create();
                 if (e.key === "Escape") setCreating(false);
               }}
-              className="h-7 w-36 rounded-md border border-primary/50 bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              className="h-8 w-48 rounded-md border border-primary/50 bg-background px-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring"
             />
-            <Button size="sm" disabled={!newName.trim()} onClick={create}><Check className="size-3.5" /></Button>
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-          >
-            <Plus className="size-3.5" />
-            {t("wf.new")}
-          </button>
-        )}
-      </div>
+            <button type="button" onClick={() => setCreating(false)} className="ml-auto text-muted-foreground hover:text-foreground" aria-label="close">
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <button
+              type="button"
+              disabled={!newName.trim()}
+              onClick={() => create()}
+              className="flex flex-col items-start gap-1 rounded-xl border border-dashed border-border p-3 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)] disabled:opacity-40"
+            >
+              <span className="flex items-center gap-1.5 text-xs font-semibold"><Plus className="size-3.5 text-primary" />{t("wf.tpl.blank")}</span>
+              <span className="text-[10px] leading-relaxed text-muted-foreground">{t("wf.tpl.blank.desc")}</span>
+            </button>
+            {TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.key}
+                type="button"
+                disabled={!newName.trim()}
+                onClick={() => create(tpl)}
+                className="group flex flex-col items-start gap-1 rounded-xl border border-border p-3 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)] disabled:opacity-40"
+              >
+                <span className="flex items-center gap-1.5 text-xs font-semibold">
+                  <Workflow className="size-3.5 text-primary" />
+                  {t(`wf.tpl.${tpl.key}`)}
+                </span>
+                <span className="text-[10px] leading-relaxed text-muted-foreground">{t(`wf.tpl.${tpl.key}.desc`)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {editing ? (
         <Canvas

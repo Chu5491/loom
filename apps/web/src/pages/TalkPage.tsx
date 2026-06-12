@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
-  NotebookPen, Paperclip, Pencil, Plug, ScanSearch, Sparkles, Terminal, Trash2, Workflow, Wrench, X,
+  NotebookPen, Paperclip, Pencil, Plug, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Workflow, Wrench, X,
 } from "lucide-react";
 import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, WorkflowSpec } from "@loom/core";
 import { api } from "../api/client.js";
@@ -970,8 +970,15 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
           <p className="text-sm text-muted-foreground">{t("talk.noOutput")}</p>
         )}
 
-        {/* 결과 메타(비용) + 전달된 프롬프트(투명성) */}
-        {view.result?.costUsd != null ? (
+        {/* 결과 메타(비용 + 품질 평가) + 전달된 프롬프트(투명성) */}
+        {!isStartError && !running ? (
+          <div className="mt-1 flex items-center gap-2">
+            {view.result?.costUsd != null ? (
+              <span className="text-[11px] text-muted-foreground">${view.result.costUsd.toFixed(4)}</span>
+            ) : null}
+            <RatingButtons runId={runId} initial={run?.rating ?? null} />
+          </div>
+        ) : view.result?.costUsd != null ? (
           <p className="mt-1 text-[11px] text-muted-foreground">${view.result.costUsd.toFixed(4)}</p>
         ) : null}
         {!isStartError && !running ? <PromptPeek runId={runId} /> : null}
@@ -997,6 +1004,39 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
         ) : null}
       </div>
     </div>
+  );
+}
+
+// 품질 평가 — 👍👎 토글(재클릭=해제). 평가는 에이전트 30일 성과 통계의 원천.
+function RatingButtons({ runId, initial }: { runId: string; initial: 1 | -1 | null }) {
+  const { t } = useI18n();
+  const [rating, setRating] = useState<1 | -1 | null>(initial);
+  const set = (next: 1 | -1 | null) => {
+    const prev = rating;
+    setRating(next); // 낙관 적용 — 실패 시 복원
+    api.rateRun(runId, next).catch(() => setRating(prev));
+  };
+  return (
+    <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 [&:has([data-on])]:opacity-100">
+      <button
+        type="button"
+        title={t("talk.rate.up")}
+        data-on={rating === 1 || undefined}
+        onClick={() => set(rating === 1 ? null : 1)}
+        className={cn("rounded p-0.5 transition-colors", rating === 1 ? "text-success" : "text-muted-foreground/50 hover:text-success")}
+      >
+        <ThumbsUp className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        title={t("talk.rate.down")}
+        data-on={rating === -1 || undefined}
+        onClick={() => set(rating === -1 ? null : -1)}
+        className={cn("rounded p-0.5 transition-colors", rating === -1 ? "text-destructive" : "text-muted-foreground/50 hover:text-destructive")}
+      >
+        <ThumbsDown className="size-3.5" />
+      </button>
+    </span>
   );
 }
 

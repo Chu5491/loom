@@ -100,6 +100,9 @@ export function getDb(): DB {
     db.exec(`ALTER TABLE runs ADD COLUMN workflow TEXT`);
     db.exec(`ALTER TABLE runs ADD COLUMN node TEXT`);
   }
+  if (!cols.some((c) => c.name === "rating")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN rating INTEGER`); // 1=👍 -1=👎 NULL=미평가
+  }
   const schedCols = db.prepare<[], { name: string }>(`PRAGMA table_info(schedules)`).all();
   if (schedCols.length > 0 && !schedCols.some((c) => c.name === "workflow")) {
     db.exec(`ALTER TABLE schedules ADD COLUMN workflow TEXT`);
@@ -145,6 +148,7 @@ interface RunRow {
   cost_usd: number | null;
   workflow: string | null;
   node: string | null;
+  rating: number | null;
 }
 function toInfo(r: RunRow): RunInfo {
   return {
@@ -161,7 +165,39 @@ function toInfo(r: RunRow): RunInfo {
     costUsd: r.cost_usd,
     workflow: r.workflow,
     node: r.node,
+    rating: r.rating === 1 ? 1 : r.rating === -1 ? -1 : null,
   };
+}
+
+/** run 품질 평가 — 1=👍 -1=👎 null=해제. 사람의 피드백이 에이전트 통계의 원천. */
+export function setRunRating(id: string, rating: 1 | -1 | null): boolean {
+  return getDb().prepare(`UPDATE runs SET rating = ? WHERE id = ?`).run(rating, id).changes > 0;
+}
+
+export interface AgentStat {
+  agent: string;
+  runs: number;
+  succeeded: number;
+  failed: number;
+  thumbsUp: number;
+  thumbsDown: number;
+}
+/** 에이전트별 30일 성과 — 성공률 + 사람 평가. 오피스 카드·디스패치 참고용. */
+export function agentStatsDb(days = 30): AgentStat[] {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  interface Row { agent: string; runs: number; succeeded: number; failed: number; up: number; down: number }
+  return getDb()
+    .prepare<[string], Row>(
+      `SELECT agent,
+         COUNT(*) AS runs,
+         SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS succeeded,
+         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+         SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) AS up,
+         SUM(CASE WHEN rating = -1 THEN 1 ELSE 0 END) AS down
+       FROM runs WHERE started_at >= ? GROUP BY agent`,
+    )
+    .all(since)
+    .map((r) => ({ agent: r.agent, runs: r.runs, succeeded: r.succeeded, failed: r.failed, thumbsUp: r.up, thumbsDown: r.down }));
 }
 
 export function insertRun(info: RunInfo): void {

@@ -227,6 +227,9 @@ function AgentsSection({ office }: { office: Office }) {
   const items = [...office.agents, ...drafts];
   const keyOf = (i: number) => (i >= office.agents.length ? `new-${i - office.agents.length}` : items[i]!.name);
   const openIdx = items.findIndex((_a, i) => keyOf(i) === open);
+  // 30일 성과 — 성공률 + 사람 평가(👍👎). 인물 카드의 "실적" 줄.
+  const statsQ = useQuery({ queryKey: ["agentStats"], queryFn: () => api.agentStats(30), staleTime: 60_000 });
+  const statOf = (name: string) => statsQ.data?.stats.find((s) => s.agent === name);
 
   return (
     <div>
@@ -266,6 +269,7 @@ function AgentsSection({ office }: { office: Office }) {
                 <span>{t("office.section.skills")} {(a.skills ?? []).length}</span>
                 <span>MCP {(a.mcp ?? []).length}</span>
               </span>
+              <AgentRecord stat={statOf(a.name)} />
             </button>
           );
         })}
@@ -293,6 +297,32 @@ function AgentsSection({ office }: { office: Office }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+// 30일 실적 줄 — 성공률 미니 바 + run 수 + 사람 평가. 기록 없으면 조용히 생략.
+function AgentRecord({ stat }: { stat?: { runs: number; succeeded: number; failed: number; thumbsUp: number; thumbsDown: number } }) {
+  const { t } = useI18n();
+  if (!stat || stat.runs === 0) return null;
+  const done = stat.succeeded + stat.failed;
+  const pct = done > 0 ? Math.round((stat.succeeded / done) * 100) : null;
+  return (
+    <span className="mt-1.5 flex w-full items-center gap-1.5 border-t border-border/40 pt-2 text-[10px] text-muted-foreground">
+      {pct !== null ? (
+        <>
+          <span className="h-1 w-12 overflow-hidden rounded-full bg-muted/60">
+            <span
+              className={cn("block h-full rounded-full", pct >= 80 ? "bg-success" : pct >= 50 ? "bg-warning" : "bg-destructive")}
+              style={{ width: `${pct}%` }}
+            />
+          </span>
+          <span className="font-mono tabular-nums">{pct}%</span>
+        </>
+      ) : null}
+      <span className="ml-auto tabular-nums">{t("office.agent.record", { n: String(stat.runs) })}</span>
+      {stat.thumbsUp > 0 ? <span className="tabular-nums text-success">👍{stat.thumbsUp}</span> : null}
+      {stat.thumbsDown > 0 ? <span className="tabular-nums text-destructive">👎{stat.thumbsDown}</span> : null}
+    </span>
   );
 }
 

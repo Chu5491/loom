@@ -2,7 +2,7 @@
 // 표준 조회 수단이 없어(각 CLI 가 비공개) 여기선 소비량·비용만 집계한다.
 
 import { Hono } from "hono";
-import { getDb, monthCostUsd } from "../db.js";
+import { agentStatsDb, getDb, monthCostUsd } from "../db.js";
 import { readBudget } from "../office.js";
 
 export const usageRoute = new Hono();
@@ -39,4 +39,10 @@ usageRoute.get("/", (c) => {
   const month = { costUsd: monthCostUsd(), budgetUsd: budget.monthlyUsd };
 
   return c.json({ days, totals, byAgent, byDay, month });
+});
+
+// 에이전트 성과 — 30일 성공률 + 사람 평가(👍👎). 오피스 인물 카드가 소비.
+usageRoute.get("/agents", (c) => {
+  const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? 30) || 30));
+  return c.json({ days, stats: agentStatsDb(days) });
 });
