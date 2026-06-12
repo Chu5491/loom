@@ -100,6 +100,19 @@ export function TalkPage({ project }: { project: Project }) {
     if (!active && agents.length) setActive(agents[0]!.name);
   }, [agents, active]);
 
+  // ⌘K 팔레트의 프로젝트 내부 명령 — 뷰 전환·스레드 점프·워크플로우 모달·타겟.
+  useEffect(() => {
+    const onCmd = (e: Event) => {
+      const cmd = (e as CustomEvent<import("../components/CommandPalette.js").LoomCmd>).detail;
+      if (cmd.view) setView(cmd.view);
+      if (cmd.threadId) setThreadId(cmd.threadId);
+      if (cmd.workflow !== undefined) setWfOpen(cmd.workflow);
+      if (cmd.agent) setActive(cmd.agent);
+    };
+    window.addEventListener("loom:cmd", onCmd);
+    return () => window.removeEventListener("loom:cmd", onCmd);
+  }, []);
+
   // 스레드 = runs.data 단일 진실에서 파생(이중 경로 제거 — 중복 버블 방지).
   // 부모 run = user+agent 버블, 하네스 자식(parentRunId) = 핸드오프 agent 버블만.
   // runs 쿼리는 projectId 로 키잉돼 있어 프로젝트 전환도 자동 반영.

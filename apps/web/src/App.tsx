@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronLeft, FolderGit2, House, Languages, Moon, Plug, RefreshCw, Sun, FolderCog } from "lucide-react";
 import { api } from "./api/client.js";
 import { CliStatus } from "./components/CliStatus.js";
+import { CommandPalette } from "./components/CommandPalette.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { LoomLogo } from "./components/LoomLogo.js";
@@ -41,6 +42,19 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [switcherOpen]);
+  // ⌘K / Ctrl+K — 커맨드 팔레트.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const [projectId, setProjectId] = useState<string | null>(() => localStorage.getItem("loom.project") || null);
   const setProject = (id: string | null) => {
     setProjectId(id);
@@ -163,6 +177,15 @@ export function App() {
           ) : null}
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              title={t("cmdk.placeholder")}
+              className="hidden items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground sm:flex"
+            >
+              <span>{t("cmdk.button")}</span>
+              <kbd className="rounded border border-border px-1 font-mono text-[10px]">⌘K</kbd>
+            </button>
             <CliStatus onOpenConnections={() => setTab("connections")} />
             <Button variant="ghost" size="sm" aria-label="theme"
               onClick={() => setMode(effective === "dark" ? "light" : "dark")}>
@@ -180,6 +203,15 @@ export function App() {
           </div>
         </div>
       </header>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        project={project}
+        projects={projects.data?.projects ?? []}
+        onTab={setTab}
+        onProject={setProject}
+      />
 
       {/* 프로젝트 전환 확인 모달 */}
       {pendingSwitch ? (
