@@ -254,17 +254,19 @@ export function TalkPage({ project }: { project: Project }) {
 
   return (
     <div className="workspace-enter mx-auto flex h-[calc(100vh-3.5rem)] max-w-7xl flex-col px-4 sm:px-6">
-      {/* 워크스페이스 바 — 뷰 스위처 + (대화 뷰일 때) 스레드 컨트롤 */}
-      <div className="flex items-center gap-2 border-b border-border/60 py-2">
-        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+      {/* 워크스페이스 바 — 뷰 스위처(헤더 네비와 같은 글로우 필) + 스레드 컨트롤 */}
+      <div className="flex items-center gap-2 py-2">
+        <div className="inline-flex gap-1">
           {wsViews.map((v) => (
             <button
               key={v.key}
               type="button"
               onClick={() => setView(v.key)}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all",
-                view === v.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all",
+                view === v.key
+                  ? "bg-primary/15 text-foreground shadow-[var(--shadow-glow-sm)]"
+                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
               )}
             >
               <span className={cn(view === v.key && "text-primary")}>{v.icon}</span>
@@ -326,7 +328,7 @@ export function TalkPage({ project }: { project: Project }) {
         />
       ) : null}
 
-      <div className="flex min-h-0 flex-1 gap-6">
+      <div className="flex min-h-0 flex-1 gap-3">
       {view === "files" ? (
         <FilesView project={project} />
       ) : view === "git" ? (
@@ -351,8 +353,8 @@ export function TalkPage({ project }: { project: Project }) {
         }}
       />
 
-      {/* 채팅 컬럼 */}
-      <div className="mx-auto flex h-full w-full max-w-3xl min-w-0 flex-1 flex-col">
+      {/* 채팅 컬럼 = 스테이지 — 워크스페이스의 주인공 서피스 */}
+      <div className="mx-auto mb-3 flex h-full w-full min-w-0 max-w-3xl flex-1 flex-col rounded-2xl border border-border/50 bg-card/30 px-4">
         {/* overflow-anchor 끔 — 브라우저 앵커링이 scrollTop 을 임의 조정해 바닥 고정과 충돌 */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-6 [overflow-anchor:none]">
           {messages.length === 0 && !pending ? (
@@ -474,7 +476,7 @@ function ThreadSidebar({
 }) {
   const { t } = useI18n();
   return (
-    <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-4 pr-3 lg:flex">
+    <aside className="mb-3 hidden w-60 shrink-0 flex-col overflow-y-auto rounded-2xl border border-border/60 bg-card/60 p-3 lg:flex">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.sidebar.threads")}</h3>
         <button
@@ -601,7 +603,7 @@ function TeamPanel({
   const workingCount = workingAgents.size;
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto border-l border-border/60 py-4 pl-4 xl:flex">
+    <aside className="mb-3 hidden w-64 shrink-0 flex-col overflow-y-auto rounded-2xl border border-border/60 bg-card/60 p-3.5 xl:flex">
       {/* 팀 현황 — 누가 일하고 있나 (선택이 아니라 상태 보드) */}
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
