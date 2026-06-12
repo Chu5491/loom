@@ -344,9 +344,12 @@ export function renameThreadDb(id: string, name: string): void {
 /** 스레드 + 그 안의 run·이벤트까지 삭제(대화 전체 정리). */
 export function deleteThreadDb(id: string): void {
   const db = getDb();
-  db.prepare(`DELETE FROM run_events WHERE run_id IN (SELECT id FROM runs WHERE thread_id = ?)`).run(id);
-  db.prepare(`DELETE FROM runs WHERE thread_id = ?`).run(id);
-  db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
+  // 트랜잭션 — 중간 크래시 시 고아 이벤트/run 행이 남지 않게.
+  db.transaction(() => {
+    db.prepare(`DELETE FROM run_events WHERE run_id IN (SELECT id FROM runs WHERE thread_id = ?)`).run(id);
+    db.prepare(`DELETE FROM runs WHERE thread_id = ?`).run(id);
+    db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
+  })();
 }
 
 // ── projects ──────────────────────────────────────────────────────────────────

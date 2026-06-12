@@ -2,9 +2,10 @@
 // 발견(probe)·연결(auth)·모델 수집(models)·연동 테스트(test) 하는 API.
 // DB 없음, 영속 상태 없음 — 어댑터 레지스트리가 전부다.
 
+import fs from "node:fs";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { config } from "./config.js";
+import { config, paths } from "./config.js";
 import { failOrphanRuns } from "./db.js";
 import { logger } from "./logger.js";
 import { ensureOffice } from "./office.js";
@@ -26,6 +27,8 @@ import { threadsRoute } from "./routes/threads.js";
 import { uploadsRoute } from "./routes/uploads.js";
 
 ensureOffice();
+// run 스코프 loadout 잔재 청소 — 크래시로 finish 를 못 거친 디렉토리가 쌓이지 않게.
+fs.rmSync(paths.loadouts, { recursive: true, force: true });
 // 직전 서버와 함께 죽은 run 들 — "running" 좀비로 남아 UI 에서 멈출 수 없게 되는 것 방지.
 const orphans = failOrphanRuns();
 if (orphans > 0) logger.warn({ orphans }, "marked orphan running runs as failed");

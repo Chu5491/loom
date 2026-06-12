@@ -22,7 +22,7 @@ import { composePrompt } from "./compose.js";
 import { materializeLoadout } from "./loadout.js";
 import { parseLine } from "./parse.js";
 // 순환 import (workflow.ts ↔ engine.ts) — 양쪽 다 호출 시점에만 쓰는 함수 참조라 안전.
-import { resolveAutoWorkflows, startWorkflow, type RunOutcome } from "./workflow.js";
+import { capText, fenceHandoff, resolveAutoWorkflows, startWorkflow, type RunOutcome } from "./workflow.js";
 
 /** 자동 체인(워크플로우 트리거·위임)의 최대 깊이 — parentRunId 로 측정, 무한루프 방어. */
 export const MAX_CHAIN_HOPS = 5;
@@ -88,6 +88,10 @@ interface RunState {
   sessionId?: string;
   abort: AbortController;
   kill: () => void;
+  /** run 스코프 loadout 디렉토리 — finish 가 정리한다. */
+  loadoutDir?: string;
+  /** 영속 실패 로그 1회 가드 — ENOSPC 류는 줄마다 반복돼 로그를 범람시킨다. */
+  persistWarned?: boolean;
 }
 
 const runs = new Map<string, RunState>();
@@ -204,7 +208,7 @@ function selectSpecs(agent: AgentSpec, extraSkills: string[]): { rules: string[]
 }
 
 /** 프리뷰 — run 없이, 이 에이전트로 시작하면 CLI 에 들어갈 합성 프롬프트.
- *  loadout 도 실제처럼 펼친다(매 run 재생성되는 디렉토리라 부작용 없음).
+ *  loadout 도 실제처럼 펼치되 "preview" 스코프 — 라이브 run 의 디렉토리와 격리.
  *  위임 도구(runId 가 필요)는 제외 — delegate 에이전트는 MCP 인덱스에 loom 한 줄이 더 붙는 차이만. */
 export function previewRunPrompt(
   agentName: string,
@@ -214,7 +218,7 @@ export function previewRunPrompt(
   const agent = readAgents().find((a) => a.name === agentName);
   if (!agent) return { ok: false, status: 404, error: "agent_not_found" };
   const { rules, skills, mcp } = selectSpecs(agent, extraSkills);
-  const loadout = materializeLoadout(agent, skills, mcp, null);
+  const loadout = materializeLoadout(agent, skills, mcp, null, "preview");
   const prompt = composePrompt({ userPrompt, rules, agentPrompt: agent.prompt, loadout });
   return { ok: true, prompt };
 }
@@ -288,7 +292,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     }
   }
 
-  const loadout = materializeLoadout(agent, skills, mcp, bridge);
+  const loadout = materializeLoadout(agent, skills, mcp, bridge, id);
   // 프로젝트 공유 메모 — 파일이 있을 때만 경로 안내(없으면 침묵, 자동 생성 안 함).
   const notesPath = project ? path.join(project.path, ".loom", "notes.md") : null;
   const prompt = composePrompt({
@@ -331,6 +335,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     seq: 0,
     abort,
     kill: () => {},
+    loadoutDir: loadout.dir,
   };
   runs.set(id, state);
   insertRun(info); // history 영속 — running 상태로 즉시 기록(finish 가 갱신).
@@ -357,7 +362,16 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
 function emit(state: RunState, events: OfficeEvent[]): void {
   for (const ev of events) {
     state.events.push(ev);
-    appendEvent(state.info.id, state.seq++, ev); // 순서 보존하며 디스크에 기록
+    try {
+      appendEvent(state.info.id, state.seq++, ev); // 순서 보존하며 디스크에 기록
+    } catch (err) {
+      // stdout 콜백 안에서 throw 되면 서버 전체가 죽는다. raw 로그가 진실이므로
+      // DB 영속만 포기하고 인메모리 스트림(SSE)은 계속 살린다.
+      if (!state.persistWarned) {
+        state.persistWarned = true;
+        logger.error({ err, runId: state.info.id }, "run event persist failed — continuing in-memory");
+      }
+    }
     if (ev.kind === "result") {
       state.sawResult = true;
       state.costUsd = ev.costUsd;
@@ -376,8 +390,27 @@ function emit(state: RunState, events: OfficeEvent[]): void {
   }
 }
 
+/** raw 로그 쓰기 — 스트림 콜백 안이라 절대 throw 하면 안 된다(서버 다운).
+ *  run 마감 후 도착한 늦은 출력은 fd 가 닫혔으니 버리고(최악엔 재사용된 fd 에
+ *  교차 기록), 쓰기 실패(디스크 풀 등)는 raw 가 진실이므로 run 자체를 중단한다. */
+function writeRaw(state: RunState, chunk: string): boolean {
+  if (state.info.status !== "running") return false;
+  try {
+    fs.writeSync(state.rawFd, chunk);
+    return true;
+  } catch (err) {
+    if (!state.persistWarned) {
+      state.persistWarned = true;
+      logger.error({ err, runId: state.info.id }, "raw log write failed — aborting run");
+    }
+    state.kill();
+    state.abort.abort();
+    return false;
+  }
+}
+
 function consume(state: RunState, chunk: string): void {
-  fs.writeSync(state.rawFd, chunk);
+  if (!writeRaw(state, chunk)) return;
   state.buf += chunk;
   const lines = state.buf.split("\n");
   state.buf = lines.pop() ?? "";
@@ -420,7 +453,7 @@ async function run(
         // 위임 opt-in 의 일부 — delegate 도구는 권한 프롬프트 없이 호출돼야 한다.
         allowedTools: mcp.some((m) => m.name === "loom") ? ["mcp__loom__delegate"] : undefined,
         onStdout: (c) => consume(state, c),
-        onStderr: (c) => fs.writeSync(state.rawFd, c),
+        onStderr: (c) => void writeRaw(state, c),
       },
       adapterConfig,
     );
@@ -529,6 +562,11 @@ export function waitForRun(id: string, timeoutMs: number): Promise<RunInfo> {
 
 const DELEGATE_TIMEOUT_MS = 10 * 60_000;
 
+// 위임 폭(breadth) 상한 — 깊이 가드(MAX_CHAIN_HOPS)는 병렬 tool call 이 한 번에
+// 띄우는 자식 수를 못 막고, 위임 자식은 동시성 슬롯도 우회한다(데드락 방지 설계).
+const MAX_CONCURRENT_DELEGATIONS = 3;
+const delegationsInFlight = new Map<string, number>();
+
 /** 에이전트 주도 위임 — run 도중 MCP delegate 도구가 호출. 자식 run 을 띄우고
  *  완료까지 기다려 결과 텍스트를 돌려준다. 부모의 프로젝트/스레드 상속,
  *  parentRunId 체인으로 hop 가드(무한 위임 방어). */
@@ -544,33 +582,45 @@ export async function delegateFromRun(
   if (chainHops(parent.info) >= MAX_CHAIN_HOPS) {
     return { ok: false, error: `delegation depth limit (${MAX_CHAIN_HOPS}) reached` };
   }
-
-  // 부모 스트림에 위임 이벤트 — UI 가 "→ @x (위임)" 을 라이브로 그린다.
-  emit(parent, [{ kind: "handoff", toAgent, via: "delegation", ...(reason ? { reason } : {}) }]);
-
-  const started = await startRun({
-    agent: toAgent,
-    prompt: task,
-    parentRunId,
-    projectId: parent.info.projectId,
-    threadId: parent.info.threadId,
-  });
-  if (!started.ok) return { ok: false, error: started.error };
+  const inFlight = delegationsInFlight.get(parentRunId) ?? 0;
+  if (inFlight >= MAX_CONCURRENT_DELEGATIONS) {
+    return { ok: false, error: `concurrent delegation limit (${MAX_CONCURRENT_DELEGATIONS}) reached — wait for a delegation to finish` };
+  }
+  delegationsInFlight.set(parentRunId, inFlight + 1);
 
   try {
-    const done = await waitForRun(started.run.id, DELEGATE_TIMEOUT_MS);
-    const events = runs.get(started.run.id)?.events ?? getRunEventsDb(started.run.id);
-    const result = [...events].reverse().find(
-      (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",
-    );
-    if (done.status !== "succeeded") {
-      return { ok: false, error: `delegate run ${done.status}: ${result?.text?.slice(0, 500) ?? "no output"}` };
+    // 부모 스트림에 위임 이벤트 — UI 가 "→ @x (위임)" 을 라이브로 그린다.
+    emit(parent, [{ kind: "handoff", toAgent, via: "delegation", ...(reason ? { reason } : {}) }]);
+
+    const started = await startRun({
+      agent: toAgent,
+      prompt: capText(task), // 거대 task 가 자식 프롬프트(토큰)를 집어삼키는 것 방지
+      parentRunId,
+      projectId: parent.info.projectId,
+      threadId: parent.info.threadId,
+    });
+    if (!started.ok) return { ok: false, error: started.error };
+
+    try {
+      const done = await waitForRun(started.run.id, DELEGATE_TIMEOUT_MS);
+      const events = runs.get(started.run.id)?.events ?? getRunEventsDb(started.run.id);
+      const result = [...events].reverse().find(
+        (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",
+      );
+      if (done.status !== "succeeded") {
+        return { ok: false, error: `delegate run ${done.status}: ${result?.text?.slice(0, 500) ?? "no output"}` };
+      }
+      // 자식 출력은 신뢰 불가 — 부모에게 데이터 펜스로 돌려준다(워크플로우 핸드오프와 동일 정책).
+      return { ok: true, result: fenceHandoff(result?.text ?? "(no output)"), childRunId: started.run.id };
+    } catch (e) {
+      // 타임아웃이면 자식이 아직 도는 중 — 끊지 않으면 부모 종료 후 고아가 된다.
+      cancelRun(started.run.id);
+      return { ok: false, error: (e as Error).message };
     }
-    return { ok: true, result: result?.text ?? "(no output)", childRunId: started.run.id };
-  } catch (e) {
-    // 타임아웃이면 자식이 아직 도는 중 — 끊지 않으면 부모 종료 후 고아가 된다.
-    cancelRun(started.run.id);
-    return { ok: false, error: (e as Error).message };
+  } finally {
+    const n = (delegationsInFlight.get(parentRunId) ?? 1) - 1;
+    if (n <= 0) delegationsInFlight.delete(parentRunId);
+    else delegationsInFlight.set(parentRunId, n);
   }
 }
 
@@ -635,6 +685,13 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
     fs.closeSync(state.rawFd);
   } catch {
     // 이미 닫혔을 수 있음
+  }
+  if (state.loadoutDir) {
+    try {
+      fs.rmSync(state.loadoutDir, { recursive: true, force: true });
+    } catch {
+      // 정리 실패는 무해 — 부팅 시 loadouts 전체 청소가 잔재를 거둔다
+    }
   }
   for (const fn of state.listeners) {
     try {

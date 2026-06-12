@@ -87,7 +87,11 @@ describe("human gate", () => {
     expect(r.ok).toBe(true);
     await settle();
     expect(mockStartRun.mock.calls[1]![0].agent).toBe("b");
-    expect(mockStartRun.mock.calls[1]![0].prompt).toBe("after: RES-r1");
+    // 게이트가 들고 있던 결과는 데이터 펜스로 감싸여 다음 스텝에 들어간다.
+    const prompt = mockStartRun.mock.calls[1]![0].prompt as string;
+    expect(prompt.startsWith("after: ")).toBe(true);
+    expect(prompt).toContain("DATA");
+    expect(prompt).toContain("RES-r1");
   });
 
   it("reject follows the fail edge and the gate resolves only once", async () => {

@@ -68,6 +68,10 @@ export function composeStandupPrompt(runs: RunInfo[], lang: "en" | "ko", project
   );
 }
 
+// 프로젝트별 in-flight 가드 — 동시 스탠드업(수동 버튼+스케줄)이 history 를
+// read-modify-write 로 서로 덮어쓰는 lost update 방지.
+const inFlight = new Set<string>();
+
 export async function runStandup(
   projectId: string,
   agent: string,
@@ -77,30 +81,39 @@ export async function runStandup(
 ): Promise<{ ok: true; standup: Standup } | { ok: false; status: number; error: string }> {
   const project = getProjectDb(projectId);
   if (!project) return { ok: false, status: 404, error: "project_not_found" };
-  const since = new Date(Date.now() - 86_400_000).toISOString();
-  const recent = listRunsDb({ projectId }).filter((r) => r.startedAt >= since).slice(0, 50);
-  const prompt = composeStandupPrompt(recent, lang, project.path);
-
-  const started = await startRun({ agent, prompt, projectId, promptOverride: readFeaturePrompt("standup") });
-  if (!started.ok) return { ok: false, status: started.status, error: started.error };
-  onStart?.(started.run.id);
+  if (inFlight.has(projectId)) return { ok: false, status: 409, error: "standup_already_running" };
+  inFlight.add(projectId);
   try {
-    const done = await waitForRun(started.run.id, STANDUP_TIMEOUT_MS);
-    const events = getRunEventsDb(started.run.id);
-    const result = [...events].reverse().find((e) => e.kind === "result");
-    const report = (result && "text" in result ? result.text : "").trim();
-    if (done.status !== "succeeded" || !report) {
-      return { ok: false, status: 502, error: `agent run ${done.status}: ${report.slice(0, 200) || "no output"}` };
+    const since = new Date(Date.now() - 86_400_000).toISOString();
+    const recent = listRunsDb({ projectId }).filter((r) => r.startedAt >= since).slice(0, 50);
+    const prompt = composeStandupPrompt(recent, lang, project.path);
+
+    const started = await startRun({ agent, prompt, projectId, promptOverride: readFeaturePrompt("standup") });
+    if (!started.ok) return { ok: false, status: started.status, error: started.error };
+    onStart?.(started.run.id);
+    try {
+      const done = await waitForRun(started.run.id, STANDUP_TIMEOUT_MS);
+      const events = getRunEventsDb(started.run.id);
+      const result = [...events].reverse().find((e) => e.kind === "result");
+      const report = (result && "text" in result ? result.text : "").trim();
+      if (done.status !== "succeeded" || !report) {
+        return { ok: false, status: 502, error: `agent run ${done.status}: ${report.slice(0, 200) || "no output"}` };
+      }
+      const standup: Standup = { generatedAt: new Date().toISOString(), agent, runId: started.run.id, report };
+      const prev = getStandup(projectId);
+      const history = [prev.standup, ...prev.history].filter(Boolean).slice(0, HISTORY_KEEP) as Standup[];
+      const file = standupPath(projectId);
+      fs.mkdirSync(path.join(paths.data, "standup"), { recursive: true });
+      // temp+rename — 쓰는 도중 크래시해도 기존 파일(업무 일지)이 깨지지 않는다.
+      fs.writeFileSync(`${file}.tmp`, JSON.stringify({ standup, history }, null, 2));
+      fs.renameSync(`${file}.tmp`, file);
+      return { ok: true, standup };
+    } catch (e) {
+      // 타임아웃이면 자식이 아직 도는 중 — 끊지 않으면 고아로 슬롯을 계속 쥔다.
+      cancelRun(started.run.id);
+      return { ok: false, status: 504, error: (e as Error).message };
     }
-    const standup: Standup = { generatedAt: new Date().toISOString(), agent, runId: started.run.id, report };
-    const prev = getStandup(projectId);
-    const history = [prev.standup, ...prev.history].filter(Boolean).slice(0, HISTORY_KEEP) as Standup[];
-    fs.mkdirSync(path.join(paths.data, "standup"), { recursive: true });
-    fs.writeFileSync(standupPath(projectId), JSON.stringify({ standup, history }, null, 2));
-    return { ok: true, standup };
-  } catch (e) {
-    // 타임아웃이면 자식이 아직 도는 중 — 끊지 않으면 고아로 슬롯을 계속 쥔다.
-    cancelRun(started.run.id);
-    return { ok: false, status: 504, error: (e as Error).message };
+  } finally {
+    inFlight.delete(projectId);
   }
 }

@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
-import { deleteThreadDb, getThreadDb, insertThread, listThreadsDb, renameThreadDb } from "../db.js";
+import { deleteThreadDb, getThreadDb, insertThread, listRunsDb, listThreadsDb, renameThreadDb } from "../db.js";
 import { isResponse, parseBody } from "./helpers.js";
 
 export const threadsRoute = new Hono();
@@ -40,7 +40,13 @@ threadsRoute.patch("/:id", async (c) => {
 });
 
 threadsRoute.delete("/:id", (c) => {
-  if (!getThreadDb(c.req.param("id"))) return c.json({ error: "not_found" }, 404);
-  deleteThreadDb(c.req.param("id"));
+  const id = c.req.param("id");
+  if (!getThreadDb(id)) return c.json({ error: "not_found" }, 404);
+  // 실행 중 run 이 있는 스레드를 지우면 CLI 프로세스는 계속 도는데 기록과 취소
+  // 경로만 사라진다(보이지 않는 고아) — 단건 deleteRun 과 동일하게 409 거부.
+  if (listRunsDb({ threadId: id }).some((r) => r.status === "running")) {
+    return c.json({ error: "still_running" }, 409);
+  }
+  deleteThreadDb(id);
   return c.json({ ok: true });
 });

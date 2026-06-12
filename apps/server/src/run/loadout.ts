@@ -1,6 +1,7 @@
 // Agent loadout — 매 run 직전에 그 에이전트의 스킬·MCP 설정을 디스크에 펼친다.
 // 스킬 본문을 프롬프트에 통째로 박지 않고, 경로+인덱스만 알려 에이전트가 필요할
-// 때 Read 하게 한다 (토큰 ↓, 캐시 ↑). data/loadouts/<agent>/ 에 매번 재생성.
+// 때 Read 하게 한다 (토큰 ↓, 캐시 ↑). data/loadouts/<agent>/<scope>/ 에 run 마다
+// 격리 생성 — 종료 시 engine 이 정리하고, 부팅 시 잔재를 통째로 청소한다.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -92,9 +93,12 @@ export function materializeLoadout(
   agent: AgentSpec,
   skills: SkillSpec[],
   mcp: McpServer[],
-  bridge?: DelegateBridge | null,
+  bridge: DelegateBridge | null,
+  scope: string,
 ): AgentLoadout {
-  const dir = path.join(paths.loadouts, agent.name);
+  // scope(runId 또는 "preview")로 격리 — 에이전트 단위 디렉토리 하나를 공유하면
+  // 같은 에이전트의 동시 run/프리뷰가 라이브 run 이 읽을 스킬·mcp.json 을 지워버린다.
+  const dir = path.join(paths.loadouts, agent.name, scope);
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
   if (skills.length) fs.mkdirSync(path.join(dir, "skills"), { recursive: true });
