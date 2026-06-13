@@ -4,7 +4,7 @@
 
 import Database from "better-sqlite3";
 import fs from "node:fs";
-import type { OfficeEvent, Project, RunInfo, Schedule, Thread } from "@loom/core";
+import type { OfficeEvent, Project, RunInfo, RunSearchHit, Schedule, Thread } from "@loom/core";
 import { paths } from "./config.js";
 
 export type DB = Database.Database;
@@ -249,6 +249,55 @@ export function listRunsDb(filter: RunFilter = {}): RunInfo[] {
         ? db.prepare<[string | null], RunRow>(`SELECT * FROM runs WHERE project_id IS ? ORDER BY started_at DESC`).all(filter.projectId)
         : db.prepare<[], RunRow>(`SELECT * FROM runs ORDER BY started_at DESC`).all();
   return rows.map(toInfo);
+}
+
+/** run 전문 검색 — 사용자 입력(prompt) + 에이전트 결과 텍스트. 개인 규모라 LIKE
+ *  스캔으로 충분(FTS 미도입). 본문이 매치하면 매치 주변을 발췌해 돌려준다. */
+export function searchRunsDb(q: string, limit = 30): RunSearchHit[] {
+  const term = q.trim();
+  if (term.length < 2) return [];
+  const esc = term.replace(/[%_\\]/g, (m) => `\\${m}`);
+  const like = `%${esc}%`;
+  // prompt 매치 + result 이벤트 텍스트 매치(run_events 는 kind:result 만 훑어 노이즈↓).
+  const rows = getDb()
+    .prepare<[string, string, string, number], RunRow & { match_event: string | null }>(
+      `SELECT r.*, (
+         SELECT e.event FROM run_events e
+         WHERE e.run_id = r.id AND e.event LIKE '%"kind":"result"%' AND e.event LIKE ? ESCAPE '\\'
+         ORDER BY e.seq DESC LIMIT 1
+       ) AS match_event
+       FROM runs r
+       WHERE r.prompt LIKE ? ESCAPE '\\'
+          OR r.id IN (SELECT run_id FROM run_events WHERE event LIKE '%"kind":"result"%' AND event LIKE ? ESCAPE '\\')
+       ORDER BY r.started_at DESC LIMIT ?`,
+    )
+    .all(like, like, like, limit);
+
+  const lower = term.toLowerCase();
+  const window = (text: string): string => {
+    const i = text.toLowerCase().indexOf(lower);
+    if (i < 0) return text.slice(0, 100);
+    const start = Math.max(0, i - 40);
+    return (start > 0 ? "…" : "") + text.slice(start, i + lower.length + 60).replace(/\s+/g, " ").trim() + "…";
+  };
+
+  return rows.map((r) => {
+    const promptHit = r.prompt.toLowerCase().includes(lower);
+    let outputText = "";
+    if (r.match_event) {
+      try {
+        const ev = JSON.parse(r.match_event) as { text?: string };
+        outputText = typeof ev.text === "string" ? ev.text : "";
+      } catch {
+        // 깨진 이벤트 — prompt 발췌로 폴백
+      }
+    }
+    return {
+      run: toInfo(r),
+      snippet: promptHit ? window(r.prompt) : window(outputText || r.prompt),
+      matchedIn: promptHit ? "prompt" : "output",
+    } satisfies RunSearchHit;
+  });
 }
 
 /** 같은 스레드에서 이 에이전트가 마지막으로 남긴 CLI 세션 id — resume 용. */

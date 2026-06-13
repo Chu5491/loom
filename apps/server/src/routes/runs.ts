@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isResponse, parseBody } from "./helpers.js";
-import { setRunRating } from "../db.js";
+import { searchRunsDb, setRunRating } from "../db.js";
 import { readAgents, readSkills, readWorkflows } from "../office.js";
 import { pickAgent } from "../run/dispatch.js";
 import { startWorkflow } from "../run/workflow.js";
@@ -83,6 +83,12 @@ runsRoute.post("/:id/rerun", async (c) => {
   });
   if (!result.ok) return c.json({ error: result.error }, result.status);
   return c.json({ run: result.run }, 201);
+});
+
+// 전문 검색 — 과거 run 의 prompt·결과 텍스트에서. (":id" 라우트보다 먼저.)
+runsRoute.get("/search", (c) => {
+  const q = c.req.query("q") ?? "";
+  return c.json({ hits: searchRunsDb(q, 30) });
 });
 
 // 프리뷰 — run 없이 합성 프롬프트만(스킬·규약 작성 시 주입 확인용).

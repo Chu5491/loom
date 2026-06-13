@@ -10,6 +10,7 @@ import type {
   Office,
   Project,
   RunInfo,
+  RunSearchHit,
   SkillSpec,
   Schedule,
   TestAdapterResult,
@@ -262,6 +263,10 @@ export const api = {
     request<{ runs: RunInfo[] }>(`/api/runs?threadId=${encodeURIComponent(threadId)}`),
   /** 전체 run (프로젝트 무관) — 관제센터의 팀 보드·활동 피드. */
   listRunsAll: () => request<{ runs: RunInfo[] }>("/api/runs"),
+
+  /** 전문 검색 — 과거 run 의 prompt·결과 텍스트. ⌘K 팔레트가 소비. */
+  searchRuns: (q: string) =>
+    request<{ hits: RunSearchHit[] }>(`/api/runs/search?q=${encodeURIComponent(q)}`),
 
   startRun: (body: { agent: string; prompt: string; cwd?: string; projectId?: string | null; threadId?: string; skills?: string[] }) =>
     request<{ run: RunInfo }>("/api/runs", {

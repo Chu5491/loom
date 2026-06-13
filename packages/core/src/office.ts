@@ -217,3 +217,10 @@ export interface RunInfo {
   /** 사람의 품질 평가 — 1=👍 -1=👎 null=미평가. 에이전트 성과 통계의 원천. */
   rating?: 1 | -1 | null;
 }
+
+/** 전문 검색 결과 한 건 — run + 매치 발췌. */
+export interface RunSearchHit {
+  run: RunInfo;
+  snippet: string;
+  matchedIn: "prompt" | "output";
+}

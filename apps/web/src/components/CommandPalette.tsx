@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Bot, CalendarClock, CirclePlay, FileText, FolderGit2, GitBranch, House,
+  Bot, CalendarClock, CirclePlay, FileText, FolderGit2, GitBranch, History, House,
   MessagesSquare, Plug, ScanSearch, Search, FolderCog,
 } from "lucide-react";
 import type { Project } from "@loom/core";
@@ -31,6 +31,8 @@ interface Item {
   hint?: string;
   icon: React.ReactNode;
   run: () => void;
+  /** 서버 검색 결과 — 클라이언트 재필터를 우회(이미 q 로 매칭됨). */
+  keep?: boolean;
 }
 
 export function CommandPalette({
@@ -47,6 +49,18 @@ export function CommandPalette({
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // 디바운스된 전문 검색어 — 입력 멈추면 서버에 과거 run 본문 검색을 던진다.
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(q.trim()), 220);
+    return () => clearTimeout(id);
+  }, [q]);
+  const search = useQuery({
+    queryKey: ["runSearch", debounced],
+    queryFn: () => api.searchRuns(debounced),
+    enabled: open && debounced.length >= 2,
+  });
 
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice, enabled: open });
   const threads = useQuery({
@@ -99,13 +113,35 @@ export function CommandPalette({
       if (p.id === project?.id) continue;
       out.push({ key: `proj-${p.id}`, section: t("cmdk.projects"), label: p.name, hint: p.path, icon: <FolderGit2 className="size-4" />, run: done(() => onProject(p.id)) });
     }
+
+    // 전문 검색 결과 — 과거 run 의 prompt·결과 텍스트 매치. 클릭 시 그 대화로 이동.
+    for (const hit of search.data?.hits ?? []) {
+      const r = hit.run;
+      const goto = () => {
+        if (r.projectId && r.projectId !== project?.id) {
+          onProject(r.projectId);
+          if (r.threadId) setTimeout(() => sendLoomCmd({ view: "talk", threadId: r.threadId! }), 60);
+        } else if (r.threadId) {
+          sendLoomCmd({ view: "talk", threadId: r.threadId });
+        }
+      };
+      out.push({
+        key: `search-${r.id}`,
+        section: t("cmdk.search"),
+        label: hit.snippet || r.prompt.split("\n")[0]!,
+        hint: `@${r.agent} · ${r.startedAt.slice(0, 10)}`,
+        icon: <History className="size-4" />,
+        run: done(goto),
+        keep: true,
+      });
+    }
     return out;
-  }, [open, project, projects, office.data, threads.data, t, onClose, onProject, onTab]);
+  }, [open, project, projects, office.data, threads.data, search.data, t, onClose, onProject, onTab]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (!needle) return items;
-    return items.filter((i) => `${i.label} ${i.hint ?? ""} ${i.section}`.toLowerCase().includes(needle));
+    return items.filter((i) => i.keep || `${i.label} ${i.hint ?? ""} ${i.section}`.toLowerCase().includes(needle));
   }, [items, q]);
 
   useEffect(() => setSel(0), [q]);
