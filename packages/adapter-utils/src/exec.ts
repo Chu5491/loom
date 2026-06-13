@@ -1,4 +1,5 @@
 import { exec as execCb, spawn } from "node:child_process";
+import { withAugmentedPath } from "./env.js";
 
 const IS_WIN = process.platform === "win32";
 
@@ -30,7 +31,7 @@ export async function spawnCapture(
     try {
       proc = spawn(resolvedCmd, args, {
         stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
+        env: withAugmentedPath(process.env),
         cwd: options.cwd,
       });
     } catch (err) {

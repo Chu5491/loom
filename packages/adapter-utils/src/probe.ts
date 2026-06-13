@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { BinaryStatus } from "@loom/core";
+import { withAugmentedPath } from "./env.js";
 
 const IS_WIN = process.platform === "win32";
 const PROBE_TIMEOUT_MS = 3000;
@@ -28,7 +29,7 @@ export async function probeBinary(
     try {
       proc = spawn(resolvedCmd, [versionArg], {
         stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
+        env: withAugmentedPath(process.env),
       });
     } catch (err) {
       resolve({

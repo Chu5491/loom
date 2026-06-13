@@ -1,6 +1,7 @@
 import { spawn, exec } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import type { RunHandle } from "@loom/core";
+import { withAugmentedPath } from "./env.js";
 
 const IS_WIN = process.platform === "win32";
 
@@ -50,7 +51,8 @@ export async function spawnProcess(opts: SpawnProcessOptions): Promise<RunHandle
   // detached: POSIX 에서 자식을 프로세스 그룹 리더로 — killProc 의 그룹 시그널 전제.
   const spawnOpts = {
     cwd: opts.cwd,
-    env: { ...process.env, ...opts.env },
+    // 서버를 어떻게 띄웠든 설치된 CLI 를 찾도록 PATH 에 알려진 설치 디렉토리 보강.
+    env: withAugmentedPath({ ...process.env, ...opts.env }),
     stdio: ["pipe", "pipe", "pipe"] as ["pipe", "pipe", "pipe"],
     detached: !IS_WIN,
   };
