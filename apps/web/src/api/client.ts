@@ -298,6 +298,13 @@ export const api = {
   rerunRun: (id: string) =>
     request<{ run: RunInfo }>(`/api/runs/${id}/rerun`, { method: "POST" }),
 
+  /** @auto 디스패치 — 작업 텍스트로 적임자를 골라 그 에이전트로 run 시작. */
+  dispatchRun: (body: { prompt: string; projectId?: string | null; threadId?: string }) =>
+    request<{ run: RunInfo; pick: { agent: string; score: number; matched: string[] } }>("/api/runs/dispatch", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   /** 품질 평가 — 1=👍 -1=👎 null=해제. 에이전트 성과 통계의 원천. */
   rateRun: (id: string, rating: 1 | -1 | null) =>
     request<{ ok: boolean }>(`/api/runs/${id}/rating`, { method: "POST", body: JSON.stringify({ rating }) }),

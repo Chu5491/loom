@@ -221,19 +221,25 @@ export function TalkPage({ project }: { project: Project }) {
       : rawText.trim();
     if (!text) return;
     // 선행 @mention 이 있으면 대상 에이전트 결정 + 토큰 제거(에이전트엔 안 보냄).
+    // @auto 는 특수 — 서버가 작업 텍스트로 적임자를 고른다(디스패치).
     let agent = active;
     let prompt = text;
+    let auto = active === "auto";
     const m = text.match(/^@([a-zA-Z0-9_-]+)\s*/);
-    if (m && agents.some((a) => a.name === m[1])) {
+    if (m && m[1] === "auto") {
+      auto = true;
+      prompt = text.slice(m[0].length).trim();
+    } else if (m && agents.some((a) => a.name === m[1])) {
       agent = m[1]!;
+      auto = false;
       prompt = text.slice(m[0].length).trim();
       setActive(agent);
     }
-    if (!agent || !prompt) return;
+    if (!prompt || (!auto && !agent)) return;
 
     // 낙관적 user 버블 하나만(pending). run 이 runs.data 에 들어오면 실제 버블이 대체.
     setSendError(null);
-    setPending({ agent, text: prompt });
+    setPending({ agent: auto ? "auto" : agent, text: prompt });
     try {
       // 스레드가 없으면(새 대화) 첫 메시지로 자동 생성 — 이름은 프롬프트 머리.
       let tid = threadId;
@@ -243,8 +249,13 @@ export function TalkPage({ project }: { project: Project }) {
         setThreadId(tid);
         await threads.refetch();
       }
-      const opts = { prompt, projectId, threadId: tid, ...(skills.length ? { skills } : {}) };
-      await api.startRun({ ...opts, agent });
+      if (auto) {
+        const { pick } = await api.dispatchRun({ prompt, projectId, threadId: tid });
+        setActive(pick.agent); // 다음 턴 기본값을 고른 에이전트로
+      } else {
+        const opts = { prompt, projectId, threadId: tid, ...(skills.length ? { skills } : {}) };
+        await api.startRun({ ...opts, agent });
+      }
       await qc.invalidateQueries({ queryKey: ["runs", tid] });
       setPending(null);
     } catch (e) {
@@ -1578,6 +1589,7 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
+  const isAuto = active === "auto";
   const cur = agents.find((a) => a.name === active) ?? agents[0];
 
   return (
@@ -1588,13 +1600,31 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
         title={t("talk.target.change")}
         className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-0.5 pr-1.5 text-xs font-medium text-foreground transition-colors hover:bg-primary/15"
       >
-        {cur ? <Avatar agent={cur} size={20} /> : null}
-        <span className="max-w-28 truncate">{cur?.label || cur?.name || "—"}</span>
+        {isAuto ? (
+          <span className="flex size-5 items-center justify-center rounded-full bg-primary/20 text-primary"><Sparkles className="size-3" /></span>
+        ) : cur ? <Avatar agent={cur} size={20} /> : null}
+        <span className="max-w-28 truncate">{isAuto ? t("talk.target.auto") : cur?.label || cur?.name || "—"}</span>
         <ChevronDown className={cn("size-3.5 text-primary transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
         <div className="absolute bottom-full left-0 z-30 mb-1.5 w-56 rounded-xl border border-border bg-card p-1 shadow-lg">
           <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("talk.target.change")}</p>
+          {/* @auto — 서버가 작업 텍스트로 적임자 자동 선택. */}
+          <button
+            type="button"
+            onClick={() => { onActive("auto"); setOpen(false); }}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
+              isAuto ? "bg-primary/10" : "hover:bg-muted/60",
+            )}
+          >
+            <span className="flex size-[22px] items-center justify-center rounded-full bg-primary/20 text-primary"><Sparkles className="size-3.5" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{t("talk.target.auto")}</span>
+              <span className="block truncate text-[10px] text-muted-foreground">{t("talk.target.autoHint")}</span>
+            </span>
+            {isAuto ? <Check className="size-3.5 shrink-0 text-primary" /> : null}
+          </button>
           {agents.map((a) => (
             <button
               key={a.name}
