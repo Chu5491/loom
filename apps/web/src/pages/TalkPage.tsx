@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
-  NotebookPen, Paperclip, Pencil, Plug, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Workflow, Wrench, X,
+  NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Workflow, Wrench, X,
 } from "lucide-react";
 import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, WorkflowSpec } from "@loom/core";
 import { api } from "../api/client.js";
@@ -964,6 +964,17 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
                     className="text-muted-foreground/50 opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
                   >
                     <Info className="size-3.5" />
+                  </button>
+                ) : null}
+                {run ? (
+                  <button
+                    type="button"
+                    title={t("talk.rerun")}
+                    aria-label={t("talk.rerun")}
+                    onClick={() => void api.rerunRun(runId).then(() => onDone?.()).catch((e: unknown) => alert(String(e)))}
+                    className="text-muted-foreground/50 opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
+                  >
+                    <RotateCcw className="size-3.5" />
                   </button>
                 ) : null}
                 <button

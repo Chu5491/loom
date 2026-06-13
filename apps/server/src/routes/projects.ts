@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Hono } from "hono";
 import { z } from "zod";
+import { paths } from "../config.js";
 import { deleteProjectDb, getProjectDb, insertProject, listProjectsDb, projectPathExists } from "../db.js";
 import { searchFiles } from "../files.js";
 import { isResponse, parseBody } from "./helpers.js";
@@ -39,7 +40,19 @@ projectsRoute.post("/", async (c) => {
 });
 
 projectsRoute.delete("/:id", (c) => {
-  deleteProjectDb(c.req.param("id"));
+  const id = c.req.param("id");
+  deleteProjectDb(id);
+  // 프로젝트별 기록(분석·스탠드업)은 projectId 로 키된 data/ 파일 — 등록 해제 시
+  // 고아가 되므로 같이 거둔다. run 기록은 의도적으로 보존(deleteProjectDb 주석).
+  if (/^[0-9a-f-]{36}$/.test(id)) {
+    for (const sub of ["analysis", "standup"]) {
+      try {
+        fs.rmSync(path.join(paths.data, sub, `${id}.json`), { force: true });
+      } catch {
+        // 없거나 권한 — 무해
+      }
+    }
+  }
   return c.json({ ok: true });
 });
 

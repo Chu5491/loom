@@ -68,6 +68,22 @@ runsRoute.post("/:id/rating", async (c) => {
   return c.json({ ok: true, rating: data.rating });
 });
 
+// 재실행 — 원본 run 의 agent·prompt·project·thread 로 새 run 시작. 실패한 run 을
+// 다시 돌리거나(👎 다음의 자연스러운 동작) 같은 작업을 한 번 더 할 때. 명시 첨부
+// skills 는 RunInfo 에 영속되지 않아 에이전트 기본 스킬로 돈다(수용 가능한 한계).
+runsRoute.post("/:id/rerun", async (c) => {
+  const orig = getRun(c.req.param("id"));
+  if (!orig) return c.json({ error: "not_found" }, 404);
+  const result = await startRun({
+    agent: orig.agent,
+    prompt: orig.prompt,
+    projectId: orig.projectId ?? undefined,
+    threadId: orig.threadId ?? undefined,
+  });
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json({ run: result.run }, 201);
+});
+
 // 프리뷰 — run 없이 합성 프롬프트만(스킬·규약 작성 시 주입 확인용).
 // (":id" 라우트보다 먼저.)
 const previewSchema = z.object({

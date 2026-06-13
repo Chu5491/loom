@@ -157,13 +157,50 @@ export function getPersistedRun(id: string): { events: OfficeEvent[]; run: RunIn
   return { events: getRunEventsDb(id), run };
 }
 
-// 기록 삭제 — running 은 거부(먼저 취소). 인메모리 상태도 같이 비운다.
+/** run 의 디스크 산물(raw 로그 + 합성 프롬프트) 삭제 — DB 행 삭제가 남기던
+ *  고아 파일 정리. id 검증은 호출자 책임이나 UUID 가드로 traversal 방지. */
+export function deleteRunFiles(id: string): void {
+  if (!UUID_RE.test(id)) return;
+  for (const ext of [".log", ".prompt.txt"]) {
+    try {
+      fs.rmSync(path.join(paths.logs, `${id}${ext}`), { force: true });
+    } catch {
+      // 없거나 권한 문제 — 정리 실패는 무해
+    }
+  }
+}
+
+/** 부팅 prune — DB 에 더는 없는 run 의 로그 파일을 거둔다. run 삭제 경로가
+ *  파일을 안 지우던 시절 누적분 + 크래시 잔재. */
+export function pruneOrphanLogs(): number {
+  let removed = 0;
+  let files: string[];
+  try {
+    files = fs.readdirSync(paths.logs);
+  } catch {
+    return 0; // logs 디렉토리 아직 없음
+  }
+  const seen = new Set<string>();
+  for (const f of files) {
+    const id = f.replace(/\.(log|prompt\.txt)$/, "");
+    if (id === f || seen.has(id)) continue;
+    seen.add(id);
+    if (!getRunDb(id)) {
+      deleteRunFiles(id);
+      removed++;
+    }
+  }
+  return removed;
+}
+
+// 기록 삭제 — running 은 거부(먼저 취소). 인메모리 상태 + 디스크 산물도 같이 비운다.
 export function deleteRun(id: string): { ok: true } | { ok: false; status: 404 | 409; error: string } {
   const info = getRun(id);
   if (!info) return { ok: false, status: 404, error: "not_found" };
   if (info.status === "running") return { ok: false, status: 409, error: "still_running" };
   runs.delete(id);
   deleteRunDb(id);
+  deleteRunFiles(id);
   return { ok: true };
 }
 

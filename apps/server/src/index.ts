@@ -20,7 +20,7 @@ import { runsRoute } from "./routes/runs.js";
 import { gatesRoute } from "./routes/gates.js";
 import { schedulesRoute } from "./routes/schedules.js";
 import { usageRoute } from "./routes/usage.js";
-import { cancelAllRunning } from "./run/engine.js";
+import { cancelAllRunning, pruneOrphanLogs } from "./run/engine.js";
 import { reschedule, stopScheduler } from "./run/scheduler.js";
 import { restoreWorkflowState } from "./run/workflow.js";
 import { threadsRoute } from "./routes/threads.js";
@@ -32,6 +32,9 @@ fs.rmSync(paths.loadouts, { recursive: true, force: true });
 // 직전 서버와 함께 죽은 run 들 — "running" 좀비로 남아 UI 에서 멈출 수 없게 되는 것 방지.
 const orphans = failOrphanRuns();
 if (orphans > 0) logger.warn({ orphans }, "marked orphan running runs as failed");
+// DB 에 없는 run 의 로그 파일 prune — 삭제가 파일을 안 지우던 시절 누적분 정리.
+const prunedLogs = pruneOrphanLogs();
+if (prunedLogs > 0) logger.info({ prunedLogs }, "pruned orphan run log files");
 reschedule(); // 저장된 활성 스케줄을 cron 으로 무장 (서버 프로세스 수명 동안)
 restoreWorkflowState(); // 재시작 전에 멈춰 있던 게이트·join 도착분 복원
 

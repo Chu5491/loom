@@ -282,6 +282,10 @@ export const api = {
   cancelRun: (id: string) =>
     request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: "POST" }),
 
+  /** 재실행 — 같은 agent·prompt·project·thread 로 새 run. 실패/👎 다음 한 번 더. */
+  rerunRun: (id: string) =>
+    request<{ run: RunInfo }>(`/api/runs/${id}/rerun`, { method: "POST" }),
+
   /** 품질 평가 — 1=👍 -1=👎 null=해제. 에이전트 성과 통계의 원천. */
   rateRun: (id: string, rating: 1 | -1 | null) =>
     request<{ ok: boolean }>(`/api/runs/${id}/rating`, { method: "POST", body: JSON.stringify({ rating }) }),

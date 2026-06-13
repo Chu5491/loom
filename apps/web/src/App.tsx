@@ -379,6 +379,26 @@ function GateBell() {
         refetchInterval: 5000,
     });
     const list: WorkflowGate[] = gates.data?.gates ?? [];
+    // 새 게이트 = "막혀서 반드시 처리해야 하는" 이벤트 — 탭을 안 보고 있어도 알도록
+    // 브라우저 알림. 게이트는 못 보면 워크플로우 전체가 영구 정지하므로 노이즈 가치 충분.
+    const notified = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        if (typeof Notification === "undefined") return;
+        if (Notification.permission === "default") void Notification.requestPermission();
+        if (Notification.permission !== "granted") {
+            list.forEach((g) => notified.current.add(g.id)); // 권한 없으면 조용히 기억만
+            return;
+        }
+        for (const g of list) {
+            if (notified.current.has(g.id)) continue;
+            notified.current.add(g.id);
+            try {
+                new Notification(t("gate.pending"), { body: `${g.workflow} · ${g.nodeId}`, tag: g.id });
+            } catch {
+                // 알림 생성 실패(일부 환경) — 무해
+            }
+        }
+    }, [list, t]);
     useEffect(() => {
         if (!open) return;
         const onDown = (e: MouseEvent) => {
