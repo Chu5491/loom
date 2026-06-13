@@ -1,4 +1,5 @@
 import {
+  dirExistsAndNotEmpty,
   envIsSet,
   fileExists,
   homePath,
@@ -18,6 +19,19 @@ const CRED_FILES = [
   homePath(".config", "gcloud", "application_default_credentials.json"),
 ];
 
+// antigravity stores the OAuth token in the OS keychain ("Antigravity Safe
+// Storage"), so there is no credentials file. Newer CLI versions also migrated
+// config out of ~/.gemini into ~/.gemini/antigravity-cli (a config/.migrated
+// marker is left behind). The best filesystem signal is "an initialized config
+// dir exists" — same approach as claude-code's keychain fallback.
+const CONFIG_FILES = [
+  homePath(".gemini", "antigravity-cli", "settings.json"),
+];
+const CONFIG_DIRS = [
+  homePath(".gemini", "antigravity-cli"),
+  homePath(".gemini", "antigravity"),
+];
+
 function checkAuth(): AuthStatus {
   for (const v of ENV_VARS) {
     if (envIsSet(v)) return { state: "authenticated", hint: `${v} is set` };
@@ -25,9 +39,17 @@ function checkAuth(): AuthStatus {
   for (const f of CRED_FILES) {
     if (fileExists(f)) return { state: "authenticated", hint: `credential file: ${f}` };
   }
+  for (const f of CONFIG_FILES) {
+    if (fileExists(f)) return { state: "authenticated", hint: `config: ${f} (token may be in OS keychain)` };
+  }
+  for (const d of CONFIG_DIRS) {
+    if (dirExistsAndNotEmpty(d)) {
+      return { state: "authenticated", hint: `config dir: ${d} (token may be in OS keychain)` };
+    }
+  }
   return {
     state: "unauthenticated",
-    hint: "Set GEMINI_API_KEY / GOOGLE_API_KEY or configure gcloud credentials.",
+    hint: "Run `agy` to log in, or set GEMINI_API_KEY / GOOGLE_API_KEY.",
   };
 }
 
