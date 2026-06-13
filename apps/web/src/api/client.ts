@@ -341,6 +341,9 @@ export const api = {
   // ── 휴먼 게이트 — 워크플로우가 사람 승인을 기다리는 지점 ─────────────────────
   listGates: (threadId: string) =>
     request<{ gates: WorkflowGate[] }>(`/api/gates?threadId=${encodeURIComponent(threadId)}`),
+  // threadId 없이 — 전역 대기 게이트(헤더 벨). 스케줄 발 게이트는 threadId 가 없어
+  // 이걸로만 보인다.
+  listAllGates: () => request<{ gates: WorkflowGate[] }>(`/api/gates`),
   approveGate: (id: string) =>
     request<{ ok: boolean }>(`/api/gates/${id}/approve`, { method: "POST" }),
   rejectGate: (id: string) =>

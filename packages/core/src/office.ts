@@ -78,7 +78,7 @@ export interface WorkflowNode {
   y?: number;
 }
 
-/** 대기 중인 휴먼 게이트 — 서버 인메모리(재시작 시 소실, v1 한계). */
+/** 대기 중인 휴먼 게이트 — sqlite 영속 + 부팅 시 복원되어 재시작을 견딘다. */
 export interface WorkflowGate {
   id: string;
   workflow: string;

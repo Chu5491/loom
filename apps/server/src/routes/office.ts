@@ -182,6 +182,11 @@ officeRoute.put("/workflows/:name", async (c) => {
   const ids = new Set(data.nodes.map((n) => n.id));
   if (ids.size !== data.nodes.length) return c.json({ error: "duplicate_node_id" }, 400);
   if (!ids.has(data.entry)) return c.json({ error: "entry_node_not_found" }, 400);
+  // entry 가 게이트면 실행 시점에야 거부됐다(startWorkflow) — 저장 때 막아 사용자가
+  // 실행 버튼을 눌러야 잘못을 아는 일이 없게.
+  if (data.nodes.find((n) => n.id === data.entry)?.kind === "gate") {
+    return c.json({ error: "entry_cannot_be_gate" }, 400);
+  }
   for (const e of data.edges) {
     if (!ids.has(e.from) || !ids.has(e.to)) return c.json({ error: `edge_refers_missing_node: ${e.from}->${e.to}` }, 400);
   }

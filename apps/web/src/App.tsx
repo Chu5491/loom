@@ -7,6 +7,7 @@ import {useQuery, useQueryClient} from "@tanstack/react-query";
 import {motion, AnimatePresence} from "framer-motion";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import {
+    Bell,
     Check,
     ChevronDown,
     ChevronLeft,
@@ -17,8 +18,10 @@ import {
     Plug,
     RefreshCw,
     Sun,
+    X,
     FolderCog,
 } from "lucide-react";
+import type {WorkflowGate} from "@loom/core";
 import {api} from "./api/client.js";
 import {AgentAvatar} from "./components/AgentAvatar.js";
 import {CliStatus} from "./components/CliStatus.js";
@@ -265,6 +268,7 @@ export function App() {
                                 ⌘K
                             </kbd>
                         </button>
+                        <GateBell />
                         <CliStatus
                             onOpenConnections={() => setTab("connections")}
                         />
@@ -358,6 +362,69 @@ export function App() {
                     <PulseRail onJump={(projectId) => { if (projectId) setProject(projectId); setTab("home"); }} />
                 </div>
             </ErrorBoundary>
+        </div>
+    );
+}
+
+// ── GateBell — 전역 대기 게이트. Talk 은 스레드 스코프라 스케줄 발 워크플로우의
+// 게이트(threadId 없음)는 어디서도 안 보여 영구 대기했다 — 헤더 벨이 전부를 모은다.
+function GateBell() {
+    const { t } = useI18n();
+    const qc = useQueryClient();
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const gates = useQuery({
+        queryKey: ["gates", "all"],
+        queryFn: api.listAllGates,
+        refetchInterval: 5000,
+    });
+    const list: WorkflowGate[] = gates.data?.gates ?? [];
+    useEffect(() => {
+        if (!open) return;
+        const onDown = (e: MouseEvent) => {
+            if (!ref.current?.contains(e.target as Node)) setOpen(false);
+        };
+        window.addEventListener("mousedown", onDown);
+        return () => window.removeEventListener("mousedown", onDown);
+    }, [open]);
+    const decide = (id: string, ok: boolean) => {
+        void (ok ? api.approveGate(id) : api.rejectGate(id)).then(() => {
+            void qc.invalidateQueries({ queryKey: ["gates"] });
+            void qc.invalidateQueries({ queryKey: ["runs"] });
+        });
+    };
+    if (list.length === 0) return null;
+    return (
+        <div className="relative" ref={ref}>
+            <Button variant="ghost" size="sm" aria-label={t("gate.pending")} onClick={() => setOpen((o) => !o)}>
+                <span className="relative">
+                    <Bell className="size-4" />
+                    <span className="absolute -right-2 -top-2 flex size-4 items-center justify-center rounded-full bg-warning text-[9px] font-bold text-white">
+                        {list.length}
+                    </span>
+                </span>
+            </Button>
+            {open ? (
+                <div className="absolute right-0 top-full z-30 mt-1 w-80 rounded-xl border border-border bg-popover p-2 shadow-lg">
+                    <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {t("gate.pending")} · {list.length}
+                    </p>
+                    {list.map((g) => (
+                        <div key={g.id} className="rounded-lg p-2 hover:bg-muted/50">
+                            <p className="truncate text-xs font-medium">{g.workflow}</p>
+                            <p className="truncate text-[11px] text-muted-foreground">{g.nodeId} · {g.result.slice(0, 60) || "—"}</p>
+                            <div className="mt-1.5 flex gap-1.5">
+                                <Button variant="secondary" size="sm" onClick={() => decide(g.id, true)}>
+                                    <Check className="size-3" />{t("talk.gate.approve")}
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => decide(g.id, false)}>
+                                    <X className="size-3" />{t("talk.gate.reject")}
+                                </Button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
         </div>
     );
 }
