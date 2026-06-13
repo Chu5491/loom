@@ -80,6 +80,20 @@ export function parseLine(line: string): OfficeEvent[] {
     if (name) return [toolEvent(name, part?.state?.input ?? j.parameters)];
   }
 
+  // codex 토큰 사용량 — {type:"turn.completed", usage:{input_tokens, output_tokens, ...}}.
+  // cost 는 안 줌 → engine 이 모델 단가로 추정.
+  if (type === "turn.completed") {
+    const u = j.usage as Record<string, unknown> | undefined;
+    if (u) return [{ kind: "usage", inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens) }];
+  }
+
+  // opencode 토큰+비용 — {type:"step_finish", part:{cost, tokens:{input, output, ...}}}.
+  // cost 를 직접 보고(유료 모델은 실값, 무료는 0).
+  if (type === "step_finish") {
+    const sp = j.part as { cost?: unknown; tokens?: { input?: unknown; output?: unknown } } | undefined;
+    if (sp) return [{ kind: "usage", costUsd: num(sp.cost), inputTokens: num(sp.tokens?.input), outputTokens: num(sp.tokens?.output) }];
+  }
+
   // codex (신형): {type:"item.completed", item:{type:"agent_message"|"command_execution"|...}}
   if (type === "item.completed") {
     const item = j.item as Record<string, unknown> | undefined;

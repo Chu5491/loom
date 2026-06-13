@@ -21,4 +21,14 @@ describe("parseLine", () => {
   it("non-JSON lines are plain text", () => {
     expect(parseLine("hello world")).toEqual([{ kind: "text", text: "hello world" }]);
   });
+
+  it("captures codex token usage from turn.completed (no cost — engine estimates)", () => {
+    const line = JSON.stringify({ type: "turn.completed", usage: { input_tokens: 12049, output_tokens: 22 } });
+    expect(parseLine(line)).toEqual([{ kind: "usage", inputTokens: 12049, outputTokens: 22 }]);
+  });
+
+  it("captures opencode tokens + reported cost from step_finish", () => {
+    const line = JSON.stringify({ type: "step_finish", part: { cost: 0.0042, tokens: { input: 13723, output: 17 } } });
+    expect(parseLine(line)).toEqual([{ kind: "usage", costUsd: 0.0042, inputTokens: 13723, outputTokens: 17 }]);
+  });
 });

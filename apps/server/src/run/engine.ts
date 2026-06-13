@@ -22,6 +22,7 @@ import { composePrompt } from "./compose.js";
 import { analysisDocPath, notesPath } from "./project-memory.js";
 import { materializeLoadout } from "./loadout.js";
 import { parseLine } from "./parse.js";
+import { estimateCost } from "./pricing.js";
 // 순환 import (workflow.ts ↔ engine.ts) — 양쪽 다 호출 시점에만 쓰는 함수 참조라 안전.
 import { capText, fenceHandoff, resolveAutoWorkflows, startWorkflow, type RunOutcome } from "./workflow.js";
 
@@ -86,6 +87,12 @@ interface RunState {
   lastText: string;
   seq: number; // run_events 순번 — 디스크 영속 순서 보장
   costUsd?: number;
+  /** CLI 가 비용을 직접 보고했나(claude result, opencode step). false 면 토큰으로 추정. */
+  costReported?: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** 비용 추정용 모델 id — run() 이 adapterConfig 에서 채운다. */
+  model?: string;
   sessionId?: string;
   abort: AbortController;
   kill: () => void;
@@ -380,6 +387,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     abort,
     kill: () => {},
     loadoutDir: loadout.dir,
+    model: agent.model,
   };
   runs.set(id, state);
   insertRun(info); // history 영속 — running 상태로 즉시 기록(finish 가 갱신).
@@ -418,10 +426,17 @@ function emit(state: RunState, events: OfficeEvent[]): void {
     }
     if (ev.kind === "result") {
       state.sawResult = true;
-      state.costUsd = ev.costUsd;
+      // claude 는 result 에 total_cost_usd 를 직접 준다(보고된 비용).
+      if (ev.costUsd != null) { state.costUsd = ev.costUsd; state.costReported = true; }
       // result 이벤트의 sessionId 가 있을 때만 갱신 — 없으면(codex 합성 result 등)
       // captureSession 이 stream 에서 이미 잡아둔 값을 덮어쓰지 않는다.
       if (ev.sessionId) state.sessionId = ev.sessionId;
+    }
+    if (ev.kind === "usage") {
+      // 토큰 누적(codex/opencode 는 스텝마다 보고). cost 가 있으면(opencode) 합산.
+      if (ev.inputTokens != null) state.inputTokens = (state.inputTokens ?? 0) + ev.inputTokens;
+      if (ev.outputTokens != null) state.outputTokens = (state.outputTokens ?? 0) + ev.outputTokens;
+      if (ev.costUsd != null) { state.costUsd = (state.costUsd ?? 0) + ev.costUsd; state.costReported = true; }
     }
     // plain-text CLI(devin/antigravity)는 줄 단위 text 이벤트 — 누적해야 여러 줄
     // 출력(커밋 메시지 등)이 result 합성에서 잘리지 않는다.
@@ -741,6 +756,11 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
   state.info.status = status;
   state.info.exitCode = exitCode;
   state.info.endedAt = new Date().toISOString();
+  // CLI 가 비용을 안 줬는데(codex) 토큰은 있으면 모델 단가로 추정 — 예산 가드가
+  // claude 외 CLI 에서도 의미를 갖게. opencode 는 cost 를 직접 주므로 추정 안 함.
+  if (!state.costReported && (state.inputTokens || state.outputTokens)) {
+    state.costUsd = estimateCost(state.model, state.inputTokens, state.outputTokens) ?? state.costUsd;
+  }
   state.info.costUsd = state.costUsd ?? null;
   finishRun(state.info, { costUsd: state.costUsd, sessionId: state.sessionId });
   try {

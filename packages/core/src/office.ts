@@ -136,6 +136,9 @@ export type OfficeEvent =
   // via "edge" 는 흡수 전 하네스가 영속한 과거 이벤트 호환용.
   | { kind: "handoff"; toAgent: string; via: "edge" | "delegation" | "workflow"; reason?: string }
   | { kind: "result"; text: string; costUsd?: number; sessionId?: string }
+  // 토큰/비용 사용량 — result 와 별개 라인으로 오는 CLI(codex turn.completed,
+  // opencode step_finish)용. result 텍스트 합성을 건드리지 않고 누적된다.
+  | { kind: "usage"; costUsd?: number; inputTokens?: number; outputTokens?: number }
   | { kind: "error"; message: string };
 
 /** 등록된 로컬 작업 디렉토리. 머신별 경로라 휴대 안 됨 → data/(gitignore)에 기록.
