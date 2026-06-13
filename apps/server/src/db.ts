@@ -134,6 +134,11 @@ export function closeDb(): void {
   }
 }
 
+/** 일관된 온라인 스냅샷 — WAL 중에도 안전하게 dest 로 복사(백업/내보내기용). */
+export function backupDb(dest: string): Promise<void> {
+  return getDb().backup(dest).then(() => undefined);
+}
+
 interface RunRow {
   id: string;
   agent: string;

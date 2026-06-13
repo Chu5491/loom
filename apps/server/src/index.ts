@@ -25,6 +25,7 @@ import { reschedule, stopScheduler } from "./run/scheduler.js";
 import { restoreWorkflowState } from "./run/workflow.js";
 import { threadsRoute } from "./routes/threads.js";
 import { uploadsRoute } from "./routes/uploads.js";
+import { backupRoute } from "./routes/backup.js";
 
 ensureOffice();
 // run 스코프 loadout 잔재 청소 — 크래시로 finish 를 못 거친 디렉토리가 쌓이지 않게.
@@ -54,6 +55,7 @@ app.route("/api/runs", runsRoute);
 app.route("/api/schedules", schedulesRoute);
 app.route("/api/usage", usageRoute);
 app.route("/api/gates", gatesRoute);
+app.route("/api/backup", backupRoute);
 
 app.onError((err, c) => {
   logger.error({ err }, "unhandled request error");

@@ -381,6 +381,8 @@ const en = {
   "conn.title": "Connections",
   "conn.subtitle": "Every CLI agent on this machine — discovered, connected, tested.",
   "conn.refreshAll": "Refresh all",
+  "backup.export": "Export backup",
+  "backup.hint": "Download office + run history (loom.db) as a zip. data/ is gitignored, so this is your only recovery path.",
 
   "conn.binary.installed": "Installed",
   "conn.binary.missing": "Not installed",
@@ -789,6 +791,8 @@ const ko: Dictionary = {
   "conn.title": "연결",
   "conn.subtitle": "이 머신의 모든 CLI 에이전트 — 발견하고, 연결하고, 테스트합니다.",
   "conn.refreshAll": "전체 새로고침",
+  "backup.export": "백업 내보내기",
+  "backup.hint": "office + run 기록(loom.db)을 zip 으로 저장. data/ 는 gitignore 라 이게 유일한 복구 수단이에요.",
 
   "conn.binary.installed": "설치됨",
   "conn.binary.missing": "미설치",

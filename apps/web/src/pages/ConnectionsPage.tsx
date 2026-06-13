@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Zap } from "lucide-react";
+import { Download, Zap } from "lucide-react";
 import type { AdapterManifest, TestAdapterResult } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "../components/AdapterIcon.js";
@@ -22,7 +22,23 @@ export function ConnectionsPage() {
   });
 
   return (
-    <PageShell title={t("conn.title")} subtitle={t("conn.subtitle")}>
+    <PageShell
+      title={t("conn.title")}
+      subtitle={t("conn.subtitle")}
+      actions={
+        // data/ 는 gitignore — 손상·실수 삭제 시 복구 수단이 없어 수동 백업 경로.
+        // 앵커 다운로드(브라우저가 파일 저장 처리). office + loom.db + standup/analysis.
+        <a
+          href="/api/backup"
+          download
+          className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+          title={t("backup.hint")}
+        >
+          <Download className="size-3.5" />
+          {t("backup.export")}
+        </a>
+      }
+    >
       <div className="grid gap-4 md:grid-cols-2">
         {adapters.isLoading
           ? [0, 1, 2, 3].map((i) => (
