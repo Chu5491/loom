@@ -3,7 +3,7 @@
 
 import { Suspense, lazy, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, GitBranch, Minus, Plus, Sparkles } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Check, GitBranch, Minus, Plus, RefreshCw, Sparkles } from "lucide-react";
 import type { Project } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
@@ -65,6 +65,12 @@ export function GitView({ project }: { project: Project }) {
     onSuccess: (r) => { setMessage(r.message); setErr(null); },
     onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
   });
+  // 원격 동기화 — push/pull/fetch. 결과·에러를 그대로 표면화.
+  const remote = useMutation({
+    mutationFn: (op: "push" | "pull" | "fetch") => api.gitRemote(project.id, op),
+    onSuccess: (r) => { setErr(null); invalidate(); if (r.output && r.output !== "done") setErr(null); },
+    onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
+  });
 
   const s = status.data;
   if (s && !s.git) {
@@ -88,6 +94,33 @@ export function GitView({ project }: { project: Project }) {
           )}>
             {t("git.changes", { n: String(s?.files.length ?? 0) })}
           </span>
+        </div>
+
+        {/* 원격 동기화 — push/pull/fetch. ahead/behind 가 있으면 카운트 배지. */}
+        <div className="mt-2 flex items-center gap-1.5">
+          <Button
+            variant="secondary" size="sm" className="h-7 flex-1"
+            disabled={remote.isPending}
+            title={t("git.push")} onClick={() => remote.mutate("push")}
+          >
+            <ArrowUpFromLine className="size-3.5" />{t("git.push")}
+            {s?.remote && s.remote.ahead > 0 ? <span className="rounded-full bg-primary/20 px-1 text-[10px] tabular-nums text-primary">{s.remote.ahead}</span> : null}
+          </Button>
+          <Button
+            variant="secondary" size="sm" className="h-7 flex-1"
+            disabled={remote.isPending}
+            title={t("git.pull")} onClick={() => remote.mutate("pull")}
+          >
+            <ArrowDownToLine className="size-3.5" />{t("git.pull")}
+            {s?.remote && s.remote.behind > 0 ? <span className="rounded-full bg-warning/20 px-1 text-[10px] tabular-nums text-warning">{s.remote.behind}</span> : null}
+          </Button>
+          <Button
+            variant="ghost" size="sm" className="h-7"
+            disabled={remote.isPending}
+            title={t("git.fetch")} aria-label={t("git.fetch")} onClick={() => remote.mutate("fetch")}
+          >
+            <RefreshCw className={cn("size-3.5", remote.isPending && "animate-spin")} />
+          </Button>
         </div>
 
         <FileGroup

@@ -95,8 +95,26 @@ projectFilesRoute.get("/:id/file", (c) => {
 
 // ── Git ───────────────────────────────────────────────────────────────────────
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await exec("git", args, { cwd, maxBuffer: 10 * 1024 * 1024 });
+  // GIT_TERMINAL_PROMPT=0 — push/pull 이 자격증명 입력을 요구하면 행되지 않고
+  // 즉시 실패하게(서버 요청이 무한 대기하는 것 방지). SSH 키/credential helper 가
+  // 설정돼 있으면 정상 동작.
+  const { stdout } = await exec("git", args, {
+    cwd,
+    maxBuffer: 10 * 1024 * 1024,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
   return stdout;
+}
+
+/** upstream 대비 ahead/behind — push/pull 버튼 활성화 판단. upstream 없으면 null. */
+async function aheadBehind(cwd: string): Promise<{ ahead: number; behind: number } | null> {
+  try {
+    const out = (await git(cwd, ["rev-list", "--count", "--left-right", "@{upstream}...HEAD"])).trim();
+    const [behind, ahead] = out.split(/\s+/).map((n) => parseInt(n, 10));
+    return { ahead: ahead || 0, behind: behind || 0 };
+  } catch {
+    return null; // upstream 미설정 또는 추적 브랜치 아님
+  }
 }
 
 projectFilesRoute.get("/:id/git/status", async (c) => {
@@ -113,9 +131,9 @@ projectFilesRoute.get("/:id/git/status", async (c) => {
         status: line[0] === "?" ? "?" : (line[0] !== " " ? line[0] : line[1]) ?? "M",
         path: line.slice(3).replace(/^"|"$/g, ""),
       }));
-    return c.json({ git: true, branch, files });
+    return c.json({ git: true, branch, files, remote: await aheadBehind(p.path) });
   } catch {
-    return c.json({ git: false, branch: null, files: [] }); // git repo 아님 — Git 뷰가 안내
+    return c.json({ git: false, branch: null, files: [], remote: null }); // git repo 아님 — Git 뷰가 안내
   }
 });
 
@@ -186,6 +204,36 @@ projectFilesRoute.post("/:id/git/commit", async (c) => {
     return c.json({ error: (e as Error).message }, 400);
   }
 });
+
+// 원격 동기화 — push/pull/fetch. 자격증명 프롬프트는 GIT_TERMINAL_PROMPT=0 로 차단
+// (SSH 키/credential helper 필요). stderr 까지 출력에 담아 결과를 보여준다.
+async function gitRemote(cwd: string, args: string[]): Promise<{ ok: true; output: string } | { ok: false; error: string }> {
+  try {
+    const { stdout, stderr } = await exec("git", args, {
+      cwd,
+      maxBuffer: 10 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
+    return { ok: true, output: (stdout + stderr).trim() || "done" };
+  } catch (e) {
+    // git 은 push/pull 실패를 stderr + 비0 종료로 — 메시지를 그대로 노출.
+    const err = e as { stderr?: string; message?: string };
+    return { ok: false, error: (err.stderr || err.message || "git failed").trim() };
+  }
+}
+
+for (const [op, args] of [
+  ["push", ["push"]],
+  ["pull", ["pull", "--ff-only"]], // 머지 커밋 자동 생성 회피 — 충돌 시 사용자가 처리
+  ["fetch", ["fetch", "--all", "--prune"]],
+] as const) {
+  projectFilesRoute.post(`/:id/git/${op}`, async (c) => {
+    const p = project(c);
+    if (!p) return c.json({ error: "not_found" }, 404);
+    const r = await gitRemote(p.path, [...args]);
+    return r.ok ? c.json({ ok: true, output: r.output }) : c.json({ error: r.error }, 400);
+  });
+}
 
 // ── 커밋 메시지 AI 생성 — staged diff 를 에이전트에게 보내 한 줄 초안을 받는다 ───
 // 스레드 없는 유틸 run(Talk 에 안 보임). diff 가 크면 --stat 요약으로 대체.

@@ -194,9 +194,12 @@ export const api = {
   projectFile: (id: string, path: string) =>
     request<{ content: string }>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
   gitStatus: (id: string) =>
-    request<{ git: boolean; branch: string | null; files: { staged: boolean; status: string; path: string }[] }>(
+    request<{ git: boolean; branch: string | null; files: { staged: boolean; status: string; path: string }[]; remote: { ahead: number; behind: number } | null }>(
       `/api/projects/${id}/git/status`,
     ),
+  /** 원격 동기화 — push/pull/fetch. 자격증명 프롬프트는 서버가 차단(실패 시 에러). */
+  gitRemote: (id: string, op: "push" | "pull" | "fetch") =>
+    request<{ ok: boolean; output: string }>(`/api/projects/${id}/git/${op}`, { method: "POST" }),
   gitVersions: (id: string, path: string) =>
     request<{ head: string | null; working: string | null }>(
       `/api/projects/${id}/git/versions?path=${encodeURIComponent(path)}`,
