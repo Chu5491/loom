@@ -7,7 +7,7 @@ import {
   buildDevinCommand,
   devinAdapter,
   toDevinMcpEntry,
-  writeDevinMcpConfig,
+  syncDevinMcpConfig,
   DEVIN_PRESET_MODELS,
 } from "./index.js";
 
@@ -40,7 +40,7 @@ describe("devin MCP injection (.devin/config.local.json)", () => {
       JSON.stringify({ other: 1, mcpServers: { user: { url: "http://u", transport: "http" } } }),
     );
 
-    expect(writeDevinMcpConfig(tmp, [CANARY])).toBe(file);
+    expect(syncDevinMcpConfig(tmp, [CANARY])).toBe(file);
     const out = JSON.parse(fs.readFileSync(file, "utf8"));
     expect(out.other).toBe(1);
     expect(Object.keys(out.mcpServers).sort()).toEqual(["canary", "user"]);
@@ -50,11 +50,34 @@ describe("devin MCP injection (.devin/config.local.json)", () => {
 
   it("creates the file from scratch when absent", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
-    writeDevinMcpConfig(tmp, [CANARY]);
+    syncDevinMcpConfig(tmp, [CANARY]);
     const out = JSON.parse(
       fs.readFileSync(path.join(tmp, ".devin", "config.local.json"), "utf8"),
     );
     expect(Object.keys(out.mcpServers)).toEqual(["canary"]);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("strips the transient loom delegate entry left by a prior run", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
+    const file = path.join(tmp, ".devin", "config.local.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // 직전 delegate run 이 남긴 죽은 loom + 사용자 서버
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ mcpServers: { loom: { url: "http://x/api/mcp?runId=dead", transport: "http" }, user: { url: "http://u", transport: "http" } } }),
+    );
+    // delegate=false run — servers 없이 호출돼도 loom 은 사라지고 user 는 남는다
+    syncDevinMcpConfig(tmp, []);
+    const out = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(Object.keys(out.mcpServers)).toEqual(["user"]);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("does not create an empty config when there is nothing to write", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
+    expect(syncDevinMcpConfig(tmp, [])).toBeNull();
+    expect(fs.existsSync(path.join(tmp, ".devin"))).toBe(false);
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 });
