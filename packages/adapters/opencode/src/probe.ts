@@ -1,53 +1,15 @@
-import {
-  envIsSet,
-  homePath,
-  jsonObjectHasKeys,
-  probeBinary,
-} from "@loom/adapter-utils";
-import type { AuthStatus, ProbeFn } from "@loom/core";
+import { probeBinary } from "@loom/adapter-utils";
+import type { ProbeFn } from "@loom/core";
 
-// opencode itself has NO vendor login (open-source, bring-your-own-provider).
-// "authenticated" here means "≥1 provider is attached" — via an env key or the
-// auth.json map. Any of these provider keys confirms one is wired up.
-const ENV_VARS = [
-  "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY",
-  "GOOGLE_API_KEY",
-  "GROQ_API_KEY",
-  "MISTRAL_API_KEY",
-  "XAI_API_KEY",
-];
-
-// `opencode auth login <provider>` writes keys ONLY into this plaintext
-// provider-keyed map (no keychain). A fresh install with no provider is `{}`,
-// so existence is not enough — it must hold ≥1 provider. The config dir is no
-// signal (logs/cache exist regardless).
-const CRED_FILES = [
-  homePath(".local", "share", "opencode", "auth.json"),
-  homePath(".config", "opencode", "auth.json"),
-];
-
-function checkAuth(): AuthStatus {
-  const setVars = ENV_VARS.filter(envIsSet);
-  if (setVars.length > 0) {
-    return {
-      state: "authenticated",
-      hint: `provider via env: ${setVars.join(", ")}`,
-    };
-  }
-  for (const f of CRED_FILES) {
-    if (jsonObjectHasKeys(f)) return { state: "authenticated", hint: `provider attached: ${f}` };
-  }
-  // Not a failed login — opencode needs no vendor login, just a provider.
-  return {
-    state: "unauthenticated",
-    hint: "No provider attached yet — opencode needs no login. Run `opencode auth login <provider>` or set a provider API key.",
-  };
-}
-
+// opencode is open-source and bring-your-own-provider — it has NO vendor login.
+// Providers (env keys, `opencode auth login`, or local models) are the user's
+// choice and may live in places we can't reliably read. So for loom's purposes
+// "installed" == ready: if the binary is present, report authenticated.
 export const opencodeProbe: ProbeFn = async (input) => {
   const command = input.command ?? "opencode";
   const binary = await probeBinary(command);
-  const auth = binary.available ? checkAuth() : { state: "unknown" as const };
+  const auth = binary.available
+    ? { state: "authenticated" as const, hint: "installed — opencode needs no login (bring your own provider)" }
+    : { state: "unknown" as const };
   return { binary, auth, checkedAt: new Date().toISOString() };
 };

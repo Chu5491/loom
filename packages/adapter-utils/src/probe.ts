@@ -111,18 +111,6 @@ export function dirExistsAndNotEmpty(p: string): boolean {
   }
 }
 
-/** True only if `p` is a JSON file parsing to an object with ≥1 key. For
- *  credential maps (opencode auth.json) where an empty `{}` means "logged out"
- *  — fileExists alone gives false positives. Malformed/half-written → false. */
-export function jsonObjectHasKeys(p: string): boolean {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) && Object.keys(parsed).length > 0;
-  } catch {
-    return false;
-  }
-}
-
 export function envIsSet(name: string): boolean {
   const value = process.env[name];
   return typeof value === "string" && value.length > 0;
