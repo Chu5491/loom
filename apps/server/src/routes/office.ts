@@ -4,6 +4,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { importRulesArchive, importSkillArchive } from "../office-import.js";
+import { findSkills, importSkill } from "../run/skills-cli.js";
+import { generateAgentDraft } from "../run/agent-author.js";
 import { isResponse, parseBody } from "./helpers.js";
 import {
   agentSchema,
@@ -131,6 +133,26 @@ officeRoute.post("/skills/import", async (c) => {
     return c.json({ error: (e as Error).message }, 400);
   }
 });
+// ── 스킬 생태계 (npx skills / skills.sh) — 검색 + 가져오기 ────────────────────
+officeRoute.post("/skills/discover", async (c) => {
+  const data = await parseBody(c, z.object({ query: z.string().min(1).max(100) }));
+  if (isResponse(data)) return data;
+  try {
+    return c.json({ candidates: await findSkills(data.query) });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});
+officeRoute.post("/skills/install", async (c) => {
+  const data = await parseBody(c, z.object({ package: z.string().min(1).max(200) }));
+  if (isResponse(data)) return data;
+  try {
+    return c.json(await importSkill(data.package), 201);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});
+
 officeRoute.post("/rules/import", async (c) => {
   const data = await parseBody(c, importSchema);
   if (isResponse(data)) return data;
@@ -156,6 +178,18 @@ officeRoute.delete("/agents/:name", (c) =>
     ? c.json({ ok: true })
     : c.json({ error: "not_found" }, 404),
 );
+
+// 프롬프트로 에이전트 초안 생성 — 실재 스킬/mcp/어댑터만 참조. 저장은 PUT 으로 따로.
+officeRoute.post("/agents/generate", async (c) => {
+  const data = await parseBody(c, z.object({ prompt: z.string().min(1).max(4000), agent: z.string().optional() }));
+  if (isResponse(data)) return data;
+  try {
+    return c.json(await generateAgentDraft(data.prompt, data.agent));
+  } catch (e) {
+    const msg = (e as Error).message;
+    return c.json({ error: msg }, msg === "no_author" ? 400 : 502);
+  }
+});
 
 // ── mcp (single file) ────────────────────────────────────────────────────────
 officeRoute.put("/mcp", async (c) => {

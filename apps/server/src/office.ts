@@ -64,7 +64,7 @@ export const agentSchema = z.object({
   reasoning: z.enum(["high", "medium", "low"]).optional(),
   permission: z.enum(["default", "acceptEdits", "bypass"]).optional(),
   delegate: z.boolean().optional(),
-  roles: z.array(z.enum(["git", "analyst"])).optional(),
+  roles: z.array(z.enum(["git", "analyst", "author"])).optional(),
   prompt: z.string().optional(),
   rules: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
@@ -103,7 +103,7 @@ export const workflowSchema = z.object({
 });
 
 // ── frontmatter (의존성 없이 — `---` 펜스 사이 key: value 만) ────────────────
-function splitFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
+export function splitFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   if (!m) return { meta: {}, body: raw };
   const meta: Record<string, string> = {};
@@ -235,7 +235,13 @@ export function writeBudget(spec: BudgetSpec): BudgetSpec {
 // ── 기능 프롬프트 — git 커밋·프로젝트 분석 같은 내장 기능의 지침(스타일·관점).
 // 양식(출력 형식)은 서버 코드에 고정, 이 파일은 그 앞에 붙는 조정 가능한 부분.
 // 에이전트 프롬프트와 분리 — 기능 실행 시 에이전트의 prompt 대신 이게 쓰인다.
-export const FEATURE_PROMPT_NAMES = ["git-commit", "analysis", "standup"] as const;
+export const FEATURE_PROMPT_NAMES = [
+  "git-commit",
+  "analysis",
+  "standup",
+  "skill-author",
+  "agent-author",
+] as const;
 export type FeaturePromptName = (typeof FEATURE_PROMPT_NAMES)[number];
 
 const DEFAULT_FEATURE_PROMPTS: Record<FeaturePromptName, string> = {
@@ -248,6 +254,36 @@ const DEFAULT_FEATURE_PROMPTS: Record<FeaturePromptName, string> = {
   standup:
     "You are writing the team's daily standup report for this project.\n" +
     "Be factual and brief — pull from the run history provided and the git log; do not invent work that did not happen.\n",
+  // 외부 스킬을 loom office/skills 스타일로 다듬는다. loom 은 명령을 자동 실행/주입하지
+  // 않으므로(헌법: 자동 주입은 죄) Claude Code 전용 동적 주입을 제거하는 게 핵심.
+  "skill-author":
+    "You adapt an agent skill (SKILL.md) for the loom office, which loads skills as " +
+    "plain markdown the agent reads on demand — it does NOT execute or inject anything.\n" +
+    "Rewrite the skill body so it stands on its own:\n" +
+    "- Remove Claude-Code-only dynamic injection like `!`cmd`` blocks. If the command is " +
+    "useful, instruct the agent to RUN it instead of implying its output is pre-injected.\n" +
+    "- Fix phrasing that assumes injected context (\"the JSON above\", \"already injected\").\n" +
+    "- Keep all the real guidance, code samples, and reference-file links intact.\n" +
+    "- Write a single-line `description` that says WHEN to read this skill (not just what it is).\n" +
+    "Output ONLY one JSON object inside a ```json fence, no prose: " +
+    '{"description": string, "body": string}. `body` is the full adapted markdown WITHOUT frontmatter.\n',
+  // 자연어 요청 + 실재 office 컨텍스트로 AgentSpec 을 설계한다. 환각 방지를 위해
+  // 제공된 목록 밖의 skill/mcp/rule/adapter 를 절대 만들어내지 말 것.
+  "agent-author":
+    "You design a loom agent (AgentSpec) from the user's request and the team's available " +
+    "resources. The request and the lists of available adapters, skills, mcp servers, and rules " +
+    "are provided in the user message as JSON.\n" +
+    "Rules:\n" +
+    "- Pick `adapter` ONLY from the provided adapters; prefer an authenticated one. Set `model` " +
+    "only if you are confident it is valid for that adapter, else omit it.\n" +
+    "- `skills`, `mcp`, `rules` MUST be subsets of the provided names. NEVER invent names. Pick " +
+    "only what the role genuinely needs.\n" +
+    "- Write a focused `prompt` (the agent's standing instructions) and a short `label`.\n" +
+    "- Set `reasoning`/`permission`/`delegate` only when the role calls for it.\n" +
+    "Output ONLY one JSON object inside a ```json fence, no prose. Shape: " +
+    '{"name": string(kebab-case), "label"?: string, "adapter": string, "model"?: string, ' +
+    '"reasoning"?: "high"|"medium"|"low", "permission"?: "default"|"acceptEdits"|"bypass", ' +
+    '"delegate"?: boolean, "prompt"?: string, "rules"?: string[], "skills"?: string[], "mcp"?: string[]}.\n',
 };
 
 function featurePromptFile(name: FeaturePromptName): string {
@@ -354,6 +390,35 @@ export function writeSkillFile(name: string, rel: string, content: string): Skil
   const found = readSkills().find((s) => s.name === name);
   if (!found) throw new Error(`skill not found after write: ${name}`);
   return found;
+}
+
+/** 외부 폴더 스킬을 office 로 들여온다 — SKILL.md 는 (다듬은) description+body 로,
+ *  딸린 파일은 srcDir 에서 바이트 그대로 복사(PNG 등 바이너리 보존). 경로 검증을
+ *  통과 못 하는 파일은 건너뛰고 skipped 로 알린다(CLI 가 부르는 import 전용). */
+export function writeSkillFromFolder(
+  name: string,
+  description: string,
+  body: string,
+  srcDir: string,
+): { skill: SkillSpec; skipped: string[] } {
+  const safe = safeName(name);
+  // 같은 이름의 단일 .md 가 있으면 폴더와 중복되니 제거.
+  rmIfExists(path.join(dir.skills(), `${safe}.md`));
+  const folder = path.join(dir.skills(), safe);
+  writeFileEnsured(path.join(folder, "SKILL.md"), `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n${body}`);
+  const skipped: string[] = [];
+  for (const rel of listSkillFiles(srcDir)) {
+    try {
+      const dest = path.join(folder, safeRelPath(rel));
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(path.join(srcDir, rel), dest); // 바이트 그대로
+    } catch {
+      skipped.push(rel); // 경로 규칙 위반(이상한 세그먼트 등) — 본문은 그대로 들임
+    }
+  }
+  const skill = readSkills().find((s) => s.name === name);
+  if (!skill) throw new Error(`skill not found after import: ${name}`);
+  return { skill, skipped };
 }
 
 export function deleteSkillFile(name: string, rel: string): boolean {

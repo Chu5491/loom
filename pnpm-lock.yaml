@@ -38,6 +38,9 @@ importers:
       '@loom/adapter-opencode':
         specifier: workspace:*
         version: link:../../packages/adapters/opencode
+      '@loom/adapter-utils':
+        specifier: workspace:*
+        version: link:../../packages/adapter-utils
       '@loom/core':
         specifier: workspace:*
         version: link:../../packages/core

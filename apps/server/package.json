@@ -17,6 +17,7 @@
     "@loom/adapter-codex": "workspace:*",
     "@loom/adapter-devin": "workspace:*",
     "@loom/adapter-opencode": "workspace:*",
+    "@loom/adapter-utils": "workspace:*",
     "@loom/core": "workspace:*",
     "adm-zip": "^0.5.17",
     "better-sqlite3": "^12.10.0",

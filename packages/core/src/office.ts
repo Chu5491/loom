@@ -25,8 +25,9 @@ export interface SkillSpec {
   files?: string[];
 }
 
-/** 전담 역할 — 기능별 기본 에이전트 지정. git=커밋 메시지, analyst=프로젝트 분석. */
-export type AgentRole = "git" | "analyst";
+/** 전담 역할 — 기능별 기본 에이전트 지정. git=커밋 메시지, analyst=프로젝트 분석,
+ *  author=스킬/에이전트 생성(authoring) run 을 맡는 에이전트. */
+export type AgentRole = "git" | "analyst" | "author";
 
 /** 에이전트 = CLI + 모델 + 어떤 rules/skills/mcp 를 끌어올지. name = @mention 핸들. */
 export interface AgentSpec {
