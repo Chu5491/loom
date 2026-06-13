@@ -114,7 +114,8 @@ export function materializeLoadout(
     // SKILL.md 가 형제 파일을 상대경로로 참조해도 그대로 동작한다.
     // blurb = 스킬 인덱스 한 줄의 "언제 읽을지" 판단 근거. frontmatter description
     // 을 우선 — 본문 첫 줄(extractBlurb)은 보통 `# 제목`이라 이름의 반복이라 무의미.
-    const blurb = s.description?.trim() || extractBlurb(s.body);
+    // 인덱스는 한 줄이라 120자로 캡(description 은 본문에 무캡으로 들어갈 수 있음).
+    const blurb = (s.description?.trim() || extractBlurb(s.body)).slice(0, 120);
 
     if (s.files?.length) {
       const src = path.join(paths.office, "skills", s.name);

@@ -966,7 +966,9 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
                     <Info className="size-3.5" />
                   </button>
                 ) : null}
-                {run ? (
+                {/* 재실행은 완료된 단발 run 에만 — 실행 중(중복 생성)·워크플로우 스텝
+                    (체인 컨텍스트 없이 고아 run 이 됨)에는 숨긴다. */}
+                {run && run.status !== "running" && !run.workflow ? (
                   <button
                     type="button"
                     title={t("talk.rerun")}

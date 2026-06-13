@@ -74,6 +74,7 @@ runsRoute.post("/:id/rating", async (c) => {
 runsRoute.post("/:id/rerun", async (c) => {
   const orig = getRun(c.req.param("id"));
   if (!orig) return c.json({ error: "not_found" }, 404);
+  if (orig.status === "running") return c.json({ error: "still_running" }, 409);
   const result = await startRun({
     agent: orig.agent,
     prompt: orig.prompt,

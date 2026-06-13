@@ -72,8 +72,9 @@ export function toCodexMcpOverrides(server: McpServer): string[] {
   }
   out.push("-c", `${prefix}.enabled=true`);
   // codex 기본 MCP 도구 타임아웃(~60s)은 loom delegate(자식 run 최대 10분 대기)
-  // 보다 짧아, 긴 위임이 부모 쪽에서 먼저 끊겼다. delegate 타임아웃+여유로 맞춘다.
-  out.push("-c", `${prefix}.tool_timeout_sec=900`);
+  // 보다 짧아 긴 위임이 부모 쪽에서 먼저 끊겼다 — delegate 서버에만 넉넉히 준다.
+  // 나머지(웹 검색 등 빠른 도구)는 codex 기본 유지해 행 시 fail-fast 회복.
+  if (server.name === "loom") out.push("-c", `${prefix}.tool_timeout_sec=900`);
   return out;
 }
 

@@ -398,6 +398,8 @@ function GateBell() {
                 // 알림 생성 실패(일부 환경) — 무해
             }
         }
+        // 해소된 게이트는 기억에서 비워 Set 무한 성장 방지(현재 목록만 유지).
+        notified.current = new Set([...notified.current].filter((id) => list.some((g) => g.id === id)));
     }, [list, t]);
     useEffect(() => {
         if (!open) return;

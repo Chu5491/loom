@@ -151,8 +151,13 @@ describe("toCodexMcpOverrides", () => {
     expect(flags).toContain('mcp_servers.github.env.GITHUB_TOKEN="ghp_xxx"');
     // enabled = true
     expect(flags).toContain("mcp_servers.github.enabled=true");
-    // 위임이 codex 기본(~60s)에 먼저 끊기지 않도록 도구 타임아웃을 넉넉히
-    expect(flags).toContain("mcp_servers.github.tool_timeout_sec=900");
+    // 일반 서버엔 타임아웃 미부여 — 행 시 codex 기본으로 fail-fast
+    expect(flags).not.toContain("mcp_servers.github.tool_timeout_sec=900");
+  });
+
+  it("gives the loom delegate server a long tool timeout (10min+ delegations)", () => {
+    const flags = toCodexMcpOverrides(makeServer({ name: "loom", kind: "http", url: "http://x/api/mcp" }));
+    expect(flags).toContain("mcp_servers.loom.tool_timeout_sec=900");
   });
 
   it("HTTP server uses url + http_headers (codex's TOML key)", () => {
