@@ -157,17 +157,22 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
                       : t("conn.binary.installed")
                     : t("conn.binary.missing")}
                 </Badge>
-                <Badge
-                  tone={
-                    auth?.state === "authenticated"
-                      ? "success"
-                      : auth?.state === "unauthenticated"
-                        ? "warn"
-                        : "neutral"
-                  }
-                >
-                  {t(`conn.auth.${auth?.state ?? "unknown"}`)}
-                </Badge>
+                {/* hint(어느 파일/키를 찾았는지, 또는 무엇이 빠졌는지)는 배지 라벨엔
+                    안 담기니 hover tooltip 으로 — opencode 처럼 "로그인 아님"인
+                    상태의 뉘앙스가 라벨만으론 안 전달된다. */}
+                <span title={auth?.hint}>
+                  <Badge
+                    tone={
+                      auth?.state === "authenticated"
+                        ? "success"
+                        : auth?.state === "unauthenticated"
+                          ? "warn"
+                          : "neutral"
+                    }
+                  >
+                    {t(`conn.auth.${auth?.state ?? "unknown"}`)}
+                  </Badge>
+                </span>
               </>
             )}
           </div>
