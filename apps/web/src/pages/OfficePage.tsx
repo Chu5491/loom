@@ -13,6 +13,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   Eye,
   FileText,
   PanelLeftClose,
@@ -52,6 +53,7 @@ type Selection =
   | { kind: "rule-new" }
   | { kind: "skill"; name: string }
   | { kind: "skill-new" }
+  | { kind: "skill-discover" }
   | { kind: "mcp"; name: string }
   | { kind: "mcp-new" }
   | { kind: "workflow"; name?: string }
@@ -365,6 +367,7 @@ function OfficeTree({
         onToggle={() => toggleGroup("skill")}
         onAdd={() => onSelect({ kind: "skill-new" })}
         onImport={(f) => impSkills.mutate(f)}
+        onDiscover={() => onSelect({ kind: "skill-discover" })}
       >
         {skills.map((s) => (
           <TreeItem
@@ -460,6 +463,7 @@ function TreeGroup({
   onToggle,
   onAdd,
   onImport,
+  onDiscover,
   children,
 }: {
   icon: React.ReactNode;
@@ -470,6 +474,7 @@ function TreeGroup({
   onToggle: () => void;
   onAdd?: () => void;
   onImport?: (f: File) => void;
+  onDiscover?: () => void;
   children: React.ReactNode;
 }) {
   const { t } = useI18n();
@@ -520,6 +525,17 @@ function TreeGroup({
               <Upload className="size-3" />
             </button>
           </>
+        ) : null}
+        {onDiscover ? (
+          <button
+            type="button"
+            onClick={onDiscover}
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+            aria-label={t("office.skill.discover")}
+            title={t("office.skill.discover")}
+          >
+            <Search className="size-3" />
+          </button>
         ) : null}
         {onAdd ? (
           <button
@@ -708,6 +724,8 @@ function DetailView({
           registerDirty={registerDirty}
         />
       );
+    case "skill-discover":
+      return <SkillDiscover key="skill-discover" onSelect={onSelect} />;
     case "mcp": {
       const m = office.mcp.find((x) => x.name === selection.name);
       if (!m) return <NotFound onBack={() => onSelect({ kind: "overview" })} />;
@@ -832,6 +850,43 @@ function Overview({ office, onSelect }: { office: Office; onSelect: (s: Selectio
 // Agent detail
 // ─────────────────────────────────────────────────────────────────────────────
 
+// 프롬프트로 에이전트 초안 생성 — 신규 작성 폼 상단. 결과로 폼을 프리필.
+function AgentGenerateBox({ onDraft }: { onDraft: (draft: AgentSpec, warnings: string[]) => void }) {
+  const { t } = useI18n();
+  const [prompt, setPrompt] = useState("");
+  const gen = useMutation({
+    mutationFn: (p: string) => api.generateAgent(p),
+    onSuccess: (r) => onDraft(r.draft, r.warnings),
+  });
+  return (
+    <div className="mb-5 rounded-xl border border-primary/30 bg-primary/5 p-3">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+        <Sparkles className="size-3.5 text-primary" />
+        {t("office.agent.gen.title")}
+      </div>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">{t("office.agent.gen.hint")}</p>
+      <textarea
+        className={cn(inputCls, "mt-2 min-h-16 resize-y")}
+        value={prompt}
+        placeholder={t("office.agent.gen.placeholder")}
+        onChange={(e) => setPrompt(e.target.value)}
+      />
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={!prompt.trim() || gen.isPending}
+          onClick={() => gen.mutate(prompt.trim())}
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {gen.isPending ? <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Sparkles className="size-3.5" />}
+          {gen.isPending ? t("office.agent.gen.running") : t("office.agent.gen.button")}
+        </button>
+        {gen.isError ? <span className="text-xs text-destructive">{gen.error instanceof Error ? gen.error.message : String(gen.error)}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function AgentDetail({
   office,
   agent,
@@ -849,6 +904,7 @@ function AgentDetail({
   const invalidate = useInvalidate();
   const [a, setA] = useState<AgentSpec>(agent);
   const [err, setErr] = useState<string | null>(null);
+  const [genWarnings, setGenWarnings] = useState<string[]>([]);
   useDirtyGuard(registerDirty, () => JSON.stringify(a) !== JSON.stringify(agent));
 
   const save = useMutation({
@@ -927,6 +983,15 @@ function AgentDetail({
         ) : null
       }
     >
+      {/* 프롬프트로 생성 (신규만) — LLM 이 실재 스킬·mcp·어댑터만 골라 폼을 채운다. */}
+      {isNew ? <AgentGenerateBox onDraft={(d, warnings) => { setA((p) => ({ ...d, name: p.name || d.name })); setGenWarnings(warnings); }} /> : null}
+      {genWarnings.length ? (
+        <div className="mb-5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+          <p className="font-medium">{t("office.agent.gen.warnings")}</p>
+          <ul className="mt-1 list-disc pl-4">{genWarnings.map((w) => <li key={w}>{w}</li>)}</ul>
+        </div>
+      ) : null}
+
       {/* 이름 (신규만 — 이름이 식별자) */}
       {isNew ? (
         <div className="mb-5">
@@ -1007,7 +1072,7 @@ function AgentDetail({
       <div className="mt-4">
         <FieldLabel>{t("office.agent.roles")}</FieldLabel>
         <div className="flex flex-wrap gap-1.5">
-          {(["git", "analyst"] as const).map((role) => {
+          {(["git", "analyst", "author"] as const).map((role) => {
             const on = a.roles?.includes(role) ?? false;
             return (
               <button
@@ -1177,6 +1242,89 @@ function RuleDetail({
 // ─────────────────────────────────────────────────────────────────────────────
 // Skill detail
 // ─────────────────────────────────────────────────────────────────────────────
+
+// 스킬 생태계(skills.sh) 검색·가져오기 — 설치수·출처를 보여 사용자가 판단(라우팅,
+// 주입 아님). 가져오면 LLM 이 loom 스타일로 다듬어 office/skills 에 기록 후 해당 스킬로 이동.
+function SkillDiscover({ onSelect }: { onSelect: (s: Selection) => void }) {
+  const { t } = useI18n();
+  const invalidate = useInvalidate();
+  const [query, setQuery] = useState("");
+  const find = useMutation({ mutationFn: (q: string) => api.discoverSkills(q) });
+  const install = useMutation({
+    mutationFn: (pkg: string) => api.installSkill(pkg),
+    onSuccess: (r) => {
+      invalidate();
+      onSelect({ kind: "skill", name: r.skill.name });
+    },
+  });
+  const candidates = find.data?.candidates ?? [];
+  return (
+    <DetailShell icon={<Search className="size-4" />} title={t("office.skill.discover")} subtitle={t("office.skill.discover.sub")}>
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => { e.preventDefault(); if (query.trim()) find.mutate(query.trim()); }}
+      >
+        <input
+          className={cn(inputCls, "flex-1")}
+          value={query}
+          autoFocus
+          placeholder={t("office.skill.discover.placeholder")}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button
+          type="submit"
+          disabled={!query.trim() || find.isPending}
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {find.isPending ? <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Search className="size-3.5" />}
+          {t("office.skill.discover.search")}
+        </button>
+      </form>
+      <p className="mt-2 text-[11px] text-muted-foreground">{t("office.skill.discover.hint")}</p>
+
+      {find.isError ? <p className="mt-4 text-sm text-destructive">{find.error instanceof Error ? find.error.message : String(find.error)}</p> : null}
+      {install.isError ? <p className="mt-4 text-sm text-destructive">{install.error instanceof Error ? install.error.message : String(install.error)}</p> : null}
+
+      <div className="mt-4 space-y-2">
+        {find.isSuccess && candidates.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("office.skill.discover.none")}</p>
+        ) : null}
+        {candidates.map((c) => (
+          <div key={c.pkg} className="flex items-center gap-3 rounded-lg border border-border/60 bg-card/40 p-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate font-mono text-sm">{c.pkg}</span>
+                {isOfficialSourceWeb(c.source) ? <Badge tone="success">{t("office.skill.discover.official")}</Badge> : null}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                {c.installs != null ? <span>{formatInstalls(c.installs)} {t("office.skill.discover.installs")}</span> : null}
+                {c.url ? <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 hover:text-foreground hover:underline">skills.sh <ExternalLink className="size-2.5" /></a> : null}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={install.isPending}
+              onClick={() => install.mutate(c.pkg)}
+              className="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition-colors hover:border-primary/50 hover:text-foreground disabled:opacity-50"
+            >
+              {install.isPending && install.variables === c.pkg ? t("office.skill.discover.importing") : t("office.skill.discover.import")}
+            </button>
+          </div>
+        ))}
+      </div>
+    </DetailShell>
+  );
+}
+
+// 공식 출처 강조 — 서버 isOfficialSource 와 동일 목록(품질 신호).
+function isOfficialSourceWeb(owner: string): boolean {
+  return ["vercel-labs", "anthropics", "microsoft", "openai"].includes(owner.toLowerCase());
+}
+function formatInstalls(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
 
 function SkillDetail({
   office,

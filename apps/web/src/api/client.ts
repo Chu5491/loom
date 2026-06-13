@@ -27,6 +27,14 @@ export interface Standup {
   report: string;
 }
 
+/** 스킬 생태계 검색 후보 — 서버 skills-cli.ts 와 동일 형태. */
+export interface SkillCandidate {
+  pkg: string;
+  installs: number | null;
+  url: string | null;
+  source: string;
+}
+
 /** 분석 리포트 — 서버 zod 스키마(project-files.ts)와 동일 형태. */
 export interface AnalysisReport {
   summary: string;
@@ -141,6 +149,25 @@ export const api = {
     }),
   deleteAgent: (name: string) =>
     request<unknown>(`/api/office/agents/${name}`, { method: "DELETE" }),
+
+  // 스킬 생태계(npx skills / skills.sh) — 검색 + 가져오기.
+  discoverSkills: (query: string) =>
+    request<{ candidates: SkillCandidate[] }>("/api/office/skills/discover", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    }),
+  installSkill: (pkg: string) =>
+    request<{ skill: SkillSpec; adapted: boolean; skipped: string[] }>("/api/office/skills/install", {
+      method: "POST",
+      body: JSON.stringify({ package: pkg }),
+    }),
+
+  // 프롬프트로 에이전트 초안 생성(저장 안 함 — 검토 후 putAgent).
+  generateAgent: (prompt: string) =>
+    request<{ draft: AgentSpec; warnings: string[] }>("/api/office/agents/generate", {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    }),
 
   putMcp: (servers: McpServer[]) =>
     request<unknown>("/api/office/mcp", {
