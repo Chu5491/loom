@@ -3,6 +3,7 @@ import type { McpServer } from "@loom/core";
 import {
   buildCodexCommand,
   codexAdapter,
+  resumeCodexArgs,
   toCodexMcpOverrides,
   extractCodexSessionId,
   extractCodexTouchedEdits,
@@ -114,6 +115,16 @@ describe("buildCodexCommand", () => {
 describe("codexAdapter", () => {
   it("identifies as codex", () => {
     expect(codexAdapter.kind).toBe("codex");
+  });
+
+  it("resumes via `exec resume <id>` subcommand, keeping --json and trailing stdin", () => {
+    const base = buildCodexCommand({ model: "gpt-5.4-mini" }).args;
+    const resumed = resumeCodexArgs(base, "sess-123");
+    const i = resumed.indexOf("exec");
+    expect(resumed[i + 1]).toBe("resume");
+    expect(resumed[i + 2]).toBe("sess-123");
+    expect(resumed).toContain("--json");
+    expect(resumed[resumed.length - 1]).toBe("-"); // stdin 마커 유지
   });
 });
 

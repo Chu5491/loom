@@ -89,6 +89,9 @@ interface RunState {
   sessionId?: string;
   abort: AbortController;
   kill: () => void;
+  /** 어댑터별 세션 id 추출기 — CLI 마다 포맷이 달라(claude system, codex
+   *  thread.started, opencode sessionID 등) 어댑터에 위임한다. 다음 턴 resume 의 근거. */
+  extractSession?: (chunk: string) => string | null;
   /** run 스코프 loadout 디렉토리 — finish 가 정리한다. */
   loadoutDir?: string;
   /** 영속 실패 로그 1회 가드 — ENOSPC 류는 줄마다 반복돼 로그를 범람시킨다. */
@@ -379,7 +382,9 @@ function emit(state: RunState, events: OfficeEvent[]): void {
     if (ev.kind === "result") {
       state.sawResult = true;
       state.costUsd = ev.costUsd;
-      state.sessionId = ev.sessionId;
+      // result 이벤트의 sessionId 가 있을 때만 갱신 — 없으면(codex 합성 result 등)
+      // captureSession 이 stream 에서 이미 잡아둔 값을 덮어쓰지 않는다.
+      if (ev.sessionId) state.sessionId = ev.sessionId;
     }
     // plain-text CLI(devin/antigravity)는 줄 단위 text 이벤트 — 누적해야 여러 줄
     // 출력(커밋 메시지 등)이 result 합성에서 잘리지 않는다.
@@ -413,12 +418,24 @@ function writeRaw(state: RunState, chunk: string): boolean {
   }
 }
 
+/** 완성된 라인에서 세션 id 를 잡는다 — 부분 라인은 서버 buf 가 이미 이어붙였다.
+ *  한 번 잡으면 멈춘다(세션은 run 중 안 바뀜). claude 는 result 이벤트로도 잡히나
+ *  중복 갱신은 같은 값이라 무해. */
+function captureSession(state: RunState, line: string): void {
+  if (state.sessionId || !state.extractSession) return;
+  const sid = state.extractSession(line);
+  if (sid) state.sessionId = sid;
+}
+
 function consume(state: RunState, chunk: string): void {
   if (!writeRaw(state, chunk)) return;
   state.buf += chunk;
   const lines = state.buf.split("\n");
   state.buf = lines.pop() ?? "";
-  for (const line of lines) emit(state, parseLine(line));
+  for (const line of lines) {
+    captureSession(state, line);
+    emit(state, parseLine(line));
+  }
 }
 
 async function run(
@@ -433,6 +450,7 @@ async function run(
   skipSlot: boolean,
 ): Promise<void> {
   const log = logger.child({ runId: state.info.id, agent: state.info.agent });
+  state.extractSession = adapter.extractSessionId?.bind(adapter);
   if (!skipSlot) {
     await acquireSlot();
     // 대기 중 취소됐으면 spawn 없이 마감.
@@ -464,7 +482,10 @@ async function run(
     state.kill = handle.kill;
     const { exitCode } = await handle.promise;
 
-    if (state.buf.trim()) emit(state, parseLine(state.buf));
+    if (state.buf.trim()) {
+      captureSession(state, state.buf);
+      emit(state, parseLine(state.buf));
+    }
     state.buf = "";
 
     // 최종 result 이벤트가 없었으면(예: devin plain text) 누적 텍스트로 합성.

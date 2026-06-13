@@ -166,11 +166,20 @@ export function extractCodexToolUses(chunk: string): ToolUse[] {
   return out;
 }
 
+/** codex 는 resume 가 플래그가 아니라 `exec resume <id>` 서브커맨드 — exec 바로
+ *  뒤에 끼운다. resume 도 --json/-m/-c/bypass/stdin(-) 을 그대로 받는다(실 CLI 검증). */
+export function resumeCodexArgs(args: string[], sessionId: string): string[] {
+  const i = args.indexOf("exec");
+  if (i < 0) return args; // 방어 — buildCommand 는 항상 exec 를 포함
+  return [...args.slice(0, i + 1), "resume", sessionId, ...args.slice(i + 1)];
+}
+
 export const codexAdapter = defineCliAdapter<CodexConfig>({
   kind: "codex",
   buildCommand: buildCodexCommand,
   prompt: { via: "stdin" },
   resolveEnv: (cfg) => cfg.env ?? {},
+  applyResume: resumeCodexArgs,
   extractSessionId: extractCodexSessionId,
   extractTouchedPaths: extractCodexTouchedPaths,
   extractTouchedEdits: extractCodexTouchedEdits,
