@@ -264,6 +264,10 @@ export const api = {
   /** 전체 run (프로젝트 무관) — 관제센터의 팀 보드·활동 피드. */
   listRunsAll: () => request<{ runs: RunInfo[] }>("/api/runs"),
 
+  /** 한 프로젝트의 모든 run — 동시 실행 충돌 경고에 쓰인다. */
+  listProjectRuns: (projectId: string) =>
+    request<{ runs: RunInfo[] }>(`/api/runs?projectId=${encodeURIComponent(projectId)}`),
+
   /** 전문 검색 — 과거 run 의 prompt·결과 텍스트. ⌘K 팔레트가 소비. */
   searchRuns: (q: string) =>
     request<{ hits: RunSearchHit[] }>(`/api/runs/search?q=${encodeURIComponent(q)}`),

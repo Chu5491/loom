@@ -55,6 +55,19 @@ export function TalkPage({ project }: { project: Project }) {
     setBooted(true);
   }, [threads.data, booted]);
 
+  // 프로젝트 전역 run — 다른 스레드에서 도는 run 을 감지해 동시 파일수정 충돌을
+  // 경고한다(강제 차단은 안 함 — 의도적 병렬도 있으니 알리기만).
+  const projectRuns = useQuery({
+    queryKey: ["runs", "project", project.id],
+    queryFn: () => api.listProjectRuns(project.id),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+  });
+  const otherRunning = useMemo(
+    () => (projectRuns.data?.runs ?? []).filter((r) => r.status === "running" && r.threadId !== threadId),
+    [projectRuns.data, threadId],
+  );
+
   const runs = useQuery({
     queryKey: ["runs", threadId],
     queryFn: () => api.listRuns(threadId!),
@@ -447,6 +460,13 @@ export function TalkPage({ project }: { project: Project }) {
           gates={gates.data?.gates ?? []}
           onGate={(id, ok) => void (ok ? api.approveGate(id) : api.rejectGate(id)).then(() => { void gates.refetch(); void runs.refetch(); })}
         />
+
+        {otherRunning.length > 0 ? (
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-1.5 text-[11px] text-warning">
+            <Wrench className="size-3.5 shrink-0" />
+            <span>{t("talk.concurrentWarn", { n: String(otherRunning.length), agents: otherRunning.map((r) => `@${r.agent}`).join(", ") })}</span>
+          </div>
+        ) : null}
 
         <Composer
           agents={agents}
