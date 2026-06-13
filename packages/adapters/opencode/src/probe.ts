@@ -1,8 +1,7 @@
 import {
-  dirExistsAndNotEmpty,
   envIsSet,
-  fileExists,
   homePath,
+  jsonObjectHasKeys,
   probeBinary,
 } from "@loom/adapter-utils";
 import type { AuthStatus, ProbeFn } from "@loom/core";
@@ -18,14 +17,13 @@ const ENV_VARS = [
   "XAI_API_KEY",
 ];
 
+// opencode keeps credentials ONLY in this plaintext provider-keyed map (no
+// keychain). A logged-out install still has the file as `{}`, so existence is
+// not enough — it must hold ≥1 provider. The config dir is no signal at all
+// (logs/cache exist regardless of login).
 const CRED_FILES = [
   homePath(".local", "share", "opencode", "auth.json"),
   homePath(".config", "opencode", "auth.json"),
-];
-
-const CRED_DIRS = [
-  homePath(".local", "share", "opencode"),
-  homePath(".config", "opencode"),
 ];
 
 function checkAuth(): AuthStatus {
@@ -37,12 +35,7 @@ function checkAuth(): AuthStatus {
     };
   }
   for (const f of CRED_FILES) {
-    if (fileExists(f)) return { state: "authenticated", hint: `auth file: ${f}` };
-  }
-  for (const d of CRED_DIRS) {
-    if (dirExistsAndNotEmpty(d)) {
-      return { state: "authenticated", hint: `config dir: ${d}` };
-    }
+    if (jsonObjectHasKeys(f)) return { state: "authenticated", hint: `auth file: ${f}` };
   }
   return {
     state: "unauthenticated",

@@ -9,6 +9,7 @@ export {
   probeBinary,
   fileExists,
   dirExistsAndNotEmpty,
+  jsonObjectHasKeys,
   envIsSet,
   homePath,
 } from "./probe.js";
