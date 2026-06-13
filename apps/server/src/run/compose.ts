@@ -13,6 +13,9 @@ export interface ComposeInput {
   /** 프로젝트 공유 메모(<project>/.loom/notes.md) — 파일이 있을 때만 경로 안내.
    *  본문은 주입하지 않는다(자동 주입 금지) — 에이전트가 필요할 때 Read. */
   projectNotesPath?: string | null;
+  /** 최신 프로젝트 분석 뷰(<project>/.loom/analysis.md) — 다른 CLI 도구가 만든
+   *  프로젝트 이해를 이어 읽는 경로. 노트와 같이 경로만 안내, 본문 주입 없음. */
+  projectAnalysisPath?: string | null;
 }
 
 export function composePrompt(input: ComposeInput): string {
@@ -29,13 +32,22 @@ export function composePrompt(input: ComposeInput): string {
     sections.push(renderLoadout(input.loadout));
   }
 
-  if (input.projectNotesPath) {
-    sections.push(
-      "=== Project Memory ===\n" +
-        `Shared team notes for this project: ${input.projectNotesPath}\n` +
-        "Read it when past context would help. After meaningful work, append concise durable notes (decisions, gotchas, conventions) — keep entries short.\n" +
-        "=== End Project Memory ===",
-    );
+  if (input.projectNotesPath || input.projectAnalysisPath) {
+    const lines = [
+      "=== Project Memory ===",
+      "Shared, persistent context for this project (written by you and your teammate agents). Read on demand:",
+    ];
+    if (input.projectNotesPath) {
+      lines.push(`- Team notes (read + append durable notes): ${input.projectNotesPath}`);
+    }
+    if (input.projectAnalysisPath) {
+      lines.push(`- Latest project analysis — structure, stack, risks (read-only, may be from another agent): ${input.projectAnalysisPath}`);
+    }
+    if (input.projectNotesPath) {
+      lines.push("After meaningful work, append concise durable notes (decisions, gotchas, conventions) to the team notes — keep entries short.");
+    }
+    lines.push("=== End Project Memory ===");
+    sections.push(lines.join("\n"));
   }
 
   sections.push(input.userPrompt);

@@ -9,8 +9,17 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { paths } from "../config.js";
 import { getProjectDb, getRunEventsDb, listAgentFileActivity } from "../db.js";
+import { logger } from "../logger.js";
 import { readFeaturePrompt } from "../office.js";
 import { startRun, waitForRun } from "../run/engine.js";
+import {
+  analysisDocPath,
+  analysisReportSchema,
+  notesPath,
+  renderAnalysisMarkdown,
+  type AnalysisRecord,
+  type AnalysisReport,
+} from "../run/project-memory.js";
 import { getStandup, runStandup } from "../run/standup.js";
 import { isResponse, parseBody } from "./helpers.js";
 
@@ -239,34 +248,6 @@ projectFilesRoute.get("/:id/agent-activity", (c) => {
 // ── 프로젝트 분석 — 분석 에이전트에게 구조화 리포트(JSON 스키마)를 받아 GUI 로 ──
 // 결과는 data/analysis/<projectId>.json 에 마지막 1개 보존(기록 — gitignore).
 // 모델 출력이 느슨해도 살리는 방향: 점수는 0-100 으로 clamp, 옛 포맷(문자열 배열)도
-// union 으로 흡수 — 깨진 한 필드 때문에 리포트 전체를 버리지 않는다.
-const pct = z.coerce.number().transform((n) => Math.max(0, Math.min(100, Math.round(n))));
-const riskItem = z.union([
-  z.string().transform((text) => ({ text, severity: "medium" as const })),
-  z.object({ text: z.string(), severity: z.enum(["high", "medium", "low"]).catch("medium") }),
-]);
-const suggestionItem = z.union([
-  z.string().transform((text) => ({ text, effort: "medium" as const })),
-  z.object({ text: z.string(), effort: z.enum(["small", "medium", "large"]).catch("medium") }),
-]);
-const analysisReportSchema = z.object({
-  summary: z.string(),
-  stack: z.array(z.string()).default([]),
-  languages: z.array(z.object({ name: z.string(), percent: pct })).default([]),
-  health: z
-    .object({ tests: pct, docs: pct, structure: pct, maintainability: pct })
-    .partial()
-    .default({}),
-  metrics: z
-    .object({ files: z.coerce.number().optional(), loc: z.coerce.number().optional() })
-    .default({}),
-  structure: z.array(z.object({ path: z.string(), desc: z.string() })).default([]),
-  keyFiles: z.array(z.object({ path: z.string(), desc: z.string() })).default([]),
-  risks: z.array(riskItem).default([]),
-  suggestions: z.array(suggestionItem).default([]),
-});
-export type AnalysisReport = z.infer<typeof analysisReportSchema>;
-
 function analysisPath(projectId: string): string {
   return path.join(paths.data, "analysis", `${projectId}.json`);
 }
@@ -338,7 +319,7 @@ projectFilesRoute.post("/:id/analyze", async (c) => {
     } catch {
       return c.json({ error: "unparseable_report", raw: raw.slice(0, 2000) }, 502);
     }
-    const analysis = { analyzedAt: new Date().toISOString(), agent: data.agent, runId: started.run.id, report };
+    const analysis: AnalysisRecord = { analyzedAt: new Date().toISOString(), agent: data.agent, runId: started.run.id, report };
     // 히스토리 — 직전 리포트들을 보존(최신 20개). 건강도 추이의 원천.
     let history: unknown[] = [];
     try {
@@ -349,6 +330,18 @@ projectFilesRoute.post("/:id/analyze", async (c) => {
     }
     fs.mkdirSync(path.join(paths.data, "analysis"), { recursive: true });
     fs.writeFileSync(analysisPath(p.id), JSON.stringify({ analysis, history }, null, 2));
+    // 에이전트용 뷰 — 프로젝트 cwd 안에 풀어 다른 CLI 도구가 이 분석을 이어 읽게 한다.
+    // temp+rename 으로 원자적 쓰기(읽는 도중 깨진 파일 방지).
+    try {
+      fs.mkdirSync(path.join(p.path, ".loom"), { recursive: true });
+      const doc = analysisDocPath(p.path);
+      fs.writeFileSync(`${doc}.tmp`, renderAnalysisMarkdown(analysis));
+      fs.renameSync(`${doc}.tmp`, doc);
+    } catch (e) {
+      // 프로젝트 디렉토리 쓰기 실패는 분석 자체를 실패시키지 않는다(정본은 data/ JSON).
+      // 다만 에이전트 공유 뷰가 안 생기므로 경고로 남긴다.
+      logger.warn({ err: e, projectId: p.id }, "failed to write .loom/analysis.md");
+    }
     return c.json({ analysis });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 504);
@@ -356,11 +349,8 @@ projectFilesRoute.post("/:id/analyze", async (c) => {
 });
 
 // ── 프로젝트 공유 메모 — <project>/.loom/notes.md (팀의 프로젝트 기억) ──────────
-// run 프롬프트에는 파일이 있을 때만 경로가 안내된다(본문 주입 없음).
-function notesPath(projectPath: string): string {
-  return path.join(projectPath, ".loom", "notes.md");
-}
-
+// run 프롬프트에는 파일이 있을 때만 경로가 안내된다(본문 주입 없음). 경로 헬퍼는
+// run/project-memory.ts 가 정본(분석 뷰와 한 곳에서 관리).
 projectFilesRoute.get("/:id/notes", (c) => {
   const p = project(c);
   if (!p) return c.json({ error: "not_found" }, 404);

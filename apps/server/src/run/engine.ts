@@ -19,6 +19,7 @@ import {
   readWorkflows,
 } from "../office.js";
 import { composePrompt } from "./compose.js";
+import { analysisDocPath, notesPath } from "./project-memory.js";
 import { materializeLoadout } from "./loadout.js";
 import { parseLine } from "./parse.js";
 // 순환 import (workflow.ts ↔ engine.ts) — 양쪽 다 호출 시점에만 쓰는 함수 참조라 안전.
@@ -293,15 +294,18 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   }
 
   const loadout = materializeLoadout(agent, skills, mcp, bridge, id);
-  // 프로젝트 공유 메모 — 파일이 있을 때만 경로 안내(없으면 침묵, 자동 생성 안 함).
-  const notesPath = project ? path.join(project.path, ".loom", "notes.md") : null;
+  // 프로젝트 공유 기억 — 노트·분석 모두 파일이 있을 때만 경로 안내(없으면 침묵,
+  // 자동 생성 안 함). 분석 뷰는 다른 CLI 도구가 만든 이해를 이어 읽는 통로.
+  const notes = project ? notesPath(project.path) : null;
+  const analysisDoc = project ? analysisDocPath(project.path) : null;
   const prompt = composePrompt({
     userPrompt: input.prompt,
     rules,
     // 기능 실행(git 커밋·분석)은 에이전트 개성 대신 기능 프롬프트 — 출력 일관성.
     agentPrompt: input.promptOverride ?? agent.prompt,
     loadout,
-    projectNotesPath: notesPath && fs.existsSync(notesPath) ? notesPath : null,
+    projectNotesPath: notes && fs.existsSync(notes) ? notes : null,
+    projectAnalysisPath: analysisDoc && fs.existsSync(analysisDoc) ? analysisDoc : null,
   });
   const info: RunInfo = {
     id,

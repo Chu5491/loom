@@ -31,6 +31,26 @@ describe("composePrompt", () => {
     expect(without).not.toContain("Project Memory");
   });
 
+  it("points to the analysis doc so other CLIs can read prior project understanding", () => {
+    const out = composePrompt({ userPrompt: "p", rules: [], projectAnalysisPath: "/work/proj/.loom/analysis.md" });
+    expect(out).toContain("=== Project Memory ===");
+    expect(out).toContain("/work/proj/.loom/analysis.md");
+    expect(out).toContain("read-only");
+  });
+
+  it("lists notes and analysis together when both exist", () => {
+    const out = composePrompt({
+      userPrompt: "p",
+      rules: [],
+      projectNotesPath: "/p/.loom/notes.md",
+      projectAnalysisPath: "/p/.loom/analysis.md",
+    });
+    expect(out).toContain("/p/.loom/notes.md");
+    expect(out).toContain("/p/.loom/analysis.md");
+    // 단일 Project Memory 섹션 안에 둘 다
+    expect(out.match(/=== Project Memory ===/g)?.length).toBe(1);
+  });
+
   it("renders the delegate shell bridge for MCP-less CLIs", () => {
     const out = composePrompt({
       userPrompt: "p",
