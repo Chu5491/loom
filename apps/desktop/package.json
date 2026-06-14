@@ -1,0 +1,31 @@
+{
+  "name": "@loom/desktop",
+  "productName": "loom",
+  "version": "2.0.0",
+  "private": true,
+  "description": "loom desktop shell — Electron wrapping the in-process server + built web.",
+  "author": "loom",
+  "main": "build/main.cjs",
+  "scripts": {
+    "bundle": "node scripts/build.mjs",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3 --module-dir .",
+    "restore:node": "node scripts/restore-node-abi.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "node scripts/build.mjs && electron .",
+    "pack": "electron-builder --mac --arm64"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "@loom/server": "workspace:*",
+    "@types/node": "^22.10.2",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2"
+  }
+}

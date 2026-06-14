@@ -13,6 +13,13 @@ if (!Number.isFinite(port) || port < 0 || port > 65535) {
 
 const host = process.env.LOOM_HOST ?? "127.0.0.1";
 
+// 데스크톱 패키징에서만 설정 — 빌드된 웹을 서버와 같은 오리진에서 서빙할 디렉토리.
+// dev 에선 미설정(Vite 3201 이 /api 를 프록시). 헌법: 웹은 상대경로만 호출하므로
+// 같은 오리진에서 정적 자산을 내주면 /api·SSE 가 그대로 동작한다.
+const webDir = process.env.LOOM_WEB_DIR
+  ? path.resolve(process.env.LOOM_WEB_DIR)
+  : null;
+
 // 리포 루트 = apps/server 에서 두 단계 위. LOOM_HOME 으로 임의 오피스 폴더 지정 가능.
 const home = process.env.LOOM_HOME
   ? path.resolve(process.env.LOOM_HOME)
@@ -26,7 +33,7 @@ if (!Number.isInteger(maxConcurrentRuns) || maxConcurrentRuns < 1) {
   throw new Error(`LOOM_MAX_RUNS 값이 잘못됨: "${rawMax}" — 1 이상 정수 필요`);
 }
 
-export const config = { port, host, home, maxConcurrentRuns } as const;
+export const config = { port, host, home, maxConcurrentRuns, webDir } as const;
 
 export const paths = {
   office: path.join(home, "office"),

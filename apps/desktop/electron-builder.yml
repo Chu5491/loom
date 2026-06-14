@@ -1,0 +1,33 @@
+appId: dev.loom.desktop
+productName: loom
+copyright: loom
+
+directories:
+  output: release
+  buildResources: resources
+
+# 번들된 메인/프리로드만 포함 — 소스(.ts)는 제외. node_modules 는 빌더가
+# 프로덕션 의존성(better-sqlite3·pino)만 추려 담는다.
+files:
+  - build/**/*
+  - package.json
+
+# 빌드된 웹 SPA — 서버가 LOOM_WEB_DIR(=Resources/web)에서 같은 오리진으로 서빙.
+extraResources:
+  - from: ../web/dist
+    to: web
+
+# 네이티브 모듈은 asar 밖으로 — dlopen 이 .node 를 직접 열어야 한다.
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+
+# 네이티브 재빌드는 명시적 `pnpm --filter @loom/desktop rebuild` 로 통제(pnpm 심링크
+# 환경에서 빌더 자동 rebuild 가 불안정) — 빌더의 자동 rebuild 는 끈다.
+npmRebuild: false
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: arm64
+  artifactName: ${productName}-${version}-${arch}.${ext}

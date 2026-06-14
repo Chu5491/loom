@@ -12,7 +12,9 @@
     "dev:web": "pnpm --filter @loom/web run dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "build:desktop": "pnpm --filter @loom/web build && pnpm --filter @loom/desktop bundle",
+    "dist:desktop": "pnpm build:desktop && pnpm --filter @loom/desktop run rebuild:native && pnpm --filter @loom/desktop run pack && pnpm --filter @loom/desktop run restore:node"
   },
   "devDependencies": {
     "puppeteer-core": "^24.42.0",
@@ -23,7 +25,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "better-sqlite3",
-      "esbuild"
+      "esbuild",
+      "electron"
     ]
   }
 }
