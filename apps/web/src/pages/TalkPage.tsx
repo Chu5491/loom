@@ -743,7 +743,7 @@ function TeamPanel({
   const workingCount = workingAgents.size;
 
   return (
-    <aside className="hidden w-72 shrink-0 flex-col overflow-y-auto rounded-2xl glass-panel p-5 xl:flex">
+    <aside className="hidden w-[440px] shrink-0 flex-col overflow-y-auto rounded-2xl glass-panel p-5 xl:flex">
       {/* 팀 현황 — 누가 일하고 있나 (선택이 아니라 상태 보드) */}
       <div className="mb-4 flex items-center gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
@@ -773,11 +773,12 @@ function TeamPanel({
               )}
             >
               <span className="flex w-full items-center gap-2.5">
-                <span className="relative shrink-0">
+                <span className="relative inline-flex shrink-0">
                   <Avatar agent={a} size={30} />
-                  {/* 상태 점 — 작업 중(펄스 프라이머리) / 대기(회색) */}
+                  {/* 상태 점 — 작업 중(펄스 프라이머리) / 대기(회색). 모서리에 반만 걸치게
+                      빼내야(translate) 아바타 박스 테두리를 파먹지 않는다. */}
                   <span className={cn(
-                    "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-background",
+                    "absolute bottom-0 right-0 size-2.5 translate-x-1/3 translate-y-1/3 rounded-full ring-2 ring-background",
                     working ? "animate-pulse bg-primary" : "bg-muted-foreground/30",
                   )} />
                 </span>
@@ -824,16 +825,20 @@ function TeamPanel({
             {[...feed].reverse().slice(0, 12).map((f, i) => {
               const Icon = traceIcon(f.item);
               return (
-                <div key={`${f.runId}-${f.at}-${i}`} className={cn("flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10px]", i === 0 && "bg-primary/5")}>
-                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground/60">
-                    {new Date(f.at).toTimeString().slice(0, 8)}
+                <div key={`${f.runId}-${f.at}-${i}`} className={cn("flex flex-col gap-0.5 rounded-md px-1.5 py-1 text-[10px]", i === 0 && "bg-primary/5")}>
+                  <span className="flex items-center gap-1.5">
+                    <span className="shrink-0 font-mono tabular-nums text-muted-foreground/60">
+                      {new Date(f.at).toTimeString().slice(0, 8)}
+                    </span>
+                    <span className="truncate font-medium text-foreground/80">@{f.agent}</span>
                   </span>
-                  <span className="shrink-0 font-medium text-foreground/80">@{f.agent}</span>
-                  <Icon className={cn("size-2.5 shrink-0", i === 0 ? "text-primary" : "text-muted-foreground")} />
-                  <span className="shrink-0 text-muted-foreground">{f.item.name}</span>
-                  {f.item.target ? (
-                    <span className="truncate font-mono text-muted-foreground/70">{f.item.target.split("/").pop()}</span>
-                  ) : null}
+                  <span className="flex items-center gap-1.5">
+                    <Icon className={cn("size-2.5 shrink-0", i === 0 ? "text-primary" : "text-muted-foreground")} />
+                    <span className="shrink-0 text-muted-foreground">{f.item.name}</span>
+                    {f.item.target ? (
+                      <span className="truncate font-mono text-muted-foreground/70">{f.item.target.split("/").pop()}</span>
+                    ) : null}
+                  </span>
                 </div>
               );
             })}

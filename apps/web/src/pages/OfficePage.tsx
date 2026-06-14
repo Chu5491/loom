@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
   Bot,
+  Check,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -215,6 +216,25 @@ function useDirtyGuard(register: ((fn: () => boolean) => void) | undefined, isDi
     register?.(isDirty);
   });
   useEffect(() => () => register?.(() => false), [register]);
+}
+
+/** 디테일 공통 — dirty 가드 + "저장됨" 표시를 한 곳에서. snapshot 은 현재 폼, baseline 은
+ *  prop(서버 원본)의 직렬화. 저장 직후엔 refetch 가 끝나기 전이라 snapshot≠baseline 이어도
+ *  markSaved 가 찍어둔 스냅샷과 같으면 dirty 를 끄고 saved 를 켠다 — 그래서 저장하자마자
+ *  넘어가도 경고가 안 뜬다. 다시 편집하면 스냅샷이 갈라져 saved 가 풀리고 dirty 가 살아난다. */
+function useEditorGuard(
+  register: ((fn: () => boolean) => void) | undefined,
+  snapshot: string,
+  baseline: string,
+) {
+  const snapRef = useRef(snapshot);
+  snapRef.current = snapshot;
+  const [savedSnap, setSavedSnap] = useState<string | null>(null);
+  useDirtyGuard(register, () => snapshot !== baseline && snapshot !== savedSnap);
+  return {
+    saved: savedSnap !== null && snapshot === savedSnap,
+    markSaved: () => setSavedSnap(snapRef.current),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -905,11 +925,12 @@ function AgentDetail({
   const [a, setA] = useState<AgentSpec>(agent);
   const [err, setErr] = useState<string | null>(null);
   const [genWarnings, setGenWarnings] = useState<string[]>([]);
-  useDirtyGuard(registerDirty, () => JSON.stringify(a) !== JSON.stringify(agent));
+  const { saved, markSaved } = useEditorGuard(registerDirty, JSON.stringify(a), JSON.stringify(agent));
 
   const save = useMutation({
     mutationFn: (next: AgentSpec) => api.putAgent(next.name, next),
     onSuccess: (_d, v) => {
+      markSaved();
       invalidate();
       onSelect({ kind: "agent", name: v.name });
     },
@@ -992,19 +1013,32 @@ function AgentDetail({
         </div>
       ) : null}
 
-      {/* 이름 (신규만 — 이름이 식별자) */}
-      {isNew ? (
-        <div className="mb-5">
-          <FieldLabel>{t("office.agent.name")}</FieldLabel>
-          <input
-            className={cn(inputCls, "max-w-72 font-mono")}
-            value={a.name}
-            autoFocus
-            placeholder={t("office.namePlaceholder")}
-            onChange={(e) => setA((p) => ({ ...p, name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") }))}
-          />
-        </div>
-      ) : null}
+      {/* 표시 이름(label) — 사람이 보는 이름. 공백·한글 자유, 언제든 수정. 식별자(name)와 분리. */}
+      <div className="mb-5">
+        <FieldLabel>{t("office.agent.label")}</FieldLabel>
+        <input
+          className={inputCls}
+          value={a.label ?? ""}
+          autoFocus={!isNew}
+          placeholder={t("office.agent.label.placeholder")}
+          onChange={(e) => setA((p) => ({ ...p, label: e.target.value || undefined }))}
+        />
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.agent.label.hint")}</p>
+      </div>
+
+      {/* 식별자(name) — git 파일명. 신규에만 입력 가능, 이후 고정(참조 깨짐 방지). */}
+      <div className="mb-5">
+        <FieldLabel>{t("office.agent.name")}</FieldLabel>
+        <input
+          className={cn(inputCls, "max-w-72 font-mono", !isNew && "text-muted-foreground")}
+          value={a.name}
+          autoFocus={isNew}
+          readOnly={!isNew}
+          placeholder={t("office.namePlaceholder")}
+          onChange={(e) => setA((p) => ({ ...p, name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") }))}
+        />
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.agent.name.hint")}</p>
+      </div>
 
       {/* Identity: 어댑터 + 모델 */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1142,7 +1176,7 @@ function AgentDetail({
       <div className="mt-8 border-t border-border/40 pt-5">
         {err ? <p className="mb-3 text-xs text-destructive">{err}</p> : null}
         {!isNew ? <PromptPreview agent={agent.name} /> : null}
-        <SaveRow onSave={submit} pending={save.isPending} />
+        <SaveRow onSave={submit} pending={save.isPending} saved={saved} />
       </div>
     </DetailShell>
   );
@@ -1170,10 +1204,15 @@ function RuleDetail({
   const [name, setName] = useState(rule.name);
   const [body, setBody] = useState(rule.body);
   const [err, setErr] = useState<string | null>(null);
-  useDirtyGuard(registerDirty, () => name !== rule.name || body !== rule.body);
+  const { saved, markSaved } = useEditorGuard(
+    registerDirty,
+    JSON.stringify({ name, body }),
+    JSON.stringify({ name: rule.name, body: rule.body }),
+  );
   const save = useMutation({
     mutationFn: (r: { name: string; body: string }) => api.putRule(r.name, r.body),
     onSuccess: (_d, v) => {
+      markSaved();
       invalidate();
       onSelect({ kind: "rule", name: v.name });
     },
@@ -1234,6 +1273,7 @@ function RuleDetail({
           save.mutate({ name: n, body });
         }}
         pending={save.isPending}
+        saved={saved}
       />
     </DetailShell>
   );
@@ -1347,9 +1387,10 @@ function SkillDetail({
   // 신규 스킬은 본문 저장 후 딸린 파일을 이어서 기록 — 로컬 스테이징.
   const [draftFiles, setDraftFiles] = useState<{ path: string; content: string }[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  useDirtyGuard(
+  const { saved, markSaved } = useEditorGuard(
     registerDirty,
-    () => name !== skill.name || desc !== skill.description || body !== skill.body || draftFiles.length > 0,
+    JSON.stringify({ name, desc, body, files: draftFiles }),
+    JSON.stringify({ name: skill.name, desc: skill.description, body: skill.body, files: [] }),
   );
 
   const save = useMutation({
@@ -1358,6 +1399,7 @@ function SkillDetail({
       for (const f of s.files) await api.putSkillFile(s.name, f.path, f.content);
     },
     onSuccess: (_d, v) => {
+      markSaved();
       invalidate();
       onSelect({ kind: "skill", name: v.name });
     },
@@ -1447,6 +1489,7 @@ function SkillDetail({
           save.mutate({ name: n, description: desc, body, files: isNew ? draftFiles : [] });
         }}
         pending={save.isPending}
+        saved={saved}
       />
     </DetailShell>
   );
@@ -1509,16 +1552,16 @@ function McpDetail({
   const [headersText, setHeadersText] = useState(kvToText(server.headers));
   const [err, setErr] = useState<string | null>(null);
   const patch = (next: Partial<McpServer>) => setS((p) => ({ ...p, ...next }));
-  useDirtyGuard(
+  const { saved, markSaved } = useEditorGuard(
     registerDirty,
-    () =>
-      JSON.stringify({ ...s, args: argsText.split(/\s+/).filter(Boolean), env: textToKv(envText), headers: textToKv(headersText) }) !==
-      JSON.stringify(server),
+    JSON.stringify({ ...s, args: argsText.split(/\s+/).filter(Boolean), env: textToKv(envText), headers: textToKv(headersText) }),
+    JSON.stringify(server),
   );
 
   const save = useMutation({
     mutationFn: (servers: McpServer[]) => api.putMcp(servers),
     onSuccess: (_d, _v) => {
+      markSaved();
       invalidate();
       onSelect({ kind: "mcp", name: s.name });
     },
@@ -1663,7 +1706,7 @@ function McpDetail({
       </div>
 
       {err ? <p className="mt-3 text-xs text-destructive">{err}</p> : null}
-      <SaveRow onSave={submit} pending={save.isPending} />
+      <SaveRow onSave={submit} pending={save.isPending} saved={saved} />
     </DetailShell>
   );
 }
@@ -1683,11 +1726,12 @@ function PromptDetail({
   const invalidate = useInvalidate();
   const [body, setBody] = useState(prompt.body);
   const [err, setErr] = useState<string | null>(null);
-  useDirtyGuard(registerDirty, () => body !== prompt.body);
+  const { saved, markSaved } = useEditorGuard(registerDirty, body, prompt.body);
   const save = useMutation({
     mutationFn: () => api.putFeaturePrompt(prompt.name, body),
     onSuccess: () => {
       setErr(null);
+      markSaved();
       invalidate();
     },
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
@@ -1701,7 +1745,7 @@ function PromptDetail({
       <p className="mb-3 text-xs text-muted-foreground">{t("office.fp.hint")}</p>
       <MarkdownField value={body} onChange={setBody} placeholder="…" minH="min-h-[400px]" />
       {err ? <p className="mt-3 text-xs text-destructive">{err}</p> : null}
-      <SaveRow onSave={() => save.mutate()} pending={save.isPending} />
+      <SaveRow onSave={() => save.mutate()} pending={save.isPending} saved={saved} />
     </DetailShell>
   );
 }
@@ -1781,10 +1825,16 @@ function Segmented<T extends string>({
   );
 }
 
-function SaveRow({ onSave, pending }: { onSave: () => void; pending: boolean }) {
+function SaveRow({ onSave, pending, saved }: { onSave: () => void; pending: boolean; saved?: boolean }) {
   const { t } = useI18n();
   return (
-    <div className="mt-6 flex justify-end">
+    <div className="mt-6 flex items-center justify-end gap-3">
+      {saved && !pending ? (
+        <span className="flex items-center gap-1 text-xs font-medium text-primary">
+          <Check className="size-3.5" />
+          {t("office.saved")}
+        </span>
+      ) : null}
       <Button size="sm" onClick={onSave} disabled={pending}>
         {pending ? t("office.saving") : t("office.save")}
       </Button>
