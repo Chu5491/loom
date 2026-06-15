@@ -20,6 +20,7 @@ import {
     Sun,
     X,
     FolderCog,
+    BookOpen,
 } from "lucide-react";
 import type {WorkflowGate} from "@loom/core";
 import {api} from "./api/client.js";
@@ -38,8 +39,9 @@ import {HomePage} from "./pages/HomePage.js";
 import {OfficePage} from "./pages/OfficePage.js";
 import {ProjectsPage} from "./pages/ProjectsPage.js";
 import {TalkPage} from "./pages/TalkPage.js";
+import {GuidePage} from "./pages/GuidePage.js";
 
-type Tab = "home" | "projects" | "office" | "connections";
+type Tab = "home" | "projects" | "office" | "connections" | "guide";
 
 export function App() {
     const {t, lang, setLang} = useI18n();
@@ -131,6 +133,11 @@ export function App() {
             key: "connections",
             label: t("nav.connections"),
             icon: <Plug className="size-4" />,
+        },
+        {
+            key: "guide",
+            label: t("nav.guide"),
+            icon: <BookOpen className="size-4" />,
         },
     ];
 
@@ -347,6 +354,8 @@ export function App() {
                                 <OfficePage />
                             ) : tab === "connections" ? (
                                 <ConnectionsPage />
+                            ) : tab === "guide" ? (
+                                <GuidePage />
                             ) : tab === "projects" ? (
                                 <ProjectsPage onOpen={setProject} />
                             ) : project ? (

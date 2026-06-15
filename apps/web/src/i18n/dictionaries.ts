@@ -22,6 +22,7 @@ const en = {
   "err.retry": "Retry",
   "nav.connections": "Connections",
   "nav.office": "Office",
+  "nav.guide": "Guide",
 
   "home.title": "Company",
   "home.subtitle": "Your agents, forms and connections at a glance — then step into a project to work.",
@@ -478,6 +479,7 @@ const ko: Dictionary = {
   "err.retry": "다시 시도",
   "nav.connections": "연결",
   "nav.office": "오피스",
+  "nav.guide": "가이드",
 
   "home.title": "회사",
   "home.subtitle": "인원·양식·연결을 한눈에 보고, 프로젝트에 들어가 일해요.",
