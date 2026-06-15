@@ -109,7 +109,22 @@ export function splitFrontmatter(raw: string): { meta: Record<string, string>; b
   const meta: Record<string, string> = {};
   for (const line of m[1]!.split(/\r?\n/)) {
     const kv = /^(\w+):\s*(.*)$/.exec(line.trim());
-    if (kv) meta[kv[1]!] = kv[2]!.replace(/^["']|["']$/g, "");
+    if (!kv) continue;
+    const raw = kv[2]!;
+    // writeSkill 은 JSON.stringify 로 직렬화하므로(따옴표 이스케이프), 읽기도 대칭으로
+    // JSON.parse 해야 안쪽 따옴표가 \" 로 남지 않는다(왕복 시 백슬래시 누적 버그).
+    // JSON 이 아닌 값(단일따옴표·무따옴표 등)은 바깥 따옴표만 벗기는 폴백.
+    let value: string;
+    if (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) {
+      try {
+        value = JSON.parse(raw);
+      } catch {
+        value = raw.replace(/^["']|["']$/g, "");
+      }
+    } else {
+      value = raw.replace(/^["']|["']$/g, "");
+    }
+    meta[kv[1]!] = value;
   }
   return { meta, body: m[2] ?? "" };
 }
