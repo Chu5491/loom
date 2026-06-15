@@ -13,8 +13,6 @@ import {
     FolderOpen,
     House,
     Plug,
-    Plus,
-    Sparkles,
     Trash2,
     Users,
     X,

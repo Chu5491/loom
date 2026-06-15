@@ -1065,7 +1065,7 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
         {view.loadout ? <LoadoutChips loadout={view.loadout} /> : null}
 
         {/* 작업 타임라인 — 도구·파일·핸드오프를 순서대로 */}
-        <TraceTimeline items={view.trace} running={running} />
+        <TraceTimeline items={view.trace} running={running} plainText={agent ? PLAIN_TEXT_ADAPTERS.has(agent.adapter) : false} />
 
         {/* 본문 텍스트 */}
         {isStartError ? (
@@ -1586,10 +1586,25 @@ function traceIcon(it: TraceItem) {
 // ── 작업 타임라인 — 에이전트가 지금 뭘 하는지 눈으로 따라간다 ───────────────────
 // running: 라이브 스트림(최근 8개 + 마지막 항목 펄스). done: "도구 N · 파일 M" 요약으로
 // 접히고 클릭하면 전체 기록 펼침.
-function TraceTimeline({ items, running }: { items: TraceItem[]; running: boolean }) {
+// 평문 CLI — JSON 스트림이 없어 도구 단계를 못 잡는다(agy 는 --print 만, devin 은 평문).
+// 파일 변경은 git 폴백으로 잡히지만 "어떤 도구를 썼나"는 원천 정보가 없다.
+const PLAIN_TEXT_ADAPTERS = new Set<string>(["antigravity", "devin"]);
+
+function TraceTimeline({ items, running, plainText }: { items: TraceItem[]; running: boolean; plainText?: boolean }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    // 평문 CLI 의 빈 타임라인 — "안 잡힌 게 아니라 CLI 가 안 준다"를 정직하게 안내.
+    if (!running && plainText) {
+      return (
+        <p className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-2 py-1 text-[10px] text-muted-foreground/80">
+          <Info className="size-3 shrink-0" />
+          {t("talk.trace.plainText")}
+        </p>
+      );
+    }
+    return null;
+  }
 
   const tools = items.filter((i) => i.kind === "tool").length;
   const files = items.filter((i) => i.kind === "file").length;
