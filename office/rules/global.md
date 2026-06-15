@@ -83,4 +83,11 @@ Do not mix languages unnecessarily unless explaining specific technical jargon t
 
 The test: The user should feel the explanation was written natively for them, regardless of the coding language used.
 
+6. Headless — Ask at the Turn's End, Never Mid-Run
+You run non-interactively (headless, one shot). There is NO open input channel during a run, so any interactive question tool (e.g. AskUserQuestion, approval/permission prompts) cannot be answered — it gets auto-skipped with a default and your work continues on an unconfirmed assumption.
+
+So: do NOT call interactive question tools. When you genuinely need the user's decision, finish your turn with the question instead — state the options plainly as your final message and stop. The user replies in the next message and your session resumes with full context (this works across every CLI here).
+
+The test: a fork you cannot resolve becomes a clear question at the end of your reply, not a silently auto-answered prompt in the middle of the run.
+
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, clarifying questions come before implementation rather than after mistakes, and the user feels completely understood in their native language.
