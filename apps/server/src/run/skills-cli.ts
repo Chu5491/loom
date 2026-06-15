@@ -71,17 +71,29 @@ export async function findSkills(query: string): Promise<SkillCandidate[]> {
   return candidates;
 }
 
-// staging 디렉토리에서 설치된 SKILL.md 폴더를 찾는다(`<cwd>/.agents/skills/<name>/`).
+// staging 에서 설치된 SKILL.md 폴더를 찾는다. 표준 위치(`.agents/skills/<name>/`)를
+// 먼저 보고, CLI 가 다른 agent 디렉토리(.claude/skills 등)에만 둔 경우를 대비해
+// 얕은 폴백 스캔(`.*/skills/<name>/SKILL.md`)을 한다.
 function findInstalledSkill(stage: string): string | null {
-  const base = path.join(stage, ".agents", "skills");
-  let dirs: string[];
-  try {
-    dirs = fs.readdirSync(base);
-  } catch {
+  const hit = (base: string): string | null => {
+    let dirs: string[];
+    try {
+      dirs = fs.readdirSync(base);
+    } catch {
+      return null;
+    }
+    for (const d of dirs) {
+      if (fs.existsSync(path.join(base, d, "SKILL.md"))) return path.join(base, d);
+    }
     return null;
-  }
-  for (const d of dirs) {
-    if (fs.existsSync(path.join(base, d, "SKILL.md"))) return path.join(base, d);
+  };
+  const canonical = hit(path.join(stage, ".agents", "skills"));
+  if (canonical) return canonical;
+  // 폴백 — .<agent>/skills/ 어디든.
+  for (const entry of fs.readdirSync(stage, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith(".")) continue;
+    const found = hit(path.join(stage, entry.name, "skills"));
+    if (found) return found;
   }
   return null;
 }
@@ -98,9 +110,17 @@ export async function importSkill(pkg: string): Promise<ImportedSkill> {
   if (!/^[\w.-]+\/[\w.-]+@[\w.-]+$/.test(pkg)) throw new Error(`bad skill package: ${pkg}`);
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), "loom-skill-"));
   try {
-    const r = await spawnCapture("npx", ["-y", "skills", "add", pkg], { timeoutMs: CLI_TIMEOUT_MS, cwd: stage });
+    // -y: 확인 프롬프트 건너뛰기 — stdin 없는 서버 환경에선 프롬프트가 입력을
+    //     영영 못 받아 설치 없이 끝난다(헤드리스 핵심). --copy: 심링크 대신 실파일
+    //     로 받아 staging 복사가 끊긴 링크를 남기지 않게.
+    const r = await spawnCapture("npx", ["-y", "skills", "add", pkg, "-y", "--copy"], { timeoutMs: CLI_TIMEOUT_MS, cwd: stage });
     const srcDir = findInstalledSkill(stage);
-    if (!srcDir) throw new Error(`skills add produced no skill: ${stripAnsi(r.stderr || r.stdout).slice(0, 200)}`);
+    if (!srcDir) {
+      // skills 출력은 stdout 으로 가고 stderr 엔 npm 경고만 — 둘을 합쳐 꼬리를 보여야
+      // 진짜 실패 사유가 보인다(앞부분만 자르면 npm 경고에 가려진다).
+      const detail = stripAnsi(`${r.stdout}\n${r.stderr}`).trim().slice(-300);
+      throw new Error(`skills add produced no skill (exit ${r.exitCode}${r.timedOut ? ", timed out" : ""}): ${detail}`);
+    }
 
     const raw = fs.readFileSync(path.join(srcDir, "SKILL.md"), "utf8");
     const { meta, body } = splitFrontmatter(raw);
