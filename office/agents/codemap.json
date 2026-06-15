@@ -11,15 +11,11 @@
   "rules": [
     "global"
   ],
-  "skills": [
-    "readme-i18n",
-    "create-readme",
-    "codebase-documenter"
-  ],
+  "skills": [],
   "mcp": [
+    "deepwiki",
     "context7",
     "grep-app",
-    "exa",
-    "deepwiki"
+    "exa"
   ]
 }
