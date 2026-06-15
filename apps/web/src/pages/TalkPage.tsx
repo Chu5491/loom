@@ -121,6 +121,13 @@ export function TalkPage({ project }: { project: Project }) {
   }, []);
   useEffect(() => setFeed([]), [threadId]);
 
+  // 각 agent 버블이 확정한 본문 — 다음 턴이 직전 답변과 중복 비교에 쓴다(재방출 접기).
+  const [bodies, setBodies] = useState<Record<string, string>>({});
+  const onResolveBody = useCallback((runId: string, body: string) => {
+    setBodies((prev) => (prev[runId] === body ? prev : { ...prev, [runId]: body }));
+  }, []);
+  useEffect(() => setBodies({}), [threadId]);
+
   // 첫 에이전트를 기본 대상으로.
   useEffect(() => {
     if (!active && agents.length) setActive(agents[0]!.name);
@@ -157,6 +164,14 @@ export function TalkPage({ project }: { project: Project }) {
         ),
     [runs.data, byId],
   );
+  // 인덱스 i 직전의 에이전트 답변 본문 — 재방출 단락 접기의 비교 기준.
+  const priorAgentBody = (i: number): string | undefined => {
+    for (let j = i - 1; j >= 0; j--) {
+      const m = messages[j];
+      if (m && m.role === "agent") return bodies[m.runId];
+    }
+    return undefined;
+  };
 
   // 바닥 고정(sticky-bottom) — 진입/스레드 전환 시 켜지고, 사용자가 위로 스크롤해
   // 바닥에서 멀어지면 꺼진다. 버블들이 SSE replay 로 비동기로 자라며 smooth 스크롤을
@@ -280,7 +295,7 @@ export function TalkPage({ project }: { project: Project }) {
   ];
 
   return (
-    <div className="workspace-enter mx-auto flex h-full max-w-[1400px] flex-col px-6 sm:px-8 lg:px-12">
+    <div className="workspace-enter flex min-h-0 flex-1 flex-col px-4 py-3 sm:px-6 lg:px-8">
       {/* 워크스페이스 바 — 뷰 스위처(헤더 네비와 같은 글로우 필) + 스레드 컨트롤 */}
       <div className="flex items-center gap-2 py-2">
         <div className="inline-flex gap-1">
@@ -375,7 +390,7 @@ export function TalkPage({ project }: { project: Project }) {
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           exit={{ opacity: 0, y: -10, filter: "blur(2px)" }}
           transition={{ duration: 0.25 }}
-          className="flex min-h-0 flex-1 gap-6 mb-6 w-full"
+          className="flex min-h-0 flex-1 gap-5 mb-4 w-full"
         >
           {view === "files" ? (
             <FilesView project={project} />
@@ -407,7 +422,7 @@ export function TalkPage({ project }: { project: Project }) {
       />
 
       {/* 채팅 컬럼 = 스테이지 — 워크스페이스의 주인공 서피스 */}
-      <div className="mx-auto flex h-full w-full min-w-0 max-w-4xl flex-1 flex-col rounded-2xl glass-panel border-cyber px-6 sm:px-8">
+      <div className="mx-auto flex h-full w-full min-w-0 max-w-6xl flex-1 flex-col rounded-3xl glass-panel border-cyber px-6 sm:px-8">
         {/* overflow-anchor 끔 — 브라우저 앵커링이 scrollTop 을 임의 조정해 바닥 고정과 충돌 */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-6 [overflow-anchor:none]">
           {messages.length === 0 && !pending ? (
@@ -439,6 +454,8 @@ export function TalkPage({ project }: { project: Project }) {
                         isLast={i === messages.length - 1}
                         onDone={() => void runs.refetch()}
                         onActivity={reportActivity}
+                        priorBody={priorAgentBody(i)}
+                        onResolveBody={onResolveBody}
                       />
                       </ErrorBoundary>
                     </div>
@@ -743,7 +760,7 @@ function TeamPanel({
   const workingCount = workingAgents.size;
 
   return (
-    <aside className="hidden w-[440px] shrink-0 flex-col overflow-y-auto rounded-2xl glass-panel p-5 xl:flex">
+    <aside className="hidden w-[280px] shrink-0 flex-col overflow-y-auto rounded-3xl glass-panel p-5 xl:flex">
       {/* 팀 현황 — 누가 일하고 있나 (선택이 아니라 상태 보드) */}
       <div className="mb-4 flex items-center gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("talk.team")}</h3>
@@ -860,7 +877,7 @@ function TeamPanel({
                 type="button"
                 title={t("talk.workflow.run")}
                 onClick={() => onRunWorkflow(w.name)}
-                className="group/wf flex w-full items-center gap-2 rounded-xl border border-border/60 bg-card px-2.5 py-2 text-left text-xs transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]"
+                className="group/wf flex w-full items-center gap-2 rounded-3xl border border-border/20 bg-card/50 shadow-xl backdrop-blur-md px-2.5 py-2 text-left text-xs transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)]"
               >
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover/wf:bg-primary/20">
                   <CirclePlay className="size-3.5" />
@@ -917,16 +934,28 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
-function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLast, onDone, onActivity }: { agent?: AgentSpec; fromAgent?: string; runId: string; run?: RunInfo; startedAt?: string; workflows: WorkflowSpec[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void }) {
+function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLast, onDone, onActivity, priorBody, onResolveBody }: { agent?: AgentSpec; fromAgent?: string; runId: string; run?: RunInfo; startedAt?: string; workflows: WorkflowSpec[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void; priorBody?: string; onResolveBody?: (runId: string, body: string) => void }) {
   const { t } = useI18n();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
   const [handedOff, setHandedOff] = useState<string[]>([]);
   const [detail, setDetail] = useState(false);
+  const [showFull, setShowFull] = useState(false); // 접힌 중복 답변 펼치기
 
   const name = agent?.label || agent?.name || "?";
   const view = useMemo(() => deriveView(stream.events), [stream.events]);
   const running = !isStartError && stream.status === "running";
+
+  // 본문을 부모에 올려 다음 턴이 직전 답변과 중복 비교에 쓰게 한다(같으면 무시).
+  // run 이 끝났을 때만 1회 — 스트리밍 토큰마다 올리면 메시지 목록 전체가 매 토큰
+  // 리렌더돼 무거운 스레드에서 멈춘다(검증). 직전 답변은 항상 완료된 run 이라 충분.
+  useEffect(() => {
+    if (!running && view.body) onResolveBody?.(runId, view.body);
+  }, [running, view.body, runId, onResolveBody]);
+
+  // 직전 답변과 겹치는 단락은 접고 이번 새 내용만 — 재방출하는 CLI(오염된 agy 등) 대응.
+  const dedup = useMemo(() => splitNewContent(view.body, priorBody), [view.body, priorBody]);
+  const shownBody = showFull || !dedup.hidden ? view.body : dedup.shown;
 
   // run 이 끝나면 부모에 알림 → runs 재조회로 하네스 자동발화 자식을 끌어온다.
   useEffect(() => {
@@ -1032,6 +1061,9 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
         {/* 실행 중 — 현재 작업 + 경과 시간 */}
         {running ? <WorkingLine trace={view.trace} startedAt={startedAt} /> : null}
 
+        {/* 이 run 에 실린 스킬·MCP·위임 — 전 CLI 공통(평문 CLI 도 표시) */}
+        {view.loadout ? <LoadoutChips loadout={view.loadout} /> : null}
+
         {/* 작업 타임라인 — 도구·파일·핸드오프를 순서대로 */}
         <TraceTimeline items={view.trace} running={running} />
 
@@ -1042,7 +1074,18 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
           view.errors.map((m, i) => <ErrorLine key={i} text={m} />)
         ) : view.body ? (
           <div className="rounded-2xl rounded-bl-md bg-card border border-border px-4 py-2.5 text-sm leading-relaxed">
-            <Markdown>{view.body}</Markdown>
+            {/* 직전 답변을 통째로 재방출하는 경우 겹친 단락을 접고 새 내용만 — 펼치기 제공 */}
+            {dedup.hidden > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowFull((v) => !v)}
+                className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                {showFull ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                {t("talk.dedup.repeated", { count: String(dedup.hidden) })}
+              </button>
+            ) : null}
+            <Markdown>{shownBody || view.body}</Markdown>
             {running ? <span className="mt-1 inline-block h-3 w-1.5 animate-pulse rounded-sm bg-primary/70" /> : null}
           </div>
         ) : running ? (
@@ -1435,12 +1478,14 @@ interface DerivedView {
   result?: Extract<OfficeEvent, { kind: "result" }>;
   errors: string[];
   changedFiles: number;
+  loadout?: { skills: string[]; mcp: string[]; delegate: boolean };
 }
 function deriveView(events: OfficeEvent[]): DerivedView {
   const trace: TraceItem[] = [];
   const texts: string[] = [];
   const errors: string[] = [];
   let result: Extract<OfficeEvent, { kind: "result" }> | undefined;
+  let loadout: { skills: string[]; mcp: string[]; delegate: boolean } | undefined;
   let changedFiles = 0;
   for (const e of events) {
     if (e.kind === "text") texts.push(e.text);
@@ -1449,12 +1494,79 @@ function deriveView(events: OfficeEvent[]): DerivedView {
       trace.push({ kind: "file", name: e.action === "edit" ? "Edit" : "Write", target: e.path, action: e.action });
       changedFiles++;
     } else if (e.kind === "handoff") trace.push({ kind: "handoff", name: `@${e.toAgent}`, target: e.reason });
+    else if (e.kind === "loadout") loadout = { skills: e.skills, mcp: e.mcp, delegate: e.delegate };
     else if (e.kind === "result") result = e;
     else if (e.kind === "error") errors.push(e.message);
   }
   // result 가 오면 그게 최종 전체 텍스트 — 누적 text 보다 우선.
   const body = result?.text ?? texts.join("");
-  return { trace, body, result, errors, changedFiles };
+  return { trace, body, result, errors, changedFiles, loadout };
+}
+
+// 일부 CLI(특히 오염된 대화의 agy)는 매 턴 직전 답변을 통째로 다시 뱉는다 — LLM
+// 영역이라 막을 수 없다. UI 에서 직전 답변과 단락 단위로 겹치는 부분을 접고 "이번
+// 질문에 대한 새 내용"만 기본 표시한다. 안 겹치는 CLI(claude 등)는 그대로 통과.
+// 줄 단위로 비교한다 — agy 출력은 단락(\n\n)이 아니라 단일 줄바꿈(\n)을 써서
+// 단락 분할로는 통째로 1블록이 돼 매칭이 안 된다(검증). 짧은 줄은 정상 반복일 수
+// 있어 건드리지 않는다(헤더·기호 등 오탐 방지).
+const DEDUP_MIN = 25;
+const lineKey = (l: string) => l.trim().replace(/\s+/g, " ");
+export function splitNewContent(body: string, prior?: string): { shown: string; hidden: number } {
+  if (!prior) return { shown: body, hidden: 0 };
+  const priorKeys = new Set(
+    prior.split("\n").map(lineKey).filter((k) => k.length >= DEDUP_MIN),
+  );
+  let hidden = 0;
+  const kept = body.split("\n").filter((line) => {
+    const k = lineKey(line);
+    if (k.length >= DEDUP_MIN && priorKeys.has(k)) {
+      hidden++;
+      return false;
+    }
+    return true;
+  });
+  // 중복 줄을 걷어낸 자리에 생긴 과도한 빈 줄 정리.
+  return { shown: kept.join("\n").replace(/\n{3,}/g, "\n\n").trim(), hidden };
+}
+
+// run 에 실린 스킬·MCP·위임 — 평문 CLI 도 "무엇을 쓸 수 있었나"를 보여주는 칩 줄.
+function LoadoutChips({ loadout }: { loadout: NonNullable<DerivedView["loadout"]> }) {
+  const { t } = useI18n();
+  const { skills, mcp, delegate } = loadout;
+  if (!skills.length && !mcp.length && !delegate) return null;
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5">
+      {skills.map((s) => (
+        <span
+          key={`sk-${s}`}
+          title={t("talk.loadout.skill")}
+          className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+        >
+          <Sparkles className="size-2.5" />
+          {s}
+        </span>
+      ))}
+      {mcp.map((m) => (
+        <span
+          key={`mcp-${m}`}
+          title={t("talk.loadout.mcp")}
+          className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+        >
+          <Plug className="size-2.5" />
+          {m}
+        </span>
+      ))}
+      {delegate ? (
+        <span
+          title={t("talk.loadout.delegate")}
+          className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+        >
+          <Workflow className="size-2.5" />
+          {t("talk.loadout.delegate")}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 // 도구 이름 → 아이콘. CLI마다 이름이 달라 휴리스틱 매칭(모르면 렌치).

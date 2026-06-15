@@ -10,6 +10,10 @@ export interface ComposeInput {
   /** 에이전트 지시 프롬프트. */
   agentPrompt?: string;
   loadout?: AgentLoadout | null;
+  /** 이어가는(resume) 턴인가. true 면 rules·페르소나를 재주입하지 않는다 —
+   *  이미 대화 첫 턴에 들어가 있어, 매 턴 다시 보내면 에이전트가 자기소개를
+   *  반복한다(검증됨). loadout(경로가 run마다 바뀜)·메모·사용자 입력만 보낸다. */
+  resuming?: boolean;
   /** 프로젝트 공유 메모(<project>/.loom/notes.md) — 파일이 있을 때만 경로 안내.
    *  본문은 주입하지 않는다(자동 주입 금지) — 에이전트가 필요할 때 Read. */
   projectNotesPath?: string | null;
@@ -21,12 +25,15 @@ export interface ComposeInput {
 export function composePrompt(input: ComposeInput): string {
   const sections: string[] = [];
 
-  for (const r of input.rules) {
-    const body = r.trim();
-    if (body) sections.push(`=== Rules ===\n${body}\n=== End Rules ===`);
+  // resume 턴엔 rules·페르소나를 건너뛴다 — 대화 첫 턴에 이미 들어가 있다.
+  if (!input.resuming) {
+    for (const r of input.rules) {
+      const body = r.trim();
+      if (body) sections.push(`=== Rules ===\n${body}\n=== End Rules ===`);
+    }
+    const a = input.agentPrompt?.trim();
+    if (a) sections.push(`=== Agent Instructions ===\n${a}\n=== End Instructions ===`);
   }
-  const a = input.agentPrompt?.trim();
-  if (a) sections.push(`=== Agent Instructions ===\n${a}\n=== End Instructions ===`);
 
   if (input.loadout && (input.loadout.skills.length || input.loadout.mcpServerNames.length || input.loadout.delegate)) {
     sections.push(renderLoadout(input.loadout));

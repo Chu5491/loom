@@ -1,7 +1,11 @@
-import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, it, expect, vi } from "vitest";
 import {
   buildAntigravityCommand,
   antigravityAdapter,
+  captureAntigravitySession,
   extractAntigravitySessionId,
   extractAntigravityTouchedEdits,
   extractAntigravityTouchedPaths,
@@ -9,6 +13,50 @@ import {
   parseModelLines,
   ANTIGRAVITY_PRESET_MODELS,
 } from "./index.js";
+
+// agy 대화 저장소(~/.gemini/antigravity-cli/conversations/<id>.db)를 임시 HOME 으로
+// 흉내 — homePath 가 os.homedir() 를 쓰므로 그걸 가로챈다.
+function fakeStore(dbs: { id: string; mtimeMs: number }[]): string {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agy-home-"));
+  const dir = path.join(home, ".gemini", "antigravity-cli", "conversations");
+  fs.mkdirSync(dir, { recursive: true });
+  for (const { id, mtimeMs } of dbs) {
+    const f = path.join(dir, `${id}.db`);
+    fs.writeFileSync(f, "x");
+    fs.utimesSync(f, new Date(mtimeMs), new Date(mtimeMs));
+  }
+  return home;
+}
+
+describe("captureAntigravitySession", () => {
+  it("returns the newest .db basename touched since `since`", async () => {
+    const since = Date.now();
+    const home = fakeStore([
+      { id: "11111111-1111-1111-1111-111111111111", mtimeMs: since - 60_000 },
+      { id: "22222222-2222-2222-2222-222222222222", mtimeMs: since + 1_000 },
+    ]);
+    const spy = vi.spyOn(os, "homedir").mockReturnValue(home);
+    expect(await captureAntigravitySession({ cwd: "/x", since })).toBe(
+      "22222222-2222-2222-2222-222222222222",
+    );
+    spy.mockRestore();
+  });
+
+  it("returns null when no .db is newer than `since` (stale run)", async () => {
+    const since = Date.now();
+    const home = fakeStore([{ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", mtimeMs: since - 60_000 }]);
+    const spy = vi.spyOn(os, "homedir").mockReturnValue(home);
+    expect(await captureAntigravitySession({ cwd: "/x", since })).toBeNull();
+    spy.mockRestore();
+  });
+
+  it("returns null when the store doesn't exist yet", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "agy-home-"));
+    const spy = vi.spyOn(os, "homedir").mockReturnValue(home);
+    expect(await captureAntigravitySession({ cwd: "/x", since: Date.now() })).toBeNull();
+    spy.mockRestore();
+  });
+});
 
 describe("buildAntigravityCommand", () => {
   it("defaults: agy with no flags", () => {

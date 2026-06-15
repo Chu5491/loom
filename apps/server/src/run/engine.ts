@@ -19,6 +19,7 @@ import {
   readWorkflows,
 } from "../office.js";
 import { composePrompt } from "./compose.js";
+import { gitFilesTouchedSince } from "./git-changes.js";
 import { analysisDocPath, notesPath } from "./project-memory.js";
 import { materializeLoadout } from "./loadout.js";
 import { parseLine } from "./parse.js";
@@ -353,6 +354,8 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     loadout,
     projectNotesPath: notes && fs.existsSync(notes) ? notes : null,
     projectAnalysisPath: analysisDoc && fs.existsSync(analysisDoc) ? analysisDoc : null,
+    // 이어가는 턴이면 rules·페르소나 재주입 생략 — 매 턴 자기소개 반복 방지.
+    resuming: !!resumeSessionId,
   });
   const info: RunInfo = {
     id,
@@ -391,6 +394,17 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   };
   runs.set(id, state);
   insertRun(info); // history 영속 — running 상태로 즉시 기록(finish 가 갱신).
+
+  // 이 run 의 loadout(스킬·MCP·위임)을 첫 이벤트로 — 모든 CLI 공통. 평문 CLI 는
+  // 도구 호출을 스트림에서 못 뽑으니, "무엇이 실렸나"라도 UI 에 보여준다.
+  if (loadout.skills.length || loadout.mcpServerNames.length || loadout.delegate) {
+    emit(state, [{
+      kind: "loadout",
+      skills: loadout.skills.map((s) => s.name),
+      mcp: loadout.mcpServerNames,
+      delegate: !!loadout.delegate,
+    }]);
+  }
 
   // adapterConfig — 에이전트 config + model. env 의 secret 참조도 resolve.
   const cfg = (agent.config ?? {}) as AdapterConfig;
@@ -513,6 +527,9 @@ async function run(
     }
   }
   log.info({ cwd, resume: !!resumeSessionId }, "run start");
+  // 평문 CLI(antigravity/devin)의 디스크 세션 캡처 기준점 — 이 run 이 만진
+  // 대화를 직전 잔재와 구분하려고 spawn 직전에 찍는다.
+  const sessionSince = Date.now();
   try {
     const handle = await adapter.spawn(
       {
@@ -543,6 +560,28 @@ async function run(
     // 최종 result 이벤트가 없었으면(예: devin plain text) 누적 텍스트로 합성.
     if (!state.sawResult && state.lastText) {
       emit(state, [{ kind: "result", text: state.lastText }]);
+    }
+
+    // 평문 CLI 는 출력에 세션 id 가 없다 — CLI 자신의 디스크 저장소에서 되찾아
+    // 다음 턴 resume 의 근거를 만든다(스트림에서 못 잡았을 때만, 성공 run 만).
+    if (!state.sessionId && !state.abort.signal.aborted && exitCode === 0 && adapter.captureSessionFromDisk) {
+      try {
+        const sid = await adapter.captureSessionFromDisk({ cwd, since: sessionSince }, adapterConfig);
+        if (sid) state.sessionId = sid;
+      } catch (err) {
+        log.warn({ err }, "disk session capture failed");
+      }
+    }
+
+    // stream 으로 파일 편집을 못 잡은 run(평문 CLI 등)은 git 작업트리에서 변경
+    // 파일을 되찾아 귀속한다 — 파일 탭의 "누가 뭘 고쳤나"가 전 CLI 에서 채워진다.
+    if (exitCode === 0 && !state.abort.signal.aborted && !state.events.some((e) => e.kind === "file")) {
+      try {
+        const touched = gitFilesTouchedSince(cwd, sessionSince);
+        if (touched.length) emit(state, touched.map((f) => ({ kind: "file", path: f.path, action: f.action })));
+      } catch (err) {
+        log.warn({ err }, "git file capture failed");
+      }
     }
 
     concludeRun(state, state.abort.signal.aborted ? "cancelled" : exitCode === 0 ? "succeeded" : "failed", exitCode);

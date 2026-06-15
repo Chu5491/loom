@@ -40,7 +40,6 @@ export function HomePage({
         queryKey: ["projects"],
         queryFn: api.listProjects,
     });
-    const [adding, setAdding] = useState(false);
     const [pendingDel, setPendingDel] = useState<{
         id: string;
         name: string;
@@ -66,34 +65,17 @@ export function HomePage({
             title={t("home.title")}
             subtitle={t("home.subtitle")}
             scrollable={false}
-            actions={
-                <Button size="sm" onClick={() => setAdding(true)}>
-                    <Plus className="size-3.5" />
-                    {t("home.add")}
-                </Button>
-            }
         >
             {/* IDE 3컬럼 미션 컨트롤 — 좌: 프로젝트 레일 · 중: 팀+활동 · 우: 비용+요약 */}
-            <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[260px_1fr_300px]">
+            <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto lg:overflow-hidden lg:grid-cols-[280px_1fr_320px] p-2">
                 <ProjectsRail
                     projects={list}
                     running={running}
-                    adding={adding}
-                    onAddStart={() => setAdding(true)}
-                    onAddDone={(id) => {
-                        setAdding(false);
-                        void qc
-                            .invalidateQueries({queryKey: ["projects"]})
-                            .then(() => {
-                                if (id) onOpen(id);
-                            });
-                    }}
                     onOpen={onOpen}
                     onDelete={(p) => setPendingDel(p)}
                 />
                 <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-                    <TeamBoard runs={running} projects={list} />
-                    <ActivityFeed runs={allRuns} projects={list} onOpen={onOpen} />
+                    <TeamBoard runs={running} projects={list} className="flex-1" />
                 </div>
                 <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
                     <CostPanel />
@@ -123,17 +105,11 @@ export function HomePage({
 function ProjectsRail({
     projects,
     running,
-    adding,
-    onAddStart,
-    onAddDone,
     onOpen,
     onDelete,
 }: {
     projects: Project[];
     running: RunInfo[];
-    adding: boolean;
-    onAddStart: () => void;
-    onAddDone: (id: string | null) => void;
     onOpen: (id: string) => void;
     onDelete: (p: {id: string; name: string}) => void;
 }) {
@@ -143,7 +119,7 @@ function ProjectsRail({
     const liveCount = (id: string) =>
         running.filter((r) => r.projectId === id).length;
     return (
-        <aside className="flex min-h-0 flex-col rounded-xl border border-border/40 bg-card/40">
+        <aside className="flex min-h-0 flex-col rounded-3xl border border-border/20 bg-card/50 shadow-xl backdrop-blur-md">
             {/* 레일 헤더 — 28px 슬림 */}
             <div className="flex shrink-0 items-center gap-1.5 border-b border-border/30 px-2 py-1.5">
                 <FolderGit2 className="size-3.5 text-primary" />
@@ -153,23 +129,9 @@ function ProjectsRail({
                 <span className="rounded-full bg-muted/60 px-1.5 text-[9px] tabular-nums">
                     {projects.length}
                 </span>
-                <button
-                    type="button"
-                    onClick={onAddStart}
-                    className="ml-auto rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                    title={t("home.add")}
-                    aria-label={t("home.add")}
-                >
-                    <Plus className="size-3.5" />
-                </button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1">
-                {adding ? (
-                    <div className="mb-1">
-                        <AddProject onDone={onAddDone} />
-                    </div>
-                ) : null}
-                {projects.length === 0 && !adding ? (
+                {projects.length === 0 ? (
                     <p className="px-2 py-6 text-center text-[11px] text-muted-foreground">
                         {t("home.emptyTitle")}
                     </p>
@@ -278,7 +240,7 @@ function TeamBoard({
                 ) : null
             }
         >
-            <div className="grid gap-1.5 sm:grid-cols-2">
+            <div className="grid gap-1.5 sm:grid-cols-2 flex-1 min-h-0 overflow-y-auto pr-1">
                 {agents.map((a) => {
                     const live = liveOf(a.name);
                     return (
@@ -400,92 +362,6 @@ function CostPanel({className}: {className?: string}) {
                     })}
                 </span>
             </div>
-        </Panel>
-    );
-}
-
-// ── 활동 피드 — 전 프로젝트 최근 run (클릭 = 그 프로젝트로 진입) ─────────────────
-function ActivityFeed({
-    runs,
-    projects,
-    onOpen,
-    className,
-}: {
-    runs: RunInfo[];
-    projects: Project[];
-    onOpen: (id: string) => void;
-    className?: string;
-}) {
-    const {t, lang} = useI18n();
-    const projName = (id: string | null) =>
-        projects.find((p) => p.id === id)?.name ?? null;
-    const recent = runs.slice(0, 9);
-    const fmt = (iso: string) =>
-        new Date(iso).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-
-    return (
-        <Panel
-            icon={<Sparkles />}
-            title={t("talk.team.activity")}
-            count={recent.length}
-            className={className}
-            noPad
-        >
-            {recent.length === 0 ? (
-                <p className="p-4 text-xs text-muted-foreground">
-                    {t("home.noActivity")}
-                </p>
-            ) : (
-                <div className="divide-y divide-border/40">
-                    {recent.map((r) => {
-                        const pn = projName(r.projectId);
-                        return (
-                            <button
-                                key={r.id}
-                                type="button"
-                                onClick={() =>
-                                    r.projectId && onOpen(r.projectId)
-                                }
-                                className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-xs transition-colors hover:bg-muted/40"
-                            >
-                                <span className="w-10 shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60">
-                                    {fmt(r.startedAt)}
-                                </span>
-                                <StatusDot
-                                    tone={
-                                        r.status === "running"
-                                            ? "busy"
-                                            : r.status === "succeeded"
-                                            ? "ok"
-                                            : r.status === "cancelled"
-                                            ? "idle"
-                                            : "bad"
-                                    }
-                                />
-                                <span className="shrink-0 font-medium">
-                                    @{r.agent}
-                                </span>
-                                {pn ? (
-                                    <span className="shrink-0 rounded-full bg-muted/60 px-1.5 text-[10px] text-muted-foreground">
-                                        {pn}
-                                    </span>
-                                ) : null}
-                                {r.workflow ? (
-                                    <span className="shrink-0 rounded-full bg-primary/10 px-1.5 text-[10px] text-primary">
-                                        {r.workflow}
-                                    </span>
-                                ) : null}
-                                <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                                    {r.prompt.split("\n")[0]}
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
         </Panel>
     );
 }

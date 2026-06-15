@@ -55,6 +55,19 @@ export interface CliAdapter {
    *  next turn in the same thread can `--resume` it. Adapters without a
    *  session model leave this undefined. */
   extractSessionId?(chunk: string): string | null;
+  /** Recover the session id from the CLI's *own on-disk session store*,
+   *  for plain-text CLIs (antigravity, devin) that emit no machine-readable
+   *  session id in their output — `extractSessionId` is structurally
+   *  impossible there. The run engine calls this once, after the process
+   *  exits, and only when nothing was captured from the stream. `since` is
+   *  an epoch-ms stamp taken just before spawn so the adapter can pick the
+   *  conversation this run touched, not a stale one. Reading the store is
+   *  fine — CLI root 불가침은 *쓰기* 금지(헌법 3조); the id is replayed next
+   *  turn via `applyResume`. */
+  captureSessionFromDisk?(
+    ctx: { cwd: string; since: number },
+    config: AdapterConfig,
+  ): Promise<string | null>;
   /** Pluck file paths out of tool-use events as the CLI streams them.
    *  Run-service surfaces these to the UI so the file tree can flag
    *  "an agent is editing this *right now*" — without it, files only

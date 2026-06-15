@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { defineCliAdapter } from "@loom/adapter-utils";
+import { defineCliAdapter, spawnCapture, stripAnsi } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, McpServer } from "@loom/core";
 
 export { devinManifest } from "./manifest.js";
@@ -49,19 +49,58 @@ export function toDevinMcpEntry(s: McpServer): Record<string, unknown> {
 
 // Devin runs non-interactively via `--print "<prompt>"` and emits plain text
 // (no documented stream-json envelope), so there are no session / tool / cost
-// extractors — each Loom run is a fresh turn.
+// *stream* extractors. 대화 연속성은 stdout 이 아니라 captureDevinSession
+// (디스크 저장소)으로 되찾는다 — 아래.
 //
 // MCP 주입: devin 의 *프로젝트-로컬* 설정 `<cwd>/.devin/config.local.json` 에
 // mcpServers 를 merge-write 한다 (실호출 검증됨 — MCP-CANARY-X4K9). CLI root
 // (~/.config/devin)는 건드리지 않음. 기존 파일의 다른 항목·사용자 서버는 보존,
 // 같은 이름만 이번 run 정의로 교체. 이전 run 이 남긴 loom 서버가 이름이 바뀌면
 // stale 로 남을 수 있음 — 로컬 설정 파일 특성상 수용 (다음 run 이 다시 쓴다).
+interface DevinSession {
+  id?: string;
+  last_activity_at?: number; // epoch seconds
+}
+
+// devin 은 세션을 ~/.local/share/devin/cli/sessions.db 에 보존하고 `devin list`
+// 가 *현재 디렉토리*(cwd) 스코프로 내준다. CLI 를 진실로 삼아(헌법 1조) sqlite 를
+// 직접 읽지 않는다 — cwd 로 이미 좁혀지고, 이 run 이 만진 세션만(last_activity ≥
+// since) 고른다. resume 은 다음 턴에 --resume <id> 로. 한계: 같은 프로젝트에서
+// 두 thread 가 동시에 돌면 cwd 만으로는 구분 못 한다(run 직렬화로 창을 좁힘).
+export async function captureDevinSession(
+  ctx: { cwd: string; since: number },
+  config: DevinConfig,
+): Promise<string | null> {
+  const command = config.command ?? "devin";
+  const { exitCode, stdout } = await spawnCapture(command, ["list", "--format", "json"], {
+    cwd: ctx.cwd,
+    timeoutMs: 10_000,
+  });
+  if (exitCode !== 0) return null;
+  let sessions: unknown;
+  try {
+    sessions = JSON.parse(stripAnsi(stdout).trim());
+  } catch {
+    return null; // 비-JSON(빈 디렉토리 등)
+  }
+  if (!Array.isArray(sessions)) return null;
+  let best: DevinSession | null = null;
+  for (const s of sessions as DevinSession[]) {
+    if (typeof s.id !== "string" || typeof s.last_activity_at !== "number") continue;
+    // last_activity_at 은 epoch 초 — since(ms)와 비교, 2s 여유.
+    if (s.last_activity_at * 1000 + 2000 < ctx.since) continue;
+    if (!best || s.last_activity_at > (best.last_activity_at ?? 0)) best = s;
+  }
+  return best?.id ?? null;
+}
+
 export const devinAdapter = defineCliAdapter<DevinConfig>({
   kind: "devin",
   buildCommand: buildDevinCommand,
   prompt: { via: "arg", flag: "--print" },
   resolveEnv: (cfg) => ({ ...(cfg.env ?? {}) }),
   applyResume: (args, sessionId) => [...args, "--resume", sessionId],
+  captureSessionFromDisk: captureDevinSession,
   applyMcpServers: ({ args, servers, cwd }) => {
     // servers 가 비어도 호출 — 직전 run 이 남긴 transient loom 엔트리를 정리해야
     // 한다(아래). loadoutDir 이 항상 전달되므로 define 이 매 run 훅을 부른다.

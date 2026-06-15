@@ -38,6 +38,15 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
   /** Optional: scan a stdout chunk and return the session id the CLI
    *  emitted, or null if the chunk doesn't contain one. */
   extractSessionId?(chunk: string): string | null;
+  /** Optional: recover the session id from the CLI's on-disk session store
+   *  for plain-text CLIs that emit no session id in their output. The engine
+   *  calls this after the process exits, only when extractSessionId found
+   *  nothing. `since` (epoch ms, pre-spawn) disambiguates this run's session
+   *  from stale ones. */
+  captureSessionFromDisk?(
+    ctx: { cwd: string; since: number },
+    config: TConfig,
+  ): Promise<string | null>;
   /** Optional: scan a stdout chunk for tool-use events and return the
    *  file paths the agent is currently editing. */
   extractTouchedPaths?(chunk: string): string[];
@@ -91,6 +100,9 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
       return def.buildCommand(config as TConfig);
     },
     extractSessionId: def.extractSessionId,
+    captureSessionFromDisk: def.captureSessionFromDisk
+      ? (ctx, config) => def.captureSessionFromDisk!(ctx, config as TConfig)
+      : undefined,
     extractTouchedPaths: def.extractTouchedPaths,
     extractTouchedEdits: def.extractTouchedEdits,
     extractToolUses: def.extractToolUses,

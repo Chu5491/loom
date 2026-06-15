@@ -1,4 +1,6 @@
-import { defineCliAdapter } from "@loom/adapter-utils";
+import fs from "node:fs";
+import path from "node:path";
+import { defineCliAdapter, homePath } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, ToolUse, TouchedEdit } from "@loom/core";
 
 export { antigravityManifest } from "./manifest.js";
@@ -28,9 +30,12 @@ export function buildAntigravityCommand(config: AntigravityConfig = {}): BuiltCo
   return { command, args };
 }
 
-// ── stream-json extraction ─────────────────────────────────────────────
-// Antigravity CLI (Google's successor to Gemini CLI, 2026-06-18) uses
-// the same stream-json NDJSON format:
+// ── 출력 파싱 ───────────────────────────────────────────────────────────
+// 주의: 실제 `agy --print` 는 **평문**만 출력한다 — `--output-format`/stream-json
+// 모드가 없다(`agy --help` 로 확인). 따라서 아래 JSON 추출기들은 현행 agy 출력에
+// 대해 사실상 동작하지 않는 fallback 이다. 세션 연속성은 stdout 이 아니라
+// captureAntigravitySession(디스크 저장소)으로 되찾는다(아래).
+//   (만약 미래의 agy 가 NDJSON 을 내보내면 이 추출기들이 의미를 갖는다)
 //   init        → { type: "init", session_id, model }
 //   tool_use    → { type: "tool_use", tool_name, tool_id, parameters }
 //   tool_result → { type: "tool_result", tool_id, status, output }
@@ -123,6 +128,37 @@ function summariseInput(
   return undefined;
 }
 
+// agy 는 대화를 ~/.gemini/antigravity-cli/conversations/<conversation-id>.db 로
+// 보존한다 — 파일명이 곧 `--conversation` 이 받는 id 다. 평문 출력이라 stdout 에선
+// 못 잡으니, run 직후 이 run 이 만진(newest, mtime ≥ since) .db 를 골라 그 id 를
+// 되찾는다. 한계: 디스크에 loom thread 태그가 없어 같은 시간대에 agy 스레드 둘이
+// 겹치면 교차될 수 있다 — loom 의 run 직렬화로 그 창을 좁게 유지한다.
+const AGY_CONVERSATIONS = [".gemini", "antigravity-cli", "conversations"];
+
+export async function captureAntigravitySession(ctx: { cwd: string; since: number }): Promise<string | null> {
+  const dir = homePath(...AGY_CONVERSATIONS);
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return null; // 저장소가 아직 없음(첫 대화 전)
+  }
+  let best: { id: string; mtime: number } | null = null;
+  for (const name of entries) {
+    if (!name.endsWith(".db")) continue;
+    let mtime: number;
+    try {
+      mtime = fs.statSync(path.join(dir, name)).mtimeMs;
+    } catch {
+      continue; // 경합 중 사라진 파일 — 건너뜀
+    }
+    // 1s 여유 — mtime 해상도와 spawn 직전 since 의 미세 오차 흡수.
+    if (mtime + 1000 < ctx.since) continue;
+    if (!best || mtime > best.mtime) best = { id: name.slice(0, -3), mtime };
+  }
+  return best?.id ?? null;
+}
+
 export const antigravityAdapter = defineCliAdapter<AntigravityConfig>({
   kind: "antigravity",
   // agy 는 run별 MCP 주입 경로가 없음(플러그인은 CLI root 전역 설치뿐 — 헌법 3조).
@@ -132,7 +168,9 @@ export const antigravityAdapter = defineCliAdapter<AntigravityConfig>({
   prompt: { via: "arg", flag: "--print" },
   resolveEnv: (cfg) => cfg.env ?? {},
   applyResume: (args, sessionId) => [...args, "--conversation", sessionId],
+  // 평문 출력이라 stdout 추출은 항상 빈손 — 세션은 디스크에서 되찾는다.
   extractSessionId: extractAntigravitySessionId,
+  captureSessionFromDisk: (ctx) => captureAntigravitySession(ctx),
   extractTouchedPaths: extractAntigravityTouchedPaths,
   extractTouchedEdits: extractAntigravityTouchedEdits,
   extractToolUses: extractAntigravityToolUses,

@@ -5,11 +5,49 @@ import { describe, it, expect } from "vitest";
 import { applyPrompt } from "@loom/adapter-utils";
 import {
   buildDevinCommand,
+  captureDevinSession,
   devinAdapter,
   toDevinMcpEntry,
   syncDevinMcpConfig,
   DEVIN_PRESET_MODELS,
 } from "./index.js";
+
+// `devin list --format json` 을 흉내내는 가짜 바이너리 — args 무시하고 고정 JSON 출력.
+function fakeDevin(stdout: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-bin-"));
+  const script = path.join(dir, "devin");
+  fs.writeFileSync(script, `#!/bin/sh\ncat <<'JSON_EOF'\n${stdout}\nJSON_EOF\n`);
+  fs.chmodSync(script, 0o755);
+  return script;
+}
+
+describe("captureDevinSession", () => {
+  it("picks the newest session whose last_activity ≥ since", async () => {
+    const since = Date.now();
+    const sec = Math.floor(since / 1000);
+    const command = fakeDevin(
+      JSON.stringify([
+        { id: "stale-one", last_activity_at: sec - 100 },
+        { id: "fresh-one", last_activity_at: sec + 1 },
+      ]),
+    );
+    expect(await captureDevinSession({ cwd: process.cwd(), since }, { command })).toBe("fresh-one");
+  });
+
+  it("returns null when no session is new enough", async () => {
+    const since = Date.now();
+    const sec = Math.floor(since / 1000);
+    const command = fakeDevin(JSON.stringify([{ id: "old", last_activity_at: sec - 100 }]));
+    expect(await captureDevinSession({ cwd: process.cwd(), since }, { command })).toBeNull();
+  });
+
+  it("returns null on non-JSON output (empty picker)", async () => {
+    const command = fakeDevin("No session selected.");
+    expect(
+      await captureDevinSession({ cwd: process.cwd(), since: Date.now() }, { command }),
+    ).toBeNull();
+  });
+});
 
 const CANARY = {
   name: "canary",

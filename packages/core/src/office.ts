@@ -134,6 +134,9 @@ export type OfficeEvent =
   | { kind: "text"; text: string }
   | { kind: "tool"; name: string; target?: string }
   | { kind: "file"; path: string; action: "edit" | "write" }
+  // run 시작 시 엔진이 1회 발화 — 이 run 에 실린 스킬·MCP·위임(loadout). 평문 CLI
+  // (agy/devin)는 도구 호출 타임라인을 못 뽑으니, 최소한 "무엇을 쓸 수 있었나"를 보인다.
+  | { kind: "loadout"; skills: string[]; mcp: string[]; delegate: boolean }
   // via "edge" 는 흡수 전 하네스가 영속한 과거 이벤트 호환용.
   | { kind: "handoff"; toAgent: string; via: "edge" | "delegation" | "workflow"; reason?: string }
   | { kind: "result"; text: string; costUsd?: number; sessionId?: string }

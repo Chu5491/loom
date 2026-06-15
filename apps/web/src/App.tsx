@@ -135,9 +135,9 @@ export function App() {
     ];
 
     return (
-        <div className="flex h-screen flex-col overflow-hidden bg-background bg-grid-pattern">
-            <header className="z-20 shrink-0 border-b border-border/40 bg-card/60 backdrop-blur-2xl">
-                <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-3 px-4 sm:px-6 lg:px-8">
+        <div className="flex h-screen flex-col overflow-hidden bg-background bg-grid-pattern selection:bg-primary/30">
+            <div className="absolute top-0 z-50 flex w-full justify-center pt-6 sm:pt-8 pointer-events-none">
+                <header className="pointer-events-auto flex h-14 items-center gap-3 rounded-full border border-border/40 bg-card/70 px-4 shadow-2xl backdrop-blur-2xl dark:bg-card/50">
                     <LoomLogo className="size-6 dark:invert" />
                     <span className="font-display text-base font-semibold">
                         {t("app.title")}
@@ -304,8 +304,8 @@ export function App() {
                             {t("conn.refreshAll")}
                         </Button>
                     </div>
-                </div>
-            </header>
+                </header>
+            </div>
 
             <CommandPalette
                 open={paletteOpen}
@@ -332,8 +332,8 @@ export function App() {
             ) : null}
 
             <ErrorBoundary label={t("err.page")} retryLabel={t("err.retry")}>
-                {/* 본문 + 펄스 레일 — flex row, 각자 h-full. 스크롤은 내부에서만. */}
-                <div className="flex min-h-0 flex-1 overflow-hidden">
+                {/* 본문 + 펄스 레일 — Spatial Canvas */}
+                <div className="relative flex min-h-0 flex-1 pt-32 pb-8 px-4 sm:px-8 lg:px-12">
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={project ? `proj-${project.id}` : tab}
@@ -341,7 +341,7 @@ export function App() {
                             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                             exit={{ opacity: 0, y: -8, filter: "blur(2px)" }}
                             transition={{ duration: 0.22, ease: "easeOut" }}
-                            className="min-h-0 min-w-0 flex-1"
+                            className="mx-auto w-full max-w-[1600px] flex-1 min-h-0 rounded-3xl border border-border/20 bg-card/40 shadow-2xl backdrop-blur-xl glass-panel overflow-hidden relative flex flex-col"
                         >
                             {tab === "office" ? (
                                 <OfficePage />
@@ -472,19 +472,20 @@ function PulseRail({ onJump }: { onJump: (projectId: string | null) => void }) {
 
     return (
         <Tooltip.Provider delayDuration={120} skipDelayDuration={200}>
-            {/* 슬림 레일 — 부모 flex row 에서 h-full 을 자연스럽게 받음. calc 불필요. */}
+            {/* 부유형 에이전트 도크 (Floating Island) */}
+            <div className="pointer-events-none absolute bottom-8 left-1/2 z-50 hidden -translate-x-1/2 lg:flex flex-row items-center justify-center">
             <aside
-                className="hidden h-full w-11 shrink-0 flex-col items-center gap-1.5 border-l border-border/40 bg-card/30 py-2 backdrop-blur-md lg:flex"
+                className="pointer-events-auto flex flex-row items-center gap-4 rounded-full border border-border/20 bg-card/70 px-6 py-2.5 shadow-2xl backdrop-blur-3xl dark:bg-card/50"
                 aria-label={t("pulse.title")}
             >
                 {live.length === 0 ? (
                     <Tooltip.Root>
                         <Tooltip.Trigger asChild>
-                            <span className="mt-1 size-1.5 cursor-default rounded-full bg-muted-foreground/30" />
+                            <span className="size-2 cursor-default rounded-full bg-muted-foreground/30" />
                         </Tooltip.Trigger>
                         <Tooltip.Portal>
                             <Tooltip.Content
-                                side="left"
+                                side="top"
                                 sideOffset={8}
                                 className="z-50 rounded-lg border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground shadow-lg"
                             >
@@ -501,7 +502,7 @@ function PulseRail({ onJump }: { onJump: (projectId: string | null) => void }) {
                     </span>
                 )}
                 {/* 아바타 스택 — 최대 14, 넘으면 +N */}
-                <div className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto pb-1">
+                <div className="flex min-w-0 flex-1 flex-row items-center gap-2 overflow-x-auto pr-1">
                     {live.slice(0, 14).map((run) => {
                         const agent = agents.find((a) => a.name === run.agent);
                         const proj = projName(run.projectId);
@@ -526,7 +527,7 @@ function PulseRail({ onJump }: { onJump: (projectId: string | null) => void }) {
                                 </Tooltip.Trigger>
                                 <Tooltip.Portal>
                                     <Tooltip.Content
-                                        side="left"
+                                        side="top"
                                         sideOffset={8}
                                         className="z-50 w-64 rounded-xl border border-border bg-card p-3 text-left shadow-lg"
                                     >
@@ -553,6 +554,7 @@ function PulseRail({ onJump }: { onJump: (projectId: string | null) => void }) {
                     ) : null}
                 </div>
             </aside>
+            </div>
         </Tooltip.Provider>
     );
 }

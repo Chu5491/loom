@@ -215,7 +215,7 @@ export function PageShell({
       exit={{ opacity: 0, y: -8, filter: "blur(2px)" }}
       transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
-        "mx-auto flex h-full max-w-[1400px] flex-col px-4 sm:px-6 lg:px-8",
+        "flex h-full w-full flex-col p-4 sm:p-6 lg:p-8",
         className,
       )}
     >

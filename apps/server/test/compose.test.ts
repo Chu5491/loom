@@ -23,6 +23,26 @@ describe("composePrompt", () => {
     expect(out).not.toContain("=== Loadout ===");
   });
 
+  it("on resume, skips rules and persona but keeps loadout + user prompt", () => {
+    const out = composePrompt({
+      userPrompt: "next turn",
+      rules: ["be kind"],
+      agentPrompt: "you are x",
+      loadout: { ...baseLoadout, skills: [{ name: "nuxt", relPath: "skills/nuxt.md" }] },
+      resuming: true,
+    });
+    expect(out).not.toContain("be kind"); // rules 재주입 안 함
+    expect(out).not.toContain("you are x"); // 페르소나 재주입 안 함
+    expect(out).toContain("=== Loadout ==="); // 경로는 run마다 바뀌어 다시 안내
+    expect(out.trim().endsWith("next turn")).toBe(true);
+  });
+
+  it("on a fresh (non-resume) turn, includes rules and persona", () => {
+    const out = composePrompt({ userPrompt: "p", rules: ["be kind"], agentPrompt: "you are x", resuming: false });
+    expect(out).toContain("be kind");
+    expect(out).toContain("you are x");
+  });
+
   it("mentions project memory path only when provided — body never injected", () => {
     const withNotes = composePrompt({ userPrompt: "p", rules: [], projectNotesPath: "/work/proj/.loom/notes.md" });
     expect(withNotes).toContain("=== Project Memory ===");
