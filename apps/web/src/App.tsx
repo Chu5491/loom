@@ -5,7 +5,6 @@
 import {useEffect, useRef, useState} from "react";
 import {useQuery, useQueryClient} from "@tanstack/react-query";
 import {motion, AnimatePresence} from "framer-motion";
-import * as Tooltip from "@radix-ui/react-tooltip";
 import {
     Bell,
     Check,
@@ -24,13 +23,12 @@ import {
 } from "lucide-react";
 import type {WorkflowGate} from "@loom/core";
 import {api} from "./api/client.js";
-import {AgentAvatar} from "./components/AgentAvatar.js";
 import {CliStatus} from "./components/CliStatus.js";
 import {CommandPalette} from "./components/CommandPalette.js";
 import {ConfirmDialog} from "./components/ConfirmDialog.js";
 import {ErrorBoundary} from "./components/ErrorBoundary.js";
 import {LoomLogo} from "./components/LoomLogo.js";
-import {Button, StatusDot} from "./components/ui.js";
+import {Button} from "./components/ui.js";
 import {useI18n} from "./context/I18nContext.js";
 import {useTheme} from "./context/ThemeContext.js";
 import {cn} from "./lib/utils.js";
@@ -368,7 +366,6 @@ export function App() {
                             )}
                         </motion.div>
                     </AnimatePresence>
-                    <PulseRail onJump={(projectId) => { if (projectId) setProject(projectId); setTab("home"); }} />
                 </div>
             </ErrorBoundary>
         </div>
@@ -457,113 +454,5 @@ function GateBell() {
                 </div>
             ) : null}
         </div>
-    );
-}
-
-// ── PulseRail — 페이지 무관, 라이브로 도는 run 을 우측에 상시 표시.
-// 호버 시 Radix Portal 툴팁(overflow 무관)으로 정보 노출. 클릭 → 그 프로젝트의 Talk.
-function PulseRail({ onJump }: { onJump: (projectId: string | null) => void }) {
-    const { t } = useI18n();
-    const runs = useQuery({
-        queryKey: ["runs", "all"],
-        queryFn: api.listRunsAll,
-        refetchInterval: 5_000,
-        refetchIntervalInBackground: true,
-    });
-    const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
-    const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
-
-    const agents = office.data?.office.agents ?? [];
-    const projList = projects.data?.projects ?? [];
-    const live = (runs.data?.runs ?? []).filter((r) => r.status === "running");
-    const projName = (id: string | null | undefined) =>
-        id ? projList.find((p) => p.id === id)?.name ?? null : null;
-
-    return (
-        <Tooltip.Provider delayDuration={120} skipDelayDuration={200}>
-            {/* 부유형 에이전트 도크 (Floating Island) */}
-            <div className="pointer-events-none absolute bottom-8 left-1/2 z-50 hidden -translate-x-1/2 lg:flex flex-row items-center justify-center">
-            <aside
-                className="pointer-events-auto flex flex-row items-center gap-4 rounded-full border border-border/20 bg-card/70 px-6 py-2.5 shadow-2xl backdrop-blur-3xl dark:bg-card/50"
-                aria-label={t("pulse.title")}
-            >
-                {live.length === 0 ? (
-                    <Tooltip.Root>
-                        <Tooltip.Trigger asChild>
-                            <span className="size-2 cursor-default rounded-full bg-muted-foreground/30" />
-                        </Tooltip.Trigger>
-                        <Tooltip.Portal>
-                            <Tooltip.Content
-                                side="top"
-                                sideOffset={8}
-                                className="z-50 rounded-lg border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground shadow-lg"
-                            >
-                                {t("pulse.idle")}
-                            </Tooltip.Content>
-                        </Tooltip.Portal>
-                    </Tooltip.Root>
-                ) : (
-                    <span
-                        className="shrink-0 rounded-full bg-primary/15 px-1.5 text-[9px] font-semibold tabular-nums text-primary shadow-[var(--shadow-glow-sm)]"
-                        title={t("pulse.title")}
-                    >
-                        {live.length}
-                    </span>
-                )}
-                {/* 아바타 스택 — 최대 14, 넘으면 +N */}
-                <div className="flex min-w-0 flex-1 flex-row items-center gap-2 overflow-x-auto pr-1">
-                    {live.slice(0, 14).map((run) => {
-                        const agent = agents.find((a) => a.name === run.agent);
-                        const proj = projName(run.projectId);
-                        return (
-                            <Tooltip.Root key={run.id}>
-                                <Tooltip.Trigger asChild>
-                                    <button
-                                        type="button"
-                                        onClick={() => onJump(run.projectId ?? null)}
-                                        className="group relative shrink-0"
-                                    >
-                                        <AgentAvatar
-                                            adapter={agent?.adapter ?? "claude-code"}
-                                            size={26}
-                                            className="rounded-lg ring-2 ring-primary/40 shadow-[var(--shadow-glow-sm)] transition-transform group-hover:scale-110"
-                                        />
-                                        <StatusDot
-                                            tone="busy"
-                                            className="absolute -bottom-0.5 -right-0.5 ring-2 ring-card"
-                                        />
-                                    </button>
-                                </Tooltip.Trigger>
-                                <Tooltip.Portal>
-                                    <Tooltip.Content
-                                        side="top"
-                                        sideOffset={8}
-                                        className="z-50 w-64 rounded-xl border border-border bg-card p-3 text-left shadow-lg"
-                                    >
-                                        <p className="truncate text-xs font-semibold">
-                                            @{run.agent}
-                                        </p>
-                                        {proj ? (
-                                            <p className="mt-0.5 truncate text-[10px] font-medium text-primary">
-                                                {proj}
-                                            </p>
-                                        ) : null}
-                                        <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-muted-foreground">
-                                            {run.prompt.split("\n")[0] ?? ""}
-                                        </p>
-                                    </Tooltip.Content>
-                                </Tooltip.Portal>
-                            </Tooltip.Root>
-                        );
-                    })}
-                    {live.length > 14 ? (
-                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                            +{live.length - 14}
-                        </span>
-                    ) : null}
-                </div>
-            </aside>
-            </div>
-        </Tooltip.Provider>
     );
 }
