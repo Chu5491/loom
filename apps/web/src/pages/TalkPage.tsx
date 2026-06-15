@@ -947,6 +947,27 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
   const view = useMemo(() => deriveView(stream.events), [stream.events]);
   const running = !isStartError && stream.status === "running";
 
+  // 활동 데이터(시스템 사실) — trace/loadout/result + run 타이밍에서. 프롬프트 무관.
+  const activity = useMemo<ActivityData>(() => {
+    const counts = new Map<string, number>();
+    const files: { path: string; action?: string }[] = [];
+    for (const it of view.trace) {
+      if (it.kind === "tool") counts.set(it.name, (counts.get(it.name) ?? 0) + 1);
+      else if (it.kind === "file" && !files.some((f) => f.path === it.target)) {
+        files.push({ path: it.target ?? "", action: it.action });
+      }
+    }
+    const tools = [...counts.entries()].map(([name, count]) => ({ name, count }));
+    const durationMs = run?.startedAt && run?.endedAt
+      ? Math.max(0, new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime())
+      : undefined;
+    return { tools, files, loadout: view.loadout, costUsd: view.result?.costUsd, durationMs };
+  }, [view.trace, view.loadout, view.result, run?.startedAt, run?.endedAt]);
+
+  const hasActivity = activity.tools.length > 0 || activity.files.length > 0
+    || (!!activity.loadout && (activity.loadout.skills.length > 0 || activity.loadout.mcp.length > 0));
+  const showCard = !running && !isStartError && (!!view.report || hasActivity);
+
   // 본문을 부모에 올려 다음 턴이 직전 답변과 중복 비교에 쓰게 한다(같으면 무시).
   // run 이 끝났을 때만 1회 — 스트리밍 토큰마다 올리면 메시지 목록 전체가 매 토큰
   // 리렌더돼 무거운 스레드에서 멈춘다(검증). 직전 답변은 항상 완료된 run 이라 충분.
@@ -1059,17 +1080,17 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
           {detail && run ? <RunDetailModal run={run} agent={agent} onClose={() => setDetail(false)} /> : null}
         </div>
 
-        {/* 실행 중 — 현재 작업 + 경과 시간 */}
-        {running ? <WorkingLine trace={view.trace} startedAt={startedAt} /> : null}
+        {/* 실행 중 — 라이브 피드백(현재 작업·로드아웃·타임라인). 끝나면 카드로 합쳐진다. */}
+        {running ? (
+          <>
+            <WorkingLine trace={view.trace} startedAt={startedAt} />
+            {view.loadout ? <LoadoutChips loadout={view.loadout} /> : null}
+            <TraceTimeline items={view.trace} running plainText={agent ? PLAIN_TEXT_ADAPTERS.has(agent.adapter) : false} />
+          </>
+        ) : null}
 
-        {/* 이 run 에 실린 스킬·MCP·위임 — 전 CLI 공통(평문 CLI 도 표시) */}
-        {view.loadout ? <LoadoutChips loadout={view.loadout} /> : null}
-
-        {/* 작업 타임라인 — 도구·파일·핸드오프를 순서대로 */}
-        <TraceTimeline items={view.trace} running={running} plainText={agent ? PLAIN_TEXT_ADAPTERS.has(agent.adapter) : false} />
-
-        {/* 작업 리포트 카드 — 에이전트가 작업 턴 끝에 낸 고정 스키마(전 CLI). 헤드라인. */}
-        {!isStartError && view.report ? <WorkReport report={view.report} /> : null}
+        {/* 완료 — 활동 카드 하나로 통합(시스템: 도구·파일·스킬·비용·시간 + 에이전트: 요약). */}
+        {showCard ? <ActivityCard report={view.report} activity={activity} /> : null}
 
         {/* 본문 텍스트 — 리포트가 있으면 원문 산문은 접어 둔다(카드가 주인공). */}
         {isStartError ? (
@@ -1111,16 +1132,14 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
           <p className="text-sm text-muted-foreground">{t("talk.noOutput")}</p>
         )}
 
-        {/* 결과 메타(비용 + 품질 평가) + 전달된 프롬프트(투명성) */}
+        {/* 결과 메타(품질 평가) — 비용·도구·시간은 카드가 보여주므로 카드 있을 땐 생략. */}
         {!isStartError && !running ? (
           <div className="mt-1 flex items-center gap-2">
-            {view.result?.costUsd != null ? (
+            {!showCard && view.result?.costUsd != null ? (
               <span className="text-[11px] text-muted-foreground">${view.result.costUsd.toFixed(4)}</span>
             ) : null}
             <RatingButtons runId={runId} initial={run?.rating ?? null} />
           </div>
-        ) : view.result?.costUsd != null ? (
-          <p className="mt-1 text-[11px] text-muted-foreground">${view.result.costUsd.toFixed(4)}</p>
         ) : null}
         {!isStartError && !running ? <PromptPeek runId={runId} /> : null}
         {!isStartError && (stream.status === "failed" || stream.status === "cancelled") ? (
@@ -1522,21 +1541,67 @@ function extractReport(body: string): { body: string; report?: WorkReport } {
   if (parsed) return { body: body.slice(0, m.index).trimEnd(), report: parsed };
   return { body };
 }
-// 작업 리포트 카드 — 산문 대신 "무엇을 했나"를 스캔 가능한 구조로. 빈 섹션은 생략.
-function WorkReport({ report }: { report: WorkReport }) {
+// 도구 표시명 정리 — mcp__server__tool → server·tool, 그 외는 그대로.
+function prettyTool(name: string): string {
+  const m = /^mcp__([^_]+)__(.+)$/.exec(name);
+  return m ? `${m[1]}·${m[2]}` : name;
+}
+function fmtDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+interface ActivityData {
+  tools: { name: string; count: number }[];
+  files: { path: string; action?: string }[];
+  loadout?: { skills: string[]; mcp: string[]; delegate: boolean };
+  costUsd?: number;
+  durationMs?: number;
+}
+
+// 활동 카드 — 시스템이 파싱한 사실(도구·파일·스킬·비용·시간) + 에이전트 요약(report).
+// 산문 대신 "무엇을, 어떤 도구로 했나"를 한눈에. 빈 섹션은 생략.
+function ActivityCard({ report, activity }: { report?: WorkReport; activity: ActivityData }) {
   const { t } = useI18n();
   const has = (a?: unknown[]) => Array.isArray(a) && a.length > 0;
-  const sections: { key: string; icon: React.ReactNode; items: string[]; tone?: string }[] = [];
-  if (has(report.steps)) sections.push({ key: "steps", icon: <Check className="size-3" />, items: report.steps! });
-  if (has(report.decisions)) sections.push({ key: "decisions", icon: <Sparkles className="size-3" />, items: report.decisions! });
-  if (has(report.blockers)) sections.push({ key: "blockers", icon: <Info className="size-3" />, items: report.blockers!, tone: "warning" });
+  const { tools, files, loadout, costUsd, durationMs } = activity;
+  // report.files(에이전트 주장)보다 시스템이 잡은 file 이벤트를 우선(사실).
+  const fileList = files.length ? files : (report?.files ?? []);
+  const totalToolCalls = tools.reduce((n, x) => n + x.count, 0);
+
+  const narrative: { key: string; icon: React.ReactNode; items: string[]; tone?: string }[] = [];
+  if (has(report?.steps)) narrative.push({ key: "steps", icon: <Check className="size-3" />, items: report!.steps! });
+  if (has(report?.decisions)) narrative.push({ key: "decisions", icon: <Sparkles className="size-3" />, items: report!.decisions! });
+  if (has(report?.blockers)) narrative.push({ key: "blockers", icon: <Info className="size-3" />, items: report!.blockers!, tone: "warning" });
+
+  // 상단 스탯 칩(시스템 사실). 활동이 없으면 칩도 비고 — 그땐 report 만 있는 케이스.
+  const stats: { icon: React.ReactNode; label: string }[] = [];
+  if (totalToolCalls > 0) stats.push({ icon: <Wrench className="size-3" />, label: t("talk.act.tools", { n: String(totalToolCalls) }) });
+  if (fileList.length > 0) stats.push({ icon: <FilePen className="size-3" />, label: t("talk.act.files", { n: String(fileList.length) }) });
+  if (durationMs != null) stats.push({ icon: <Terminal className="size-3" />, label: fmtDuration(durationMs) });
+  if (costUsd != null && costUsd > 0) stats.push({ icon: <Sparkles className="size-3" />, label: `$${costUsd.toFixed(4)}` });
+
   return (
     <div className="mb-2 overflow-hidden rounded-2xl rounded-bl-md border border-primary/25 bg-card shadow-[var(--shadow-glow-sm)]">
       <div className="h-0.5 w-full bg-gradient-accent opacity-60" />
       <div className="space-y-2.5 px-4 py-3">
-        {report.summary ? <p className="text-sm font-medium leading-snug">{report.summary}</p> : null}
+        {/* 요약 헤드라인(에이전트) */}
+        {report?.summary ? <p className="text-sm font-medium leading-snug">{report.summary}</p> : null}
 
-        {sections.map((s) => (
+        {/* 스탯 스트립(시스템 사실) */}
+        {stats.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {stats.map((s, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <span className="text-primary">{s.icon}</span>{s.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {/* 한 일 / 결정 / 블로커(에이전트) */}
+        {narrative.map((s) => (
           <div key={s.key}>
             <p className={cn("mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider",
               s.tone === "warning" ? "text-warning" : "text-muted-foreground")}>
@@ -1554,14 +1619,31 @@ function WorkReport({ report }: { report: WorkReport }) {
           </div>
         ))}
 
-        {has(report.files) ? (
+        {/* 사용한 도구(시스템) */}
+        {tools.length > 0 ? (
+          <div>
+            <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Wrench className="size-3 text-primary" />{t("talk.report.tools")}
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {tools.map((tl, i) => (
+                <span key={i} className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {prettyTool(tl.name)}{tl.count > 1 ? <span className="text-primary">×{tl.count}</span> : null}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* 바뀐 파일(시스템) */}
+        {fileList.length > 0 ? (
           <div>
             <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               <FilePen className="size-3 text-primary" />{t("talk.report.files")}
             </p>
             <div className="flex flex-wrap gap-1">
-              {report.files!.map((f, i) => (
-                <span key={i} className={cn("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px]",
+              {fileList.map((f, i) => (
+                <span key={i} title={f.path} className={cn("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px]",
                   f.action === "edit" ? "border-warning/40 bg-warning/10 text-warning" : "border-success/40 bg-success/10 text-success")}>
                   {f.path.split("/").pop()}
                 </span>
@@ -1570,7 +1652,24 @@ function WorkReport({ report }: { report: WorkReport }) {
           </div>
         ) : null}
 
-        {report.question ? (
+        {/* 끌고 온 스킬·MCP(시스템) */}
+        {loadout && (loadout.skills.length > 0 || loadout.mcp.length > 0) ? (
+          <div className="flex flex-wrap gap-1">
+            {loadout.skills.map((s) => (
+              <span key={`sk-${s}`} className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                <Sparkles className="size-2.5" />{s}
+              </span>
+            ))}
+            {loadout.mcp.map((m) => (
+              <span key={`mcp-${m}`} className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <Plug className="size-2.5" />{m}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {/* 질문(에이전트) */}
+        {report?.question ? (
           <div className="rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-2">
             <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
               <MessagesSquare className="size-3" />{t("talk.report.question")}
