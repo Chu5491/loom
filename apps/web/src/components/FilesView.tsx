@@ -240,31 +240,40 @@ function ChangesBoard({
       </div>
       {changes.map((c) => {
         const editors = changedBy.get(c.path) ?? [];
+        const by = editors[0]; // 대표(최근) 편집 에이전트
         return (
           <button
             key={c.path}
             type="button"
             onClick={() => onSelect(c.path)}
             className={cn(
-              "group flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors",
+              "group flex w-full items-start gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors",
               selected === c.path ? "bg-primary/15" : "hover:bg-muted/60",
             )}
           >
-            <span className={cn("size-1.5 shrink-0 rounded-full", ACTION_TONE[c.action])} title={c.action} />
+            <span className={cn("mt-1 size-1.5 shrink-0 rounded-full", ACTION_TONE[c.action])} title={c.action} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono text-[11px] text-foreground">{c.path.split("/").pop()}</span>
-              {c.path.includes("/") ? (
-                <span className="block truncate font-mono text-[9px] text-muted-foreground/70">{c.path.slice(0, c.path.lastIndexOf("/"))}</span>
+              <span className="flex items-center gap-1">
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">{c.path.split("/").pop()}</span>
+                <span className="shrink-0 font-mono text-[9px] tabular-nums">
+                  {c.added > 0 ? <span className="text-success">+{c.added}</span> : null}
+                  {c.removed > 0 ? <span className="ml-0.5 text-destructive">-{c.removed}</span> : null}
+                </span>
+              </span>
+              {/* 누가 바꿨나 — 에이전트가 만진 파일이면 아바타+이름, 아니면 경로 */}
+              {by ? (
+                <span className="mt-0.5 flex items-center gap-1 truncate">
+                  {editors.slice(0, 3).map((e) => {
+                    const ad = adapterOf(e.agent);
+                    return ad ? <AgentAvatar key={e.agent} adapter={ad} size={14} className="shrink-0 rounded" /> : null;
+                  })}
+                  <span className="truncate text-[10px] font-medium text-primary/90">
+                    @{by.agent}{editors.length > 1 ? ` +${editors.length - 1}` : ""}
+                  </span>
+                </span>
+              ) : c.path.includes("/") ? (
+                <span className="mt-0.5 block truncate font-mono text-[9px] text-muted-foreground/70">{c.path.slice(0, c.path.lastIndexOf("/"))}</span>
               ) : null}
-            </span>
-            {/* 바꾼 에이전트 마이크로 아바타 */}
-            {editors.slice(0, 2).map((e) => {
-              const ad = adapterOf(e.agent);
-              return ad ? <AgentAvatar key={e.agent} adapter={ad} size={13} className="shrink-0 rounded" /> : null;
-            })}
-            <span className="shrink-0 font-mono text-[9px] tabular-nums">
-              {c.added > 0 ? <span className="text-success">+{c.added}</span> : null}
-              {c.removed > 0 ? <span className="ml-0.5 text-destructive">-{c.removed}</span> : null}
             </span>
           </button>
         );
