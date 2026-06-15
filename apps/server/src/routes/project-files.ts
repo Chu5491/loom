@@ -137,6 +137,47 @@ projectFilesRoute.get("/:id/git/status", async (c) => {
   }
 });
 
+// 변경 개요 — 작업트리의 바뀐 파일 + 파일별 +N/-M 줄 통계(numstat). 리뷰 보드용.
+// staged·unstaged·untracked 를 합쳐 "이 작업으로 바뀐 것"을 한 번에 보여준다.
+projectFilesRoute.get("/:id/git/changes", async (c) => {
+  const p = project(c);
+  if (!p) return c.json({ error: "not_found" }, 404);
+  try {
+    // tracked 변경(staged+unstaged 합산) — `git diff HEAD --numstat`.
+    const tracked = await git(p.path, ["diff", "HEAD", "--numstat"]);
+    const stats = new Map<string, { added: number; removed: number }>();
+    for (const line of tracked.split("\n").filter(Boolean)) {
+      const [a, d, ...rest] = line.split("\t");
+      const file = rest.join("\t").replace(/^"|"$/g, "");
+      if (!file) continue;
+      // 바이너리는 numstat 이 "-" — 0 으로.
+      stats.set(file, { added: a === "-" ? 0 : Number(a) || 0, removed: d === "-" ? 0 : Number(d) || 0 });
+    }
+    // status 로 action(추가/수정/삭제) + untracked 파일까지 포함.
+    const status = await git(p.path, ["status", "--porcelain", "--untracked-files=all"]);
+    const out: { path: string; action: "add" | "edit" | "delete"; added: number; removed: number }[] = [];
+    for (const line of status.split("\n").filter(Boolean)) {
+      const code = line.slice(0, 2);
+      const rel = line.slice(3).split(" -> ").pop()!.replace(/^"|"$/g, "");
+      const untracked = code.includes("?");
+      const deleted = code.includes("D");
+      let added = stats.get(rel)?.added ?? 0;
+      let removed = stats.get(rel)?.removed ?? 0;
+      if (untracked) {
+        // 새 파일 — numstat 에 없으니 줄 수를 직접 센다(텍스트만, 큰 파일 제외).
+        try {
+          const abs = path.join(p.path, rel);
+          if (fs.statSync(abs).size <= MAX_FILE_BYTES) added = fs.readFileSync(abs, "utf8").split("\n").length;
+        } catch { /* 접근 불가 — 0 */ }
+      }
+      out.push({ path: rel, action: untracked || code.includes("A") ? "add" : deleted ? "delete" : "edit", added, removed });
+    }
+    return c.json({ git: true, changes: out });
+  } catch {
+    return c.json({ git: false, changes: [] });
+  }
+});
+
 // Monaco DiffEditor 용 — HEAD 버전과 작업본을 그대로 준다(diff 텍스트 파싱 불필요).
 projectFilesRoute.get("/:id/git/versions", async (c) => {
   const p = project(c);

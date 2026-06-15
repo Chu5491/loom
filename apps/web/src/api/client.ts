@@ -260,6 +260,12 @@ export const api = {
       `/api/projects/${id}/agent-activity`,
     ),
 
+  /** 변경 개요 — 작업트리의 바뀐 파일 + 파일별 +N/-M 통계(리뷰 보드용). */
+  gitChanges: (id: string) =>
+    request<{ git: boolean; changes: { path: string; action: "add" | "edit" | "delete"; added: number; removed: number }[] }>(
+      `/api/projects/${id}/git/changes`,
+    ),
+
   /** 컴포저 드롭/붙여넣기 첨부 — data/uploads/ 에 저장하고 절대경로를 받는다. */
   uploadAttachment: async (file: File) =>
     request<{ path: string; name: string; bytes: number }>("/api/uploads", {
