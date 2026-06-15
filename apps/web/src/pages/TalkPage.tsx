@@ -941,6 +941,7 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
   const [handedOff, setHandedOff] = useState<string[]>([]);
   const [detail, setDetail] = useState(false);
   const [showFull, setShowFull] = useState(false); // 접힌 중복 답변 펼치기
+  const [proseOpen, setProseOpen] = useState(false); // 작업 리포트 있을 때 원문 산문 펼치기
 
   const name = agent?.label || agent?.name || "?";
   const view = useMemo(() => deriveView(stream.events), [stream.events]);
@@ -1067,12 +1068,15 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
         {/* 작업 타임라인 — 도구·파일·핸드오프를 순서대로 */}
         <TraceTimeline items={view.trace} running={running} plainText={agent ? PLAIN_TEXT_ADAPTERS.has(agent.adapter) : false} />
 
-        {/* 본문 텍스트 */}
+        {/* 작업 리포트 카드 — 에이전트가 작업 턴 끝에 낸 고정 스키마(전 CLI). 헤드라인. */}
+        {!isStartError && view.report ? <WorkReport report={view.report} /> : null}
+
+        {/* 본문 텍스트 — 리포트가 있으면 원문 산문은 접어 둔다(카드가 주인공). */}
         {isStartError ? (
           <ErrorLine text={runId.slice(4)} />
         ) : view.errors.length > 0 ? (
           view.errors.map((m, i) => <ErrorLine key={i} text={m} />)
-        ) : view.body ? (
+        ) : view.body && (!view.report || proseOpen || running) ? (
           <div className="rounded-2xl rounded-bl-md bg-card border border-border px-4 py-2.5 text-sm leading-relaxed">
             {/* 직전 답변을 통째로 재방출하는 경우 겹친 단락을 접고 새 내용만 — 펼치기 제공 */}
             {dedup.hidden > 0 ? (
@@ -1088,6 +1092,15 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
             <Markdown>{shownBody || view.body}</Markdown>
             {running ? <span className="mt-1 inline-block h-3 w-1.5 animate-pulse rounded-sm bg-primary/70" /> : null}
           </div>
+        ) : view.body && view.report ? (
+          <button
+            type="button"
+            onClick={() => setProseOpen(true)}
+            className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronRight className="size-3" />
+            {t("talk.report.showProse")}
+          </button>
         ) : running ? (
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:0ms]" />
@@ -1472,14 +1485,104 @@ interface TraceItem {
   target?: string;
   action?: "edit" | "write";
 }
+// 작업 리포트 — 에이전트가 작업 턴 끝에 붙이는 고정 스키마(global 규칙). 전 CLI 가
+// "끝에 텍스트로 적는" 방식이라 평문 CLI(agy/devin)도 동일하게 낸다.
+interface WorkReport {
+  summary?: string;
+  steps?: string[];
+  files?: { path: string; action?: string }[];
+  decisions?: string[];
+  blockers?: string[];
+  question?: string | null;
+}
 interface DerivedView {
   trace: TraceItem[];
   body: string;
+  report?: WorkReport;
   result?: Extract<OfficeEvent, { kind: "result" }>;
   errors: string[];
   changedFiles: number;
   loadout?: { skills: string[]; mcp: string[]; delegate: boolean };
 }
+
+// 본문 끝의 ```loom-report 펜스 블록을 떼어 리포트로 파싱. 코드 예시(```json 등)와
+// 충돌하지 않도록 전용 태그를 쓴다. 파싱 실패·미존재면 report=undefined, 본문 그대로.
+const REPORT_FENCE = /```loom-report\s*\n([\s\S]*?)```\s*$/;
+function extractReport(body: string): { body: string; report?: WorkReport } {
+  const m = REPORT_FENCE.exec(body);
+  if (!m) return { body };
+  const raw = m[1]!.trim();
+  // 일부 CLI 가 펜스 안 JSON 의 따옴표를 \" 로 이스케이프해 내놓는다 — 1차 파싱
+  // 실패 시 한 번 de-escape 해 재시도(전 CLI 견고화).
+  const tryParse = (s: string): WorkReport | null => {
+    try { const v = JSON.parse(s); return v && typeof v === "object" ? (v as WorkReport) : null; }
+    catch { return null; }
+  };
+  const parsed = tryParse(raw) ?? tryParse(raw.replace(/\\"/g, '"').replace(/\\\\/g, "\\"));
+  if (parsed) return { body: body.slice(0, m.index).trimEnd(), report: parsed };
+  return { body };
+}
+// 작업 리포트 카드 — 산문 대신 "무엇을 했나"를 스캔 가능한 구조로. 빈 섹션은 생략.
+function WorkReport({ report }: { report: WorkReport }) {
+  const { t } = useI18n();
+  const has = (a?: unknown[]) => Array.isArray(a) && a.length > 0;
+  const sections: { key: string; icon: React.ReactNode; items: string[]; tone?: string }[] = [];
+  if (has(report.steps)) sections.push({ key: "steps", icon: <Check className="size-3" />, items: report.steps! });
+  if (has(report.decisions)) sections.push({ key: "decisions", icon: <Sparkles className="size-3" />, items: report.decisions! });
+  if (has(report.blockers)) sections.push({ key: "blockers", icon: <Info className="size-3" />, items: report.blockers!, tone: "warning" });
+  return (
+    <div className="mb-2 overflow-hidden rounded-2xl rounded-bl-md border border-primary/25 bg-card shadow-[var(--shadow-glow-sm)]">
+      <div className="h-0.5 w-full bg-gradient-accent opacity-60" />
+      <div className="space-y-2.5 px-4 py-3">
+        {report.summary ? <p className="text-sm font-medium leading-snug">{report.summary}</p> : null}
+
+        {sections.map((s) => (
+          <div key={s.key}>
+            <p className={cn("mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider",
+              s.tone === "warning" ? "text-warning" : "text-muted-foreground")}>
+              <span className={s.tone === "warning" ? "text-warning" : "text-primary"}>{s.icon}</span>
+              {t(`talk.report.${s.key}`)}
+            </p>
+            <ul className="space-y-0.5">
+              {s.items.map((it, i) => (
+                <li key={i} className="flex gap-1.5 text-[13px] leading-snug text-foreground/90">
+                  <span className={cn("mt-1.5 size-1 shrink-0 rounded-full", s.tone === "warning" ? "bg-warning" : "bg-primary/50")} />
+                  <span className="min-w-0">{it}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+
+        {has(report.files) ? (
+          <div>
+            <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <FilePen className="size-3 text-primary" />{t("talk.report.files")}
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {report.files!.map((f, i) => (
+                <span key={i} className={cn("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px]",
+                  f.action === "edit" ? "border-warning/40 bg-warning/10 text-warning" : "border-success/40 bg-success/10 text-success")}>
+                  {f.path.split("/").pop()}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {report.question ? (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-2">
+            <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
+              <MessagesSquare className="size-3" />{t("talk.report.question")}
+            </p>
+            <p className="text-[13px] leading-snug">{report.question}</p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function deriveView(events: OfficeEvent[]): DerivedView {
   const trace: TraceItem[] = [];
   const texts: string[] = [];
@@ -1499,8 +1602,9 @@ function deriveView(events: OfficeEvent[]): DerivedView {
     else if (e.kind === "error") errors.push(e.message);
   }
   // result 가 오면 그게 최종 전체 텍스트 — 누적 text 보다 우선.
-  const body = result?.text ?? texts.join("");
-  return { trace, body, result, errors, changedFiles, loadout };
+  const rawBody = result?.text ?? texts.join("");
+  const { body, report } = extractReport(rawBody);
+  return { trace, body, report, result, errors, changedFiles, loadout };
 }
 
 // 일부 CLI(특히 오염된 대화의 agy)는 매 턴 직전 답변을 통째로 다시 뱉는다 — LLM

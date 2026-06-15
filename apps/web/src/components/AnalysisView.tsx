@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import {
   AlertTriangle, FileCode2, Files, FolderTree, Layers, Lightbulb, ScanSearch, Sigma, Sparkles,
 } from "lucide-react";
@@ -173,6 +174,15 @@ function HistoryStrip({ all, viewIdx, onPick }: { all: ProjectAnalysis[]; viewId
 }
 
 // ── 대시보드 ──────────────────────────────────────────────────────────────────
+const dashVariants = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.1 } },
+};
+const cardVariants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } },
+} as const;
+
 function ReportBoard({ report }: { report: AnalysisReport }) {
   const { t } = useI18n();
   const health = report.health ?? {};
@@ -184,20 +194,21 @@ function ReportBoard({ report }: { report: AnalysisReport }) {
     : null;
 
   return (
-    <div className="mt-4 space-y-4">
+    <motion.div variants={dashVariants} initial="hidden" animate="show" className="mt-4 space-y-5">
       {/* 히어로 — 종합 링 + 카테고리 게이지 + 빅넘버 */}
       {overall !== null || report.metrics.files || report.metrics.loc ? (
-        <section className="relative flex flex-wrap items-center gap-6 overflow-hidden rounded-2xl border border-primary/20 bg-card p-5 shadow-[var(--shadow-glow-sm)]">
-          <span className="absolute inset-x-0 top-0 h-1 bg-gradient-accent opacity-60" />
+        <motion.section variants={cardVariants} className="flex flex-wrap items-center gap-8 border border-border/60 bg-card p-6 shadow-sm">
           {overall !== null ? <ScoreRing score={overall} label={t("analysis.overall")} /> : null}
+          
           {healthEntries.length ? (
-            <div className="min-w-44 flex-1 space-y-2.5">
+            <div className="min-w-48 flex-1 space-y-3.5 sm:border-l sm:border-border/50 sm:pl-8">
               {healthEntries.map((e) => (
                 <ScoreBar key={e.key} label={t(`analysis.health.${e.key}`)} score={e.score} />
               ))}
             </div>
           ) : null}
-          <div className="flex gap-3">
+          
+          <div className="flex flex-wrap gap-6 sm:border-l sm:border-border/50 sm:pl-8">
             {typeof report.metrics.files === "number" ? (
               <BigNumber icon={<Files className="size-4" />} value={report.metrics.files.toLocaleString()} label={t("analysis.files")} />
             ) : null}
@@ -205,16 +216,18 @@ function ReportBoard({ report }: { report: AnalysisReport }) {
               <BigNumber icon={<Sigma className="size-4" />} value={report.metrics.loc.toLocaleString()} label={t("analysis.loc")} />
             ) : null}
           </div>
-        </section>
+        </motion.section>
       ) : null}
 
       {/* 요약 + 스택 */}
-      <section className="rounded-2xl border border-border bg-card p-4">
-        <p className="text-sm leading-relaxed">{report.summary}</p>
+      <motion.section variants={cardVariants} className="border border-border/60 bg-card p-6 shadow-sm">
+        <h3 className="mb-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">EXECUTIVE SUMMARY</h3>
+        <p className="text-[14px] leading-relaxed text-foreground/90">{report.summary}</p>
         {report.stack.length ? (
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="mt-5 flex flex-wrap gap-2 border-t border-border/40 pt-4">
+            <span className="mr-2 flex items-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Tech Stack</span>
             {report.stack.map((s) => (
-              <span key={s} className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+              <span key={s} className="inline-flex items-center gap-1.5 rounded-sm bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-foreground/80">
                 <Layers className="size-3" />
                 {s}
               </span>
@@ -223,79 +236,81 @@ function ReportBoard({ report }: { report: AnalysisReport }) {
         ) : null}
         {/* 언어 구성 — 스택드 바 + 범례 */}
         {report.languages.length ? <LanguageBar languages={report.languages} /> : null}
-      </section>
+      </motion.section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-2">
         {report.structure.length ? (
-          <Card icon={<FolderTree className="size-4 text-primary" />} title={t("analysis.structure")}>
-            {report.structure.map((s) => (
-              <PathRow key={s.path} path={s.path} desc={s.desc} />
-            ))}
-          </Card>
+          <motion.div variants={cardVariants} className="h-full">
+            <Card icon={<FolderTree className="size-3.5" />} title={t("analysis.structure")}>
+              {report.structure.map((s) => (
+                <PathRow key={s.path} path={s.path} desc={s.desc} />
+              ))}
+            </Card>
+          </motion.div>
         ) : null}
 
         {report.keyFiles.length ? (
-          <Card icon={<FileCode2 className="size-4 text-primary" />} title={t("analysis.keyFiles")}>
-            {report.keyFiles.map((s) => (
-              <PathRow key={s.path} path={s.path} desc={s.desc} />
-            ))}
-          </Card>
+          <motion.div variants={cardVariants} className="h-full">
+            <Card icon={<FileCode2 className="size-3.5" />} title={t("analysis.keyFiles")}>
+              {report.keyFiles.map((s) => (
+                <PathRow key={s.path} path={s.path} desc={s.desc} />
+              ))}
+            </Card>
+          </motion.div>
         ) : null}
 
         {report.risks.length ? (
-          <Card icon={<AlertTriangle className="size-4 text-warning" />} title={t("analysis.risks")} tone="warn">
-            {report.risks.map((r, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className={cn("mt-0.5 shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase", SEVERITY_TONE[r.severity])}>
-                  {t(`analysis.sev.${r.severity}`)}
-                </span>
-                <span className="text-sm leading-relaxed">{r.text}</span>
-              </div>
-            ))}
-          </Card>
+          <motion.div variants={cardVariants} className="h-full">
+            <Card icon={<AlertTriangle className="size-3.5" />} title={t("analysis.risks")} tone="warn">
+              {report.risks.map((r, i) => (
+                <div key={i} className="flex items-start gap-3 py-3">
+                  <span className={cn("mt-0.5 shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest", SEVERITY_TONE[r.severity])}>
+                    {t(`analysis.sev.${r.severity}`)}
+                  </span>
+                  <span className="text-[13px] leading-relaxed text-foreground/80">{r.text}</span>
+                </div>
+              ))}
+            </Card>
+          </motion.div>
         ) : null}
 
         {report.suggestions.length ? (
-          <Card icon={<Lightbulb className="size-4 text-primary" />} title={t("analysis.suggestions")}>
-            {report.suggestions.map((s, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className={cn("mt-0.5 shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold", EFFORT_TONE[s.effort])}>
-                  {t(`analysis.effort.${s.effort}`)}
-                </span>
-                <span className="text-sm leading-relaxed">{s.text}</span>
-              </div>
-            ))}
-          </Card>
+          <motion.div variants={cardVariants} className="h-full">
+            <Card icon={<Lightbulb className="size-3.5" />} title={t("analysis.suggestions")}>
+              {report.suggestions.map((s, i) => (
+                <div key={i} className="flex items-start gap-3 py-3 px-4">
+                  <span className={cn("mt-0.5 shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest", EFFORT_TONE[s.effort])}>
+                    {t(`analysis.effort.${s.effort}`)}
+                  </span>
+                  <span className="text-[13px] leading-relaxed text-foreground/80">{s.text}</span>
+                </div>
+              ))}
+            </Card>
+          </motion.div>
         ) : null}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-// 종합 점수 — SVG 링 게이지. 진행 호는 시그니처 violet→cyan 그라데이션,
-// 숫자는 점수 톤(성/주의/위험) — "브랜드"와 "판정"을 분리해 둘 다 읽힌다.
+// 종합 점수 — SVG 링 게이지.
 function ScoreRing({ score, label }: { score: number; label: string }) {
   const R = 42;
   const C = 2 * Math.PI * R;
+  const color = score >= 70 ? "var(--color-success)" : score >= 40 ? "var(--color-warning)" : "var(--color-destructive)";
   return (
     <div className="relative flex size-28 shrink-0 items-center justify-center">
       <svg viewBox="0 0 100 100" className="size-28 -rotate-90">
-        <defs>
-          <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="var(--color-primary)" />
-            <stop offset="100%" stopColor="var(--color-accent-2, #06b6d4)" />
-          </linearGradient>
-        </defs>
-        <circle cx="50" cy="50" r={R} fill="none" strokeWidth="8" className="stroke-muted/60" />
+        <circle cx="50" cy="50" r={R} fill="none" strokeWidth="6" className="stroke-muted/30" />
         <circle
-          cx="50" cy="50" r={R} fill="none" strokeWidth="8" strokeLinecap="round"
+          cx="50" cy="50" r={R} fill="none" strokeWidth="6" strokeLinecap="square"
           strokeDasharray={`${(score / 100) * C} ${C}`}
-          stroke="url(#ring-grad)" className="drop-shadow-[0_0_6px_var(--color-primary)] transition-all"
+          stroke={color} className="transition-all duration-1000 ease-out"
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={cn("font-display text-2xl font-bold tabular-nums", scoreTone(score))}>{score}</span>
-        <span className="text-[10px] text-muted-foreground">{label}</span>
+        <span className={cn("font-mono text-3xl font-semibold tabular-nums tracking-tight", scoreTone(score))}>{score}</span>
+        <span className="text-[9px] font-medium uppercase tracking-widest text-muted-foreground">{label}</span>
       </div>
     </div>
   );
@@ -303,28 +318,29 @@ function ScoreRing({ score, label }: { score: number; label: string }) {
 
 // 카테고리 점수 — 가로 게이지 바.
 function ScoreBar({ label, score }: { label: string; score: number }) {
+  const bg = score >= 70 ? "bg-success" : score >= 40 ? "bg-warning" : "bg-destructive";
   return (
-    <div className="flex items-center gap-2.5">
-      <span className="w-20 shrink-0 text-[11px] text-muted-foreground">{label}</span>
-      <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/60">
+    <div className="flex items-center gap-3">
+      <span className="w-24 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <div className="h-1.5 flex-1 overflow-hidden bg-muted/40">
         <div
-          className={cn("h-full rounded-full bg-current transition-all", scoreTone(score))}
+          className={cn("h-full transition-all duration-700 ease-out", bg)}
           style={{ width: `${score}%` }}
         />
       </div>
-      <span className={cn("w-7 shrink-0 text-right font-mono text-[11px] font-semibold tabular-nums", scoreTone(score))}>{score}</span>
+      <span className={cn("w-8 shrink-0 text-right font-mono text-[11px] font-semibold tabular-nums", scoreTone(score))}>{score}</span>
     </div>
   );
 }
 
 function BigNumber({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
   return (
-    <div className="flex min-w-24 flex-col items-center justify-center rounded-xl border border-border/60 px-4 py-2.5">
-      <span className="flex items-center gap-1.5 font-display text-xl font-bold tabular-nums">
-        <span className="text-primary">{icon}</span>
+    <div className="flex flex-col border-l border-border/50 pl-5">
+      <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">{label}</span>
+      <span className="mt-1 flex items-center gap-2 font-mono text-2xl font-semibold tabular-nums text-foreground">
+        <span className="text-muted-foreground/60">{icon}</span>
         {value}
       </span>
-      <span className="text-[10px] text-muted-foreground">{label}</span>
     </div>
   );
 }
@@ -333,8 +349,8 @@ function BigNumber({ icon, value, label }: { icon: React.ReactNode; value: strin
 function LanguageBar({ languages }: { languages: { name: string; percent: number }[] }) {
   const total = languages.reduce((s, l) => s + l.percent, 0) || 100;
   return (
-    <div className="mt-4">
-      <div className="flex h-2.5 w-full overflow-hidden rounded-full">
+    <div className="mt-5">
+      <div className="flex h-1.5 w-full bg-muted/30">
         {languages.map((l, i) => (
           <div
             key={l.name}
@@ -343,12 +359,12 @@ function LanguageBar({ languages }: { languages: { name: string; percent: number
           />
         ))}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+      <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-2">
         {languages.map((l, i) => (
-          <span key={l.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <span className="size-2 rounded-full" style={{ background: LANG_COLORS[i % LANG_COLORS.length] }} />
+          <span key={l.name} className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            <span className="size-2" style={{ background: LANG_COLORS[i % LANG_COLORS.length] }} />
             {l.name}
-            <span className="font-mono tabular-nums">{l.percent}%</span>
+            <span className="font-mono font-semibold tabular-nums">{l.percent}%</span>
           </span>
         ))}
       </div>
@@ -357,22 +373,30 @@ function LanguageBar({ languages }: { languages: { name: string; percent: number
 }
 
 function Card({ icon, title, tone, children }: { icon: React.ReactNode; title: string; tone?: "warn"; children: React.ReactNode }) {
+  const isWarn = tone === "warn";
   return (
-    <section className={cn("rounded-2xl border bg-card p-4", tone === "warn" ? "border-warning/30" : "border-border")}>
-      <h3 className="mb-2.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className={cn(
+      "flex h-full flex-col border border-border bg-background/50",
+      isWarn ? "border-l-2 border-l-warning" : "border-l-2 border-l-primary/40"
+    )}>
+      <h3 className={cn("flex items-center gap-2 border-b border-border bg-muted/20 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest", isWarn ? "text-warning" : "text-foreground/70")}>
         {icon}
         {title}
       </h3>
-      <div className="space-y-2">{children}</div>
+      <div className="flex flex-col divide-y divide-border/40">
+        {children}
+      </div>
     </section>
   );
 }
 
 function PathRow({ path, desc }: { path: string; desc: string }) {
   return (
-    <div className="flex items-baseline gap-2">
-      <code className="shrink-0 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">{path}</code>
-      <span className="min-w-0 text-sm text-muted-foreground">{desc}</span>
+    <div className="group flex flex-col gap-1 rounded-xl p-2 transition-colors hover:bg-muted/30 sm:flex-row sm:items-baseline sm:gap-3">
+      <code className="shrink-0 rounded-md border border-border/50 bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-foreground/80 transition-colors group-hover:border-primary/40 group-hover:text-primary">
+        {path}
+      </code>
+      <span className="min-w-0 flex-1 text-[13.5px] leading-relaxed text-muted-foreground/90">{desc}</span>
     </div>
   );
 }

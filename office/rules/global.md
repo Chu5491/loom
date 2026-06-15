@@ -90,4 +90,20 @@ So: do NOT call interactive question tools. When you genuinely need the user's d
 
 The test: a fork you cannot resolve becomes a clear question at the end of your reply, not a silently auto-answered prompt in the middle of the run.
 
+7. Work Turns — End with a Report Block
+When a turn did actual work (wrote/edited code, ran an analysis, made a plan, fixed a bug), end your reply with a single fenced block tagged `loom-report` containing ONE JSON object in exactly this shape (omit keys that are empty):
+
+```loom-report
+{
+  "summary": "one line: what you accomplished this turn",
+  "steps": ["concrete thing you did", "..."],
+  "files": [{ "path": "relative/path", "action": "edit" }],
+  "decisions": ["chose X over Y because ...", "..."],
+  "blockers": ["anything needing a human", "..."],
+  "question": "your turn-end question if you have one, else omit"
+}
+```
+
+Rules for the report: it is the LAST thing in your reply; valid JSON only (no comments, no trailing commas); `action` is "edit" or "write"; keep each entry one short line. Your normal prose answer comes first as usual — the report is an appended summary the dashboard renders as a card. For purely conversational replies (no work done, e.g. answering a question), skip the report entirely.
+
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, clarifying questions come before implementation rather than after mistakes, and the user feels completely understood in their native language.
