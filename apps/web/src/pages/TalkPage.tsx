@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
-  FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
+  FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
   NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Workflow, Wrench, X,
 } from "lucide-react";
 import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, WorkflowSpec } from "@loom/core";
@@ -456,6 +456,7 @@ export function TalkPage({ project }: { project: Project }) {
                         onActivity={reportActivity}
                         priorBody={priorAgentBody(i)}
                         onResolveBody={onResolveBody}
+                        projectName={project.name}
                       />
                       </ErrorBoundary>
                     </div>
@@ -934,7 +935,7 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
-function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLast, onDone, onActivity, priorBody, onResolveBody }: { agent?: AgentSpec; fromAgent?: string; runId: string; run?: RunInfo; startedAt?: string; workflows: WorkflowSpec[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void; priorBody?: string; onResolveBody?: (runId: string, body: string) => void }) {
+function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLast, onDone, onActivity, priorBody, onResolveBody, projectName }: { agent?: AgentSpec; fromAgent?: string; runId: string; run?: RunInfo; startedAt?: string; workflows: WorkflowSpec[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void; priorBody?: string; onResolveBody?: (runId: string, body: string) => void; projectName?: string }) {
   const { t } = useI18n();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
@@ -1080,10 +1081,16 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
           {detail && run ? <RunDetailModal run={run} agent={agent} onClose={() => setDetail(false)} /> : null}
         </div>
 
-        {/* 실행 중 — 라이브 피드백(현재 작업·로드아웃·타임라인). 끝나면 카드로 합쳐진다. */}
+        {/* 실행 중 — 강한 라이브 패널(이 프로젝트에서 작업 중) + 로드아웃 + 타임라인. */}
         {running ? (
           <>
-            <WorkingLine trace={view.trace} startedAt={startedAt} />
+            <WorkingPanel
+              agent={agent}
+              trace={view.trace}
+              startedAt={startedAt}
+              toolCount={view.trace.filter((it) => it.kind === "tool").length}
+              projectName={projectName}
+            />
             {view.loadout ? <LoadoutChips loadout={view.loadout} /> : null}
             <TraceTimeline items={view.trace} running plainText={agent ? PLAIN_TEXT_ADAPTERS.has(agent.adapter) : false} />
           </>
@@ -1122,13 +1129,7 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
             <ChevronRight className="size-3" />
             {t("talk.report.showProse")}
           </button>
-        ) : running ? (
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:0ms]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:150ms]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:300ms]" />
-          </div>
-        ) : (
+        ) : running ? null : (
           <p className="text-sm text-muted-foreground">{t("talk.noOutput")}</p>
         )}
 
@@ -1868,7 +1869,11 @@ function TraceTimeline({ items, running, plainText }: { items: TraceItem[]; runn
 }
 
 // 실행 중 상태선 — 지금 뭘 하는지 + 경과 시간. "같이 일하는" 감각의 핵심.
-function WorkingLine({ trace, startedAt }: { trace: TraceItem[]; startedAt?: string }) {
+// 작업 중 패널 — "에이전트가 이 프로젝트에서 지금 일하고 있다"를 확실히 전달.
+// 펄스 아바타 + 프로젝트 컨텍스트 + 라이브 현재 동작 + 경과시간 + 셔머 진행 바.
+function WorkingPanel({ agent, trace, startedAt, toolCount, projectName }: {
+  agent?: AgentSpec; trace: TraceItem[]; startedAt?: string; toolCount: number; projectName?: string;
+}) {
   const { t } = useI18n();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -1876,23 +1881,51 @@ function WorkingLine({ trace, startedAt }: { trace: TraceItem[]; startedAt?: str
     return () => clearInterval(id);
   }, []);
   const sec = startedAt ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)) : null;
+  const elapsed = sec === null ? null : sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${sec % 60}s`;
   const last = [...trace].reverse().find((it) => it.kind !== "handoff");
   const Icon = last ? traceIcon(last) : Wrench;
 
   return (
-    <div className="mb-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px]">
-      <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
-      <span className="shrink-0 font-medium text-primary">{t("talk.workingOn")}</span>
-      {last ? (
-        <>
-          <Icon className="size-3 shrink-0 text-muted-foreground" />
-          <span className="shrink-0">{last.name}</span>
-          {last.target ? <span className="truncate font-mono text-[10px] text-muted-foreground">{last.target}</span> : null}
-        </>
-      ) : (
-        <span className="text-muted-foreground">{t("talk.thinking")}</span>
-      )}
-      {sec !== null ? <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{sec}s</span> : null}
+    <div className="mb-2 overflow-hidden rounded-2xl rounded-bl-md border border-primary/40 bg-primary/5 shadow-[var(--shadow-glow-sm)]">
+      <div className="flex items-center gap-2.5 px-3.5 pt-3">
+        {/* 펄스 아바타 — 살아 일하는 신호 */}
+        <span className="relative flex shrink-0">
+          {agent ? <AgentAvatar adapter={agent.adapter} size={30} className="rounded-lg" /> : <Avatar size={30} />}
+          <span className="absolute inset-0 animate-ping rounded-lg bg-primary/30" />
+          <span className="absolute -bottom-0.5 -right-0.5 size-2.5 animate-pulse rounded-full bg-primary ring-2 ring-card" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-semibold">{agent?.label || agent?.name}</span>
+            <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">{t("talk.workingOn")}</span>
+          </span>
+          {/* 프로젝트 컨텍스트 — "이 프로젝트에서" 를 명시 */}
+          {projectName ? (
+            <span className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+              <FolderGit2 className="size-3 shrink-0 text-primary/70" />
+              {t("talk.workingIn", { project: projectName })}
+            </span>
+          ) : null}
+        </span>
+        {elapsed ? <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">{elapsed}</span> : null}
+      </div>
+
+      {/* 현재 동작 — 라이브 */}
+      <div className="flex items-center gap-1.5 px-3.5 pt-2 text-[12px]">
+        <Icon className="size-3.5 shrink-0 animate-pulse text-primary" />
+        {last ? (
+          <>
+            <span className="shrink-0 font-medium">{last.name}</span>
+            {last.target ? <span className="truncate font-mono text-[11px] text-muted-foreground">{last.target.split("/").pop()}</span> : null}
+          </>
+        ) : (
+          <span className="text-muted-foreground">{t("talk.thinking")}</span>
+        )}
+        {toolCount > 0 ? <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{t("talk.act.tools", { n: String(toolCount) })}</span> : null}
+      </div>
+
+      {/* 미정형 진행 셔머 — 끝을 알 수 없지만 "돌고 있다"는 강한 신호 */}
+      <div className="loom-shimmer-track mx-3.5 mb-3 mt-2 h-1 rounded-full bg-primary/10" />
     </div>
   );
 }

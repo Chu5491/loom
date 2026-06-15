@@ -292,6 +292,30 @@ html {
     animation: ws-enter 0.3s ease-out;
 }
 
+/* 작업 중 — 미정형(indeterminate) 셔머 바: 에이전트가 살아 일하고 있다는 신호. */
+@keyframes loom-shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(280%);
+    }
+}
+.loom-shimmer-track {
+    position: relative;
+    overflow: hidden;
+}
+.loom-shimmer-track::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 35%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, transparent, var(--primary), transparent);
+    opacity: 0.7;
+    animation: loom-shimmer 1.3s ease-in-out infinite;
+}
+
 /* ── 마크다운(.md) — LLM 응답·spec 문서 렌더 ──────────────────────────────── */
 /* 채팅 버블·리포트 카드 등 컴팩트 컨텍스트 전용 — 헤딩을 "문서 제목"이 아니라
    "섹션 라벨"로 낮춰 작은 버블 안에서 과하게 커 보이지 않게. */
