@@ -1160,7 +1160,7 @@ function AgentDetail({
         <textarea
           className={cn(areaCls, "min-h-[300px] resize-y")}
           value={a.prompt ?? ""}
-          placeholder="You are a backend engineer…"
+          placeholder={t("office.agent.prompt.ph")}
           onChange={(e) => setA((p) => ({ ...p, prompt: e.target.value || undefined }))}
         />
       </div>
