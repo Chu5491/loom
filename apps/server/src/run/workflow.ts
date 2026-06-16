@@ -249,7 +249,13 @@ async function enterNode(exec: Exec, nodeId: string, result: string, prevRunId: 
   }
 
   if (exec.counter.steps >= MAX_WORKFLOW_STEPS) {
-    log.warn({ max: MAX_WORKFLOW_STEPS }, "workflow step limit reached; stopping");
+    // 루프 방어 backstop 도달 — 그래프가 여기서 멈춘다. run 컨텍스트 밖이라("raw 는
+    // 진실" — 합성 이벤트를 run 로그에 끼우지 않는다) UI 직접 표시는 못 하므로,
+    // 운영자가 알 수 있도록 error 로 격상하고 어느 노드에서 끊겼는지 남긴다.
+    log.error(
+      { max: MAX_WORKFLOW_STEPS, steps: exec.counter.steps, stoppedAt: nodeId },
+      "workflow hit step limit — chain stopped (check for an unintended loop or raise MAX_WORKFLOW_STEPS)",
+    );
     return;
   }
 
