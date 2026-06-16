@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
-  NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
+  Loader2, NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
 } from "lucide-react";
 import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, WorkflowSpec } from "@loom/core";
 import { api } from "../api/client.js";
@@ -133,13 +133,6 @@ export function TalkPage({ project }: { project: Project }) {
   }, []);
   useEffect(() => setFeed([]), [threadId]);
 
-  // 각 agent 버블이 확정한 본문 — 다음 턴이 직전 답변과 중복 비교에 쓴다(재방출 접기).
-  const [bodies, setBodies] = useState<Record<string, string>>({});
-  const onResolveBody = useCallback((runId: string, body: string) => {
-    setBodies((prev) => (prev[runId] === body ? prev : { ...prev, [runId]: body }));
-  }, []);
-  useEffect(() => setBodies({}), [threadId]);
-
   // 첫 에이전트를 기본 대상으로.
   useEffect(() => {
     if (!active && agents.length) setActive(agents[0]!.name);
@@ -176,14 +169,6 @@ export function TalkPage({ project }: { project: Project }) {
         ),
     [runs.data, byId],
   );
-  // 인덱스 i 직전의 에이전트 답변 본문 — 재방출 단락 접기의 비교 기준.
-  const priorAgentBody = (i: number): string | undefined => {
-    for (let j = i - 1; j >= 0; j--) {
-      const m = messages[j];
-      if (m && m.role === "agent") return bodies[m.runId];
-    }
-    return undefined;
-  };
 
   // 바닥 고정(sticky-bottom) — 진입/스레드 전환 시 켜지고, 사용자가 위로 스크롤해
   // 바닥에서 멀어지면 꺼진다. 버블들이 SSE replay 로 비동기로 자라며 smooth 스크롤을
@@ -469,8 +454,6 @@ export function TalkPage({ project }: { project: Project }) {
                         isLast={i === messages.length - 1}
                         onDone={() => void runs.refetch()}
                         onActivity={reportActivity}
-                        priorBody={priorAgentBody(i)}
-                        onResolveBody={onResolveBody}
                         projectName={project.name}
                       />
                       </ErrorBoundary>
@@ -950,13 +933,12 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
-function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLast, onDone, onActivity, priorBody, onResolveBody, projectName }: { agent?: AgentSpec; fromAgent?: string; runId: string; run?: RunInfo; startedAt?: string; workflows: WorkflowSpec[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void; priorBody?: string; onResolveBody?: (runId: string, body: string) => void; projectName?: string }) {
+function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLast, onDone, onActivity, projectName }: { agent?: AgentSpec; fromAgent?: string; runId: string; run?: RunInfo; startedAt?: string; workflows: WorkflowSpec[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void; projectName?: string }) {
   const { t } = useI18n();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
   const [handedOff, setHandedOff] = useState<string[]>([]);
   const [detail, setDetail] = useState(false);
-  const [showFull, setShowFull] = useState(false); // 접힌 중복 답변 펼치기
   const [proseOpen, setProseOpen] = useState(false); // 작업 리포트 있을 때 원문 산문 펼치기
 
   const name = agent?.label || agent?.name || "?";
@@ -983,17 +965,6 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
   const hasActivity = activity.tools.length > 0 || activity.files.length > 0
     || (!!activity.loadout && (activity.loadout.skills.length > 0 || activity.loadout.mcp.length > 0));
   const showCard = !running && !isStartError && (!!view.report || hasActivity);
-
-  // 본문을 부모에 올려 다음 턴이 직전 답변과 중복 비교에 쓰게 한다(같으면 무시).
-  // run 이 끝났을 때만 1회 — 스트리밍 토큰마다 올리면 메시지 목록 전체가 매 토큰
-  // 리렌더돼 무거운 스레드에서 멈춘다(검증). 직전 답변은 항상 완료된 run 이라 충분.
-  useEffect(() => {
-    if (!running && view.body) onResolveBody?.(runId, view.body);
-  }, [running, view.body, runId, onResolveBody]);
-
-  // 직전 답변과 겹치는 단락은 접고 이번 새 내용만 — 재방출하는 CLI(오염된 agy 등) 대응.
-  const dedup = useMemo(() => splitNewContent(view.body, priorBody), [view.body, priorBody]);
-  const shownBody = showFull || !dedup.hidden ? view.body : dedup.shown;
 
   // run 이 끝나면 부모에 알림 → runs 재조회로 하네스 자동발화 자식을 끌어온다.
   useEffect(() => {
@@ -1107,13 +1078,10 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
             ) : null}
             <WorkingPanel
               agent={agent}
-              trace={view.trace}
               startedAt={startedAt}
-              toolCount={view.trace.filter((it) => it.kind === "tool").length}
               projectName={projectName}
             />
             {view.loadout ? <LoadoutChips loadout={view.loadout} /> : null}
-            <TraceTimeline items={view.trace} running plainText={agent ? PLAIN_TEXT_ADAPTERS.has(agent.adapter) : false} />
           </>
         ) : null}
 
@@ -1125,23 +1093,11 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
           <ErrorLine text={runId.slice(4)} />
         ) : view.errors.length > 0 ? (
           view.errors.map((m, i) => <ErrorLine key={i} text={m} />)
-        ) : view.body && (!view.report || proseOpen || running) ? (
+        ) : !running && view.body && (!view.report || proseOpen) ? (
           <div className="rounded-2xl rounded-bl-md bg-card border border-border px-4 py-2.5 text-sm leading-relaxed">
-            {/* 직전 답변을 통째로 재방출하는 경우 겹친 단락을 접고 새 내용만 — 펼치기 제공 */}
-            {dedup.hidden > 0 ? (
-              <button
-                type="button"
-                onClick={() => setShowFull((v) => !v)}
-                className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              >
-                {showFull ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                {t("talk.dedup.repeated", { count: String(dedup.hidden) })}
-              </button>
-            ) : null}
-            <Markdown>{shownBody || view.body}</Markdown>
-            {running ? <span className="mt-1 inline-block h-3 w-1.5 animate-pulse rounded-sm bg-primary/70" /> : null}
+            <Markdown>{view.body}</Markdown>
           </div>
-        ) : view.body && view.report ? (
+        ) : !running && view.body && view.report ? (
           <button
             type="button"
             onClick={() => setProseOpen(true)}
@@ -1701,32 +1657,6 @@ function deriveView(events: OfficeEvent[]): DerivedView {
   return { trace, body, report, result, errors, changedFiles, loadout };
 }
 
-// 일부 CLI(특히 오염된 대화의 agy)는 매 턴 직전 답변을 통째로 다시 뱉는다 — LLM
-// 영역이라 막을 수 없다. UI 에서 직전 답변과 단락 단위로 겹치는 부분을 접고 "이번
-// 질문에 대한 새 내용"만 기본 표시한다. 안 겹치는 CLI(claude 등)는 그대로 통과.
-// 줄 단위로 비교한다 — agy 출력은 단락(\n\n)이 아니라 단일 줄바꿈(\n)을 써서
-// 단락 분할로는 통째로 1블록이 돼 매칭이 안 된다(검증). 짧은 줄은 정상 반복일 수
-// 있어 건드리지 않는다(헤더·기호 등 오탐 방지).
-const DEDUP_MIN = 25;
-const lineKey = (l: string) => l.trim().replace(/\s+/g, " ");
-export function splitNewContent(body: string, prior?: string): { shown: string; hidden: number } {
-  if (!prior) return { shown: body, hidden: 0 };
-  const priorKeys = new Set(
-    prior.split("\n").map(lineKey).filter((k) => k.length >= DEDUP_MIN),
-  );
-  let hidden = 0;
-  const kept = body.split("\n").filter((line) => {
-    const k = lineKey(line);
-    if (k.length >= DEDUP_MIN && priorKeys.has(k)) {
-      hidden++;
-      return false;
-    }
-    return true;
-  });
-  // 중복 줄을 걷어낸 자리에 생긴 과도한 빈 줄 정리.
-  return { shown: kept.join("\n").replace(/\n{3,}/g, "\n\n").trim(), hidden };
-}
-
 // run 에 실린 스킬·MCP·위임 — 평문 CLI 도 "무엇을 쓸 수 있었나"를 보여주는 칩 줄.
 function LoadoutChips({ loadout }: { loadout: NonNullable<DerivedView["loadout"]> }) {
   const { t } = useI18n();
@@ -1781,92 +1711,10 @@ function traceIcon(it: TraceItem) {
   return Wrench;
 }
 
-// ── 작업 타임라인 — 에이전트가 지금 뭘 하는지 눈으로 따라간다 ───────────────────
-// running: 라이브 스트림(최근 8개 + 마지막 항목 펄스). done: "도구 N · 파일 M" 요약으로
-// 접히고 클릭하면 전체 기록 펼침.
-// 평문 CLI — JSON 스트림이 없어 도구 단계를 못 잡는다(agy 는 --print 만, devin 은 평문).
-// 파일 변경은 git 폴백으로 잡히지만 "어떤 도구를 썼나"는 원천 정보가 없다.
-const PLAIN_TEXT_ADAPTERS = new Set<string>(["antigravity", "devin"]);
-
-function TraceTimeline({ items, running, plainText }: { items: TraceItem[]; running: boolean; plainText?: boolean }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  if (items.length === 0) {
-    // 평문 CLI 의 빈 타임라인 — "안 잡힌 게 아니라 CLI 가 안 준다"를 정직하게 안내.
-    if (!running && plainText) {
-      return (
-        <p className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-2 py-1 text-[10px] text-muted-foreground/80">
-          <Info className="size-3 shrink-0" />
-          {t("talk.trace.plainText")}
-        </p>
-      );
-    }
-    return null;
-  }
-
-  const tools = items.filter((i) => i.kind === "tool").length;
-  const files = items.filter((i) => i.kind === "file").length;
-
-  if (!running && !open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-      >
-        <ChevronRight className="size-3" />
-        <Wrench className="size-3" />
-        {t("talk.trace.summary", { tools: String(tools), files: String(files) })}
-      </button>
-    );
-  }
-
-  const visible = running ? items.slice(-8) : items;
-  const hidden = items.length - visible.length;
-
-  return (
-    <div className="mb-2">
-      {!running ? (
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="mb-1 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ChevronDown className="size-3" />
-          {t("talk.trace.summary", { tools: String(tools), files: String(files) })}
-        </button>
-      ) : null}
-      <div className="space-y-1 border-l-2 border-primary/25 pl-3">
-        {hidden > 0 ? <p className="text-[10px] text-muted-foreground/60">… +{hidden}</p> : null}
-        {visible.map((it, i) => {
-          const Icon = traceIcon(it);
-          const isLive = running && i === visible.length - 1;
-          return (
-            <div
-              key={`${items.length - visible.length + i}`}
-              className={cn(
-                "flex items-center gap-1.5 text-[11px]",
-                isLive ? "text-foreground" : "text-muted-foreground",
-                it.kind === "file" && "text-warning",
-              )}
-            >
-              <Icon className={cn("size-3 shrink-0", isLive && "text-primary")} />
-              <span className="shrink-0 font-medium">{it.name}</span>
-              {it.target ? <span className="truncate font-mono text-[10px] opacity-80">{it.target}</span> : null}
-              {isLive ? <span className="size-1 shrink-0 animate-pulse rounded-full bg-primary" /> : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// 실행 중 상태선 — 지금 뭘 하는지 + 경과 시간. "같이 일하는" 감각의 핵심.
-// 작업 중 패널 — "에이전트가 이 프로젝트에서 지금 일하고 있다"를 확실히 전달.
-// 펄스 아바타 + 프로젝트 컨텍스트 + 라이브 현재 동작 + 경과시간 + 셔머 진행 바.
-function WorkingPanel({ agent, trace, startedAt, toolCount, projectName }: {
-  agent?: AgentSpec; trace: TraceItem[]; startedAt?: string; toolCount: number; projectName?: string;
+// 작업 중 패널 — "에이전트가 이 프로젝트에서 지금 일하고 있다"를 전달(스트리밍 없이).
+// 펄스 아바타 + 프로젝트 컨텍스트 + 경과시간 + 셔머 진행 바. 결과는 완료 시 한 번에.
+function WorkingPanel({ agent, startedAt, projectName }: {
+  agent?: AgentSpec; startedAt?: string; projectName?: string;
 }) {
   const { t } = useI18n();
   const [now, setNow] = useState(() => Date.now());
@@ -1876,8 +1724,6 @@ function WorkingPanel({ agent, trace, startedAt, toolCount, projectName }: {
   }, []);
   const sec = startedAt ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)) : null;
   const elapsed = sec === null ? null : sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${sec % 60}s`;
-  const last = [...trace].reverse().find((it) => it.kind !== "handoff");
-  const Icon = last ? traceIcon(last) : Wrench;
 
   return (
     <div className="mb-2 overflow-hidden rounded-2xl rounded-bl-md border border-primary/40 bg-primary/5 shadow-[var(--shadow-glow-sm)]">
@@ -1904,18 +1750,10 @@ function WorkingPanel({ agent, trace, startedAt, toolCount, projectName }: {
         {elapsed ? <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">{elapsed}</span> : null}
       </div>
 
-      {/* 현재 동작 — 라이브 */}
+      {/* 작업 중 — 스트리밍 없이 상태만(결과는 완료 시 한 번에) */}
       <div className="flex items-center gap-1.5 px-3.5 pt-2 text-[12px]">
-        <Icon className="size-3.5 shrink-0 animate-pulse text-primary" />
-        {last ? (
-          <>
-            <span className="shrink-0 font-medium">{last.name}</span>
-            {last.target ? <span className="truncate font-mono text-[11px] text-muted-foreground">{last.target.split("/").pop()}</span> : null}
-          </>
-        ) : (
-          <span className="text-muted-foreground">{t("talk.thinking")}</span>
-        )}
-        {toolCount > 0 ? <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{t("talk.act.tools", { n: String(toolCount) })}</span> : null}
+        <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+        <span className="text-muted-foreground">{t("talk.thinking")}</span>
       </div>
 
       {/* 미정형 진행 셔머 — 끝을 알 수 없지만 "돌고 있다"는 강한 신호 */}
