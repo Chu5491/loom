@@ -65,4 +65,25 @@ describe("sweepOldRuns", () => {
     expect(db.getRunDb("recent")).not.toBeNull();
     expect(db.getRunDb("live")).not.toBeNull();
   });
+
+  it("prunes old empty threads but keeps recent-empty and non-empty ones", () => {
+    const now = Date.now();
+    const old = new Date(now - 40 * DAY).toISOString();
+    const fresh = new Date(now - 1 * DAY).toISOString();
+    // 오래된 빈 스레드 — 정리 대상.
+    db.insertThread({ id: "th-old-empty", name: "old", projectId: null, createdAt: old });
+    // 막 만든 빈 스레드(아직 run 없음) — 보존.
+    db.insertThread({ id: "th-new-empty", name: "new", projectId: null, createdAt: fresh });
+    // 오래됐지만 run 이 있는 스레드 — 보존.
+    db.insertThread({ id: "th-with-run", name: "used", projectId: null, createdAt: old });
+    const r = { ...finished("r-keep", now - 1 * DAY), threadId: "th-with-run" };
+    db.insertRun({ ...r, status: "running", endedAt: null });
+    db.finishRun(r, {});
+
+    sweepOldRuns(now);
+
+    expect(db.getThreadDb("th-old-empty")).toBeNull(); // 정리됨
+    expect(db.getThreadDb("th-new-empty")).not.toBeNull(); // 막 만든 건 보존
+    expect(db.getThreadDb("th-with-run")).not.toBeNull(); // run 있는 건 보존
+  });
 });

@@ -3,7 +3,7 @@
 // retentionDays=0 이면 비활성(무한 보존).
 
 import { config } from "../config.js";
-import { deleteRunDb, runIdsEndedBefore, vacuumDb } from "../db.js";
+import { deleteRunDb, pruneEmptyThreadsBefore, runIdsEndedBefore, vacuumDb } from "../db.js";
 import { logger } from "../logger.js";
 import { deleteRunFiles } from "./engine.js";
 
@@ -21,14 +21,19 @@ export function sweepOldRuns(nowMs: number = Date.now()): number {
   if (!cutoff) return 0;
 
   const ids = runIdsEndedBefore(cutoff);
-  if (ids.length === 0) return 0;
-
   for (const id of ids) {
     deleteRunDb(id); // 행 + 이벤트(FK cascade)
     deleteRunFiles(id); // raw 로그 파일
   }
+  // 오래된 run 을 지운 뒤 남은 빈 스레드 껍데기도 정리(막 만든 빈 스레드는 보존).
+  const threads = pruneEmptyThreadsBefore(cutoff);
+
+  if (ids.length === 0 && threads === 0) return 0;
   vacuumDb();
-  logger.info({ removed: ids.length, retentionDays: config.retentionDays }, "retention sweep removed old runs");
+  logger.info(
+    { removedRuns: ids.length, removedThreads: threads, retentionDays: config.retentionDays },
+    "retention sweep removed old records",
+  );
   return ids.length;
 }
 

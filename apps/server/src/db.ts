@@ -342,6 +342,18 @@ export function deleteRunDb(id: string): void {
   db.prepare(`DELETE FROM runs WHERE id = ?`).run(id);
 }
 
+/** 보존 스윕용 — cutoff 이전에 만들어졌고 run 이 하나도 없는 스레드 제거.
+ *  (오래된 run 을 지우면 빈 껍데기 스레드가 남아 무한 누적되는 것 방지.
+ *   created_at 으로 막 만든 빈 스레드는 건드리지 않는다.) 반환: 지운 수. */
+export function pruneEmptyThreadsBefore(cutoffIso: string): number {
+  return getDb()
+    .prepare(
+      `DELETE FROM threads WHERE created_at < ?
+         AND id NOT IN (SELECT DISTINCT thread_id FROM runs WHERE thread_id IS NOT NULL)`,
+    )
+    .run(cutoffIso).changes;
+}
+
 /** 보존 스윕용 — ended_at 이 cutoff 이전인 끝난 run id 들(running 은 제외). */
 export function runIdsEndedBefore(cutoffIso: string): string[] {
   return getDb()
