@@ -257,11 +257,11 @@ export const api = {
     request<{ ok: boolean }>(`/api/projects/${id}/git/stage`, { method: "POST", body: JSON.stringify({ paths }) }),
   gitUnstage: (id: string, paths: string[]) =>
     request<{ ok: boolean }>(`/api/projects/${id}/git/unstage`, { method: "POST", body: JSON.stringify({ paths }) }),
-  /** staged diff 로 커밋 메시지 초안 생성 — 지정 에이전트의 유틸 run(스레드 없음). */
-  gitSuggestCommit: (id: string, agent: string) =>
+  /** staged diff 로 커밋 메시지 초안 생성 — git-commit 기능(어댑터+모델)으로 실행. */
+  gitSuggestCommit: (id: string) =>
     request<{ message: string }>(`/api/projects/${id}/git/suggest-commit`, {
       method: "POST",
-      body: JSON.stringify({ agent }),
+      body: JSON.stringify({}),
     }),
   gitCommit: (id: string, message: string) =>
     request<{ ok: boolean; output: string }>(`/api/projects/${id}/git/commit`, {
@@ -271,10 +271,10 @@ export const api = {
   /** 프로젝트 분석 — 최신 리포트 + 히스토리(최근 20개, 건강도 추이의 원천). */
   getProjectAnalysis: (id: string) =>
     request<{ analysis: ProjectAnalysis | null; history?: ProjectAnalysis[] }>(`/api/projects/${id}/analysis`),
-  analyzeProject: (id: string, agent: string, lang: "en" | "ko") =>
+  analyzeProject: (id: string, lang: "en" | "ko") =>
     request<{ analysis: ProjectAnalysis }>(`/api/projects/${id}/analyze`, {
       method: "POST",
-      body: JSON.stringify({ agent, lang }),
+      body: JSON.stringify({ lang }),
     }),
 
   agentActivity: (id: string) =>

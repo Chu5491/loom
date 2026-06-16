@@ -38,10 +38,6 @@ export function AnalysisView({ project }: { project: Project }) {
   const qc = useQueryClient();
   const agentsQ = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
   const agents = agentsQ.data?.office.agents ?? [];
-  const analystAgent = agents.find((a) => a.roles?.includes("analyst"));
-
-  const [agent, setAgent] = useState("");
-  const picked = agent || analystAgent?.name || agents[0]?.name || "";
 
   const stored = useQuery({
     queryKey: ["analysis", project.id],
@@ -49,7 +45,7 @@ export function AnalysisView({ project }: { project: Project }) {
   });
   const [err, setErr] = useState<string | null>(null);
   const analyze = useMutation({
-    mutationFn: () => api.analyzeProject(project.id, picked, lang),
+    mutationFn: () => api.analyzeProject(project.id, lang),
     onSuccess: () => { setErr(null); void qc.invalidateQueries({ queryKey: ["analysis", project.id] }); },
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
@@ -79,20 +75,9 @@ export function AnalysisView({ project }: { project: Project }) {
           </span>
         ) : null}
         <div className="ml-auto flex items-center gap-1.5">
-          <select
-            value={picked}
-            onChange={(e) => setAgent(e.target.value)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            {agents.map((a) => (
-              <option key={a.name} value={a.name}>
-                @{a.name} · {a.adapter}{a.roles?.includes("analyst") ? ` · ${t("analysis.analystBadge")}` : ""}
-              </option>
-            ))}
-          </select>
           <button
             type="button"
-            disabled={!picked || analyze.isPending}
+            disabled={analyze.isPending}
             onClick={() => analyze.mutate()}
             className="flex h-8 items-center gap-1.5 rounded-md bg-gradient-accent px-3 text-xs font-medium text-white shadow-[var(--shadow-glow-sm)] transition-all hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
           >
