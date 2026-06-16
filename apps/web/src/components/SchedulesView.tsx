@@ -79,10 +79,9 @@ export function SchedulesView({ project }: { project: Project }) {
 
       <StandupCard
         project={project}
-        agents={agents.map((a) => a.name)}
         hasSchedule={list.some((s) => s.feature === "standup")}
-        onSchedule={(agent) =>
-          create.mutate({ name: "daily-standup", agent, prompt: "", cron: "0 9 * * *", workflow: null, feature: "standup" })
+        onSchedule={() =>
+          create.mutate({ name: "daily-standup", agent: "", prompt: "", cron: "0 9 * * *", workflow: null, feature: "standup" })
         }
       />
 
@@ -125,7 +124,7 @@ export function SchedulesView({ project }: { project: Project }) {
                     <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{s.cron}</code>
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {s.feature === "standup" ? `${t("standup.title")} · @${s.agent}` : `${s.workflow ? `▶ ${s.workflow}` : `@${s.agent}`} · ${s.prompt}`}
+                    {s.feature === "standup" ? t("standup.title") : `${s.workflow ? `▶ ${s.workflow}` : `@${s.agent}`} · ${s.prompt}`}
                   </span>
                 </span>
                 {/* enabled 토글 */}
@@ -177,26 +176,24 @@ export function SchedulesView({ project }: { project: Project }) {
 
 // 데일리 스탠드업 — 지난 24h run 기록 + git log 로 에이전트가 쓰는 리포트.
 // 수동 생성 버튼 + "매일 9시 자동" 원클릭 스케줄(feature:"standup").
+// 스탠드업은 기능(office) — 모델은 오피스 기능에서 정하므로 여기서 에이전트를 안 고른다.
 function StandupCard({
-  project, agents, hasSchedule, onSchedule,
+  project, hasSchedule, onSchedule,
 }: {
   project: Project;
-  agents: string[];
   hasSchedule: boolean;
-  onSchedule: (agent: string) => void;
+  onSchedule: () => void;
 }) {
   const { t, lang } = useI18n();
   const qc = useQueryClient();
-  const [agent, setAgent] = useState("");
   const [open, setOpen] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const standup = useQuery({ queryKey: ["standup", project.id], queryFn: () => api.getStandup(project.id) });
   const gen = useMutation({
-    mutationFn: (a: string) => api.runStandup(project.id, a, lang === "ko" ? "ko" : "en"),
+    mutationFn: () => api.runStandup(project.id, lang === "ko" ? "ko" : "en"),
     onSuccess: () => { setErr(null); void qc.invalidateQueries({ queryKey: ["standup", project.id] }); },
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
-  const picked = agent || agents[0] || "";
   const latest = standup.data?.standup ?? null;
   const fmt = (iso: string) =>
     new Date(iso).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -207,27 +204,20 @@ function StandupCard({
         <Sunrise className="size-4 text-warning" />
         <span className="text-sm font-semibold">{t("standup.title")}</span>
         {latest ? (
-          <span className="text-[10px] text-muted-foreground">{t("standup.last")}: {fmt(latest.generatedAt)} · @{latest.agent}</span>
+          <span className="text-[10px] text-muted-foreground">{t("standup.last")}: {fmt(latest.generatedAt)}</span>
         ) : null}
         <span className="ml-auto flex items-center gap-1.5">
-          <select
-            value={picked}
-            onChange={(e) => setAgent(e.target.value)}
-            className="h-7 rounded-md border border-input bg-background px-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            {agents.map((a) => <option key={a} value={a}>@{a}</option>)}
-          </select>
           <button
             type="button"
-            disabled={!picked || gen.isPending}
-            onClick={() => gen.mutate(picked)}
+            disabled={gen.isPending}
+            onClick={() => gen.mutate()}
             className="flex h-8 items-center gap-1.5 rounded-md bg-gradient-accent px-3 text-xs font-medium text-white shadow-[var(--shadow-glow-sm)] transition-all hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
           >
             <Sunrise className={cn("size-3.5", gen.isPending && "animate-pulse")} />
             {gen.isPending ? "…" : t("standup.run")}
           </button>
           {!hasSchedule ? (
-            <Button size="sm" variant="secondary" disabled={!picked} onClick={() => onSchedule(picked)}>
+            <Button size="sm" variant="secondary" onClick={() => onSchedule()}>
               <CalendarClock className="size-3.5" />
               {t("standup.schedule")}
             </Button>

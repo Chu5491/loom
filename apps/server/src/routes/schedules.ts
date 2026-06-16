@@ -39,9 +39,9 @@ const createSchema = z.object({
 type Target = { agent: string; workflow: string | null; feature: "standup" | null; prompt: string; projectId: string | null };
 function validateTarget(data: Target): string | null {
   if (data.feature === "standup") {
-    if (!data.agent) return "agent_required_for_standup";
+    // standup 은 기능(office) 으로 돈다 — agent 불요, 프로젝트만 있으면 된다.
     if (!data.projectId) return "project_required_for_standup";
-    return readAgents().some((a) => a.name === data.agent) ? null : "agent_not_found";
+    return null;
   }
   if (!data.prompt) return "prompt_required";
   if (data.workflow) {
@@ -95,7 +95,7 @@ schedulesRoute.post("/:id/run", async (c) => {
   if (!s) return c.json({ error: "not_found" }, 404);
   if (s.feature === "standup") {
     if (!s.projectId) return c.json({ error: "project_required_for_standup" }, 400);
-    const r = await runStandup(s.projectId, s.agent, "ko");
+    const r = await runStandup(s.projectId, "ko");
     if (!r.ok) return c.json({ error: r.error }, r.status as 400);
     return c.json({ standup: r.standup }, 201);
   }

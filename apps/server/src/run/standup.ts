@@ -7,7 +7,7 @@ import path from "node:path";
 import type { RunInfo } from "@loom/core";
 import { paths } from "../config.js";
 import { getProjectDb, getRunEventsDb, listRunsDb } from "../db.js";
-import { readFeaturePrompt } from "../office.js";
+import { readFunction } from "../office.js";
 import { cancelRun, startRun, waitForRun } from "./engine.js";
 
 const STANDUP_TIMEOUT_MS = 5 * 60_000;
@@ -74,7 +74,6 @@ const inFlight = new Set<string>();
 
 export async function runStandup(
   projectId: string,
-  agent: string,
   lang: "en" | "ko",
   /** run 이 시작된 직후 호출 — 스케줄러가 중복 발화 가드(lastFired)에 등록한다. */
   onStart?: (runId: string) => void,
@@ -88,7 +87,9 @@ export async function runStandup(
     const recent = listRunsDb({ projectId }).filter((r) => r.startedAt >= since).slice(0, 50);
     const prompt = composeStandupPrompt(recent, lang, project.path);
 
-    const started = await startRun({ agent, prompt, projectId, promptOverride: readFeaturePrompt("standup") });
+    // 스탠드업 = 기능. 에이전트가 아니라 office 기능의 어댑터·모델로 돈다(자동 주입 없음).
+    const fn = readFunction("standup");
+    const started = await startRun({ fn: { name: fn.name, adapter: fn.adapter, model: fn.model }, prompt, projectId, promptOverride: fn.prompt });
     if (!started.ok) return { ok: false, status: started.status, error: started.error };
     onStart?.(started.run.id);
     try {
@@ -99,7 +100,7 @@ export async function runStandup(
       if (done.status !== "succeeded" || !report) {
         return { ok: false, status: 502, error: `agent run ${done.status}: ${report.slice(0, 200) || "no output"}` };
       }
-      const standup: Standup = { generatedAt: new Date().toISOString(), agent, runId: started.run.id, report };
+      const standup: Standup = { generatedAt: new Date().toISOString(), agent: started.run.agent, runId: started.run.id, report };
       const prev = getStandup(projectId);
       const history = [prev.standup, ...prev.history].filter(Boolean).slice(0, HISTORY_KEEP) as Standup[];
       const file = standupPath(projectId);

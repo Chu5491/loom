@@ -41,9 +41,16 @@ describe("readFunction", () => {
     expect(body).not.toContain("adapter:"); // frontmatter 제거됨
   });
 
-  it("isFunctionName excludes standup/meeting (kept agent-based)", () => {
+  it("standup is a function; meeting stays prompt-only (model picked at meeting)", () => {
     expect(office.isFunctionName("analysis")).toBe(true);
-    expect(office.isFunctionName("standup")).toBe(false);
+    expect(office.isFunctionName("standup")).toBe(true);
     expect(office.isFunctionName("meeting")).toBe(false);
+  });
+
+  it("standup falls back to a default model like other functions", () => {
+    const fn = office.readFunction("standup");
+    expect(fn.name).toBe("standup");
+    expect(fn.adapter).toBe("claude-code");
+    expect(fn.prompt.length).toBeGreaterThan(0);
   });
 });

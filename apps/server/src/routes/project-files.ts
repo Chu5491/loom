@@ -470,9 +470,9 @@ projectFilesRoute.get("/:id/standup", (c) => {
 projectFilesRoute.post("/:id/standup", async (c) => {
   const p = project(c);
   if (!p) return c.json({ error: "not_found" }, 404);
-  const data = await parseBody(c, z.object({ agent: z.string().min(1), lang: z.enum(["en", "ko"]).default("en") }));
+  const data = await parseBody(c, z.object({ lang: z.enum(["en", "ko"]).default("en") }));
   if (isResponse(data)) return data;
-  const r = await runStandup(p.id, data.agent, data.lang);
+  const r = await runStandup(p.id, data.lang);
   if (!r.ok) return c.json({ error: r.error }, r.status as 400);
   return c.json({ standup: r.standup });
 });

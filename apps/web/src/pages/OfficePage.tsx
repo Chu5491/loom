@@ -290,9 +290,11 @@ function OfficeTree({
   const skills = office.skills.filter((s) => match(s.name, s.description, s.body));
   const mcps = office.mcp.filter((m) => match(m.name, m.description, m.kind, m.command, m.url));
   const workflows = office.workflows.filter((w) => match(w.name, w.description));
-  // 기능(Functions)으로 분리된 프롬프트는 프롬프트 섹션에서 빼고 Functions 섹션에만 노출.
+  // 기능(Functions)으로 분리된 프롬프트는 빼고, 남은 프롬프트(meeting 의장 지침)는
+  // 같은 'Functions' 그룹 안에 prompt-only 항목으로 접어 넣는다 — 섹션은 하나.
   const fnNames = new Set(office.functions.map((f) => f.name));
-  const prompts = office.prompts.filter((p) => !fnNames.has(p.name) && match(p.name, p.body));
+  const leftoverPrompts = office.prompts.filter((p) => !fnNames.has(p.name));
+  const prompts = leftoverPrompts.filter((p) => match(p.name, p.body));
   const functions = office.functions.filter((f) => match(f.name, f.prompt, f.adapter, f.model));
 
   // 가져오기 (rules/skills 아카이브). 서버 검증 실패(zip-slip·용량·SKILL.md 누락)가
@@ -455,8 +457,8 @@ function OfficeTree({
       <TreeGroup
         icon={<Wrench className="size-3.5" />}
         label={t("office.section.functions")}
-        total={office.functions.length}
-        matched={functions.length}
+        total={office.functions.length + leftoverPrompts.length}
+        matched={functions.length + prompts.length}
         expanded={expanded.function}
         onToggle={() => toggleGroup("function")}
       >
@@ -470,16 +472,7 @@ function OfficeTree({
             sub={`${f.adapter}${f.model ? ` · ${f.model}` : ""}`}
           />
         ))}
-      </TreeGroup>
-
-      <TreeGroup
-        icon={<SlidersHorizontal className="size-3.5" />}
-        label={t("office.section.prompts")}
-        total={prompts.length}
-        matched={prompts.length}
-        expanded={expanded.prompt}
-        onToggle={() => toggleGroup("prompt")}
-      >
+        {/* 의장 지침 등 — 고정 모델이 없는(런타임에 모델이 정해지는) prompt-only 기능. */}
         {prompts.map((p) => (
           <TreeItem
             key={p.name}
@@ -487,7 +480,7 @@ function OfficeTree({
             onClick={() => onSelect({ kind: "prompt", name: p.name })}
             avatar={<TreeIcon><SlidersHorizontal className="size-3.5" /></TreeIcon>}
             label={t(`office.fp.${p.name}`)}
-            sub={p.name}
+            sub={t("office.fp.promptOnly")}
           />
         ))}
       </TreeGroup>

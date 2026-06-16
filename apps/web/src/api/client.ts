@@ -414,10 +414,10 @@ export const api = {
   // ── 스탠드업 — 지난 24h run 기록 기반 데일리 리포트 ─────────────────────────
   getStandup: (projectId: string) =>
     request<{ standup: Standup | null; history: Standup[] }>(`/api/projects/${projectId}/standup`),
-  runStandup: (projectId: string, agent: string, lang: "en" | "ko") =>
+  runStandup: (projectId: string, lang: "en" | "ko") =>
     request<{ standup: Standup }>(`/api/projects/${projectId}/standup`, {
       method: "POST",
-      body: JSON.stringify({ agent, lang }),
+      body: JSON.stringify({ lang }),
     }),
 
   // ── schedules — cron 반복 실행 (머신-로컬) ─────────────────────────────────
