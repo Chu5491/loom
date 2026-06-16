@@ -75,6 +75,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface Meeting {
+  id: string;
+  proposal: string;
+  startedAt: string;
+  panel: RunInfo[];
+  chair: RunInfo | null;
+}
+
 export const api = {
   listAdapters: () =>
     request<{ adapters: AdapterManifest[] }>("/api/adapters"),
@@ -306,6 +314,14 @@ export const api = {
     }),
   deleteThread: (id: string) =>
     request<{ ok: boolean }>(`/api/threads/${id}`, { method: "DELETE" }),
+
+  listMeetings: (projectId: string | null) =>
+    request<{ meetings: Meeting[] }>(`/api/meetings?projectId=${projectId ?? "none"}`),
+  startMeeting: (body: { proposal: string; participants: string[]; chair: string; projectId: string | null }) =>
+    request<{ meetingId: string; panelRunIds: string[] }>("/api/meetings", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // ── runs (Talk) ────────────────────────────────────────────────────────
   /** threadId 스코프가 Talk 의 기본. 없으면 빈 스레드로 간주해 호출하지 않는다. */
