@@ -23,6 +23,7 @@ import { gitFilesTouchedSince } from "./git-changes.js";
 import { analysisDocPath, notesPath } from "./project-memory.js";
 import { materializeLoadout } from "./loadout.js";
 import { clearRunPid, recordRunPid } from "./orphans.js";
+import { ensureDiskSpace } from "./disk.js";
 import { parseLine } from "./parse.js";
 import { estimateCost } from "./pricing.js";
 // 순환 import (workflow.ts ↔ engine.ts) — 양쪽 다 호출 시점에만 쓰는 함수 참조라 안전.
@@ -303,6 +304,17 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   // "spawn claude ENOENT" 라는 오해 소지 큰 에러를 던진다 — 여기서 명확히 거른다.
   if (!fs.existsSync(cwd)) {
     return { ok: false, status: 400, error: `project_dir_missing: ${cwd}` };
+  }
+
+  // 디스크 여유 가드 — 꽉 찬 채 시작하면 raw 로그 쓰기 실패로 run 이 죽고 이벤트를
+  // 잃는다. 시작 전에 명확히 거부한다(LOOM_MIN_FREE_MB, 0=비활성).
+  const disk = await ensureDiskSpace();
+  if (!disk.ok) {
+    return {
+      ok: false,
+      status: 400,
+      error: `disk_low: data 볼륨 여유 ${disk.freeMb}MB (최소 ${config.minFreeMb}MB 필요) — 공간을 비우거나 LOOM_MIN_FREE_MB 를 낮추세요`,
+    };
   }
 
   if (input.threadId && !getThreadDb(input.threadId)) {

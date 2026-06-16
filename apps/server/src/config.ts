@@ -41,7 +41,15 @@ if (!Number.isInteger(retentionDays) || retentionDays < 0) {
   throw new Error(`LOOM_RETENTION_DAYS 값이 잘못됨: "${rawRetention}" — 0 이상 정수 필요(0=비활성)`);
 }
 
-export const config = { port, host, home, maxConcurrentRuns, webDir, retentionDays } as const;
+// 새 run 시작 전 요구하는 data/ 디스크 최소 여유(MB). 미만이면 run 을 거부 —
+// 디스크가 꽉 찬 채 돌면 raw 쓰기 실패로 run 이 죽고 이벤트를 조용히 잃는다. 0=비활성.
+const rawMinFree = process.env.LOOM_MIN_FREE_MB ?? "200";
+const minFreeMb = Number(rawMinFree);
+if (!Number.isInteger(minFreeMb) || minFreeMb < 0) {
+  throw new Error(`LOOM_MIN_FREE_MB 값이 잘못됨: "${rawMinFree}" — 0 이상 정수 필요(0=비활성)`);
+}
+
+export const config = { port, host, home, maxConcurrentRuns, webDir, retentionDays, minFreeMb } as const;
 
 export const paths = {
   office: path.join(home, "office"),
