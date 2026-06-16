@@ -77,6 +77,8 @@ packages/adapters/     claude-code · antigravity · codex · opencode · devin
 | `LOOM_HOST` | 바인드 주소. 기본 `127.0.0.1`. |
 | `LOOM_HOME` | 오피스 루트(`office/`·`data/` 위치). 기본: 리포 루트. |
 | `LOOM_MAX_RUNS` | 동시 CLI run 한도(FIFO 대기열, 위임 자식은 우회). 기본 `4`. |
+| `LOOM_RETENTION_DAYS` | 종료된 지 이보다 오래된 run(+로그)과 오래된 빈 스레드 자동 삭제. `0`=비활성. 기본 `30`. |
+| `LOOM_MIN_FREE_MB` | `data/` 볼륨 여유가 이 미만이면 새 run 거부. `0`=비활성. 기본 `200`. |
 
 MCP secret 은 `office/mcp/servers.json` 에 `"${ENV_NAME}"` 참조로 적고 spawn 시점에 서버 환경변수에서 resolve — 리터럴 저장 금지.
 

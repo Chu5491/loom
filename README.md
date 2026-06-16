@@ -77,6 +77,8 @@ packages/adapters/     claude-code · antigravity · codex · opencode · devin
 | `LOOM_HOST` | Bind address. Default `127.0.0.1`. |
 | `LOOM_HOME` | Office root (where `office/` and `data/` live). Default: repo root. |
 | `LOOM_MAX_RUNS` | Concurrent CLI run cap (FIFO queue; delegation children bypass). Default `4`. |
+| `LOOM_RETENTION_DAYS` | Auto-delete runs (+logs) ended older than this, and old empty threads. `0` disables. Default `30`. |
+| `LOOM_MIN_FREE_MB` | Reject a new run if the `data/` volume has less free space than this. `0` disables. Default `200`. |
 
 MCP secrets are written as `"${ENV_NAME}"` references in `office/mcp/servers.json` and resolved from the server's environment at spawn time — never stored as literals.
 

@@ -47,6 +47,7 @@ cd packages/adapters/claude-code && npx vitest run src/index.test.ts
 - better-sqlite3 12.x — Node 20~26 지원 (prebuild)
 - Vite dev server(3201)가 `/api` 요청을 서버(3200)로 프록시
 - `LOOM_HOME`으로 오피스 루트 오버라이드 가능 (기본 = 리포 루트)
+- `LOOM_RETENTION_DAYS`(기본 30, 0=비활성) 오래된 run·로그·빈 스레드 자동 정리 / `LOOM_MIN_FREE_MB`(기본 200, 0=비활성) 디스크 여유 부족 시 run 거부
 
 ---
 
