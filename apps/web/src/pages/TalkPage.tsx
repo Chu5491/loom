@@ -25,6 +25,7 @@ import { Button } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
+import { getParam, setParams } from "../lib/url.js";
 
 interface UserMsg { id: string; role: "user"; agent: string; text: string }
 interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string; startedAt?: string }
@@ -47,11 +48,13 @@ export function TalkPage({ project }: { project: Project }) {
     if (threadId && !list.some((th) => th.id === threadId)) setThreadId(list[0]?.id ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threads.data]);
-  // 첫 로드: 스레드가 있으면 최신 것을 연다.
+  // 첫 로드: URL 에 지정된 스레드가 목록에 있으면 그것, 없으면 최신 것을 연다.
   const [booted, setBooted] = useState(false);
   useEffect(() => {
     if (booted || !threads.data) return;
-    setThreadId(threads.data.threads[0]?.id ?? null);
+    const list = threads.data.threads;
+    const fromUrl = getParam("thread");
+    setThreadId(fromUrl && list.some((th) => th.id === fromUrl) ? fromUrl : (list[0]?.id ?? null));
     setBooted(true);
   }, [threads.data, booted]);
 
@@ -91,7 +94,14 @@ export function TalkPage({ project }: { project: Project }) {
   const [pending, setPending] = useState<{ agent: string; text: string } | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null); // rename 중인 thread id
-  const [view, setView] = useState<WsView>("talk");
+  const [view, setView] = useState<WsView>(() => {
+    const p = getParam("view");
+    return (["talk", "files", "git", "analysis", "schedules"] as const).includes(p as WsView) ? (p as WsView) : "talk";
+  });
+  // 스레드·뷰를 URL 에 반영(새로고침/딥링크 복원). talk 은 기본값이라 키 생략.
+  useEffect(() => {
+    setParams({ thread: threadId, view: view === "talk" ? null : view });
+  }, [threadId, view]);
   // 워크플로우 실행 모달 — null=닫힘, ""=열림(선택 없음), "이름"=그 워크플로우 preselect.
   const [wfOpen, setWfOpen] = useState<string | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);

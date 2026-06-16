@@ -32,6 +32,7 @@ import {Button} from "./components/ui.js";
 import {useI18n} from "./context/I18nContext.js";
 import {useTheme} from "./context/ThemeContext.js";
 import {cn} from "./lib/utils.js";
+import {getParam, setParams} from "./lib/url.js";
 import {ConnectionsPage} from "./pages/ConnectionsPage.js";
 import {HomePage} from "./pages/HomePage.js";
 import {OfficePage} from "./pages/OfficePage.js";
@@ -45,7 +46,11 @@ export function App() {
     const {t, lang, setLang} = useI18n();
     const {effective, setMode} = useTheme();
     const qc = useQueryClient();
-    const [tab, setTab] = useState<Tab>("home");
+    const TABS: Tab[] = ["home", "projects", "office", "connections", "guide"];
+    const [tab, setTab] = useState<Tab>(() => {
+        const p = getParam("tab");
+        return p && TABS.includes(p as Tab) ? (p as Tab) : "home";
+    });
     // 헤더 프로젝트 칩 → 프로젝트 전환 메뉴(미션 컨트롤).
     const [switcherOpen, setSwitcherOpen] = useState(false);
     // 전환 확인 모달 — 드롭다운에서 다른 프로젝트를 고르면 여기 담고 묻는다.
@@ -84,7 +89,7 @@ export function App() {
     }, []);
 
     const [projectId, setProjectId] = useState<string | null>(
-        () => localStorage.getItem("loom.project") || null
+        () => getParam("project") || localStorage.getItem("loom.project") || null
     );
     const setProject = (id: string | null) => {
         setProjectId(id);
@@ -95,6 +100,13 @@ export function App() {
             localStorage.removeItem("loom.project");
         }
     };
+
+    // 위치를 URL 에 반영 — 새로고침/딥링크 복원. 프로젝트가 열려 있으면 tab 은 항상
+    // home(TalkPage)이라 tab 키는 빼고 project 만; 프로젝트를 나가면 thread·view 도 정리.
+    useEffect(() => {
+        if (projectId) setParams({tab: null, project: projectId});
+        else setParams({tab: tab === "home" ? null : tab, project: null, thread: null, view: null});
+    }, [tab, projectId]);
 
     const projects = useQuery({
         queryKey: ["projects"],
