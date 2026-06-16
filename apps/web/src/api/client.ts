@@ -79,6 +79,11 @@ export const api = {
   listAdapters: () =>
     request<{ adapters: AdapterManifest[] }>("/api/adapters"),
 
+  cliSessions: () =>
+    request<{ stores: { kind: string; path: string; exists: boolean; bytes: number }[] }>(
+      "/api/cli-sessions",
+    ),
+
   probeAdapter: (kind: string, opts: { command?: string; refresh?: boolean } = {}) => {
     const qs = new URLSearchParams();
     if (opts.command) qs.set("command", opts.command);

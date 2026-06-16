@@ -450,6 +450,7 @@ function sections(lang: "ko" | "en"): Section[] {
                           ["devin", "⚠️ 평문", "✅ 프로젝트-로컬 파일", "✅"],
                       ]}},
                       {note: "평문 CLI 는 도구 호출을 라이브로 못 보여주지만, 만진 파일은 git 으로 잡고 작업 리포트 카드도 동일하게 나옵니다."},
+                      {note: "각 CLI 는 세션 기록을 **자기 영역**(예: `~/.claude`, `~/.codex`)에 쌓고 시간이 지날수록 커집니다. loom 은 CLI root 불가침이라 이를 지우지 않습니다 — **연결** 탭에서 CLI별 용량을 확인하고 필요할 때 직접 정리하세요."},
                   ]
                 : [
                       {p: "Each CLI uses its own auth (BYOK); loom absorbs the differences via adapters and surfaces capability gaps honestly."},
@@ -461,6 +462,7 @@ function sections(lang: "ko" | "en"): Section[] {
                           ["devin", "⚠️ plain text", "✅ project-local file", "✅"],
                       ]}},
                       {note: "Plain-text CLIs can't show tool calls live, but their touched files are captured via git and the work-report card still appears."},
+                      {note: "Each CLI piles up its session history in **its own root** (e.g. `~/.claude`, `~/.codex`), which grows over time. loom won't delete these (CLI root is off-limits) — check per-CLI sizes in the **Connections** tab and clear them yourself when needed."},
                   ],
         },
         {

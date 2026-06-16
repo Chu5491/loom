@@ -426,6 +426,8 @@ const en = {
 
   "conn.title": "Connections",
   "conn.subtitle": "Every CLI agent on this machine — discovered, connected, tested.",
+  "conn.sessions.title": "CLI session storage",
+  "conn.sessions.hint": "Each CLI keeps its own session history and it grows over time. loom can't clean these (CLI root is off-limits) — review the paths and clear them yourself when needed.",
   "conn.refreshAll": "Refresh all",
   "backup.export": "Export backup",
   "backup.hint": "Download office + run history (loom.db) as a zip. data/ is gitignored, so this is your only recovery path.",
@@ -882,6 +884,8 @@ const ko: Dictionary = {
 
   "conn.title": "연결",
   "conn.subtitle": "이 머신의 모든 CLI 에이전트 — 발견하고, 연결하고, 테스트합니다.",
+  "conn.sessions.title": "CLI 세션 저장 용량",
+  "conn.sessions.hint": "각 CLI 는 자체 세션 기록을 자기 영역에 쌓으며 시간이 지날수록 커집니다. loom 은 이를 정리하지 않습니다(CLI root 불가침) — 경로를 확인하고 필요할 때 직접 비우세요.",
   "conn.refreshAll": "전체 새로고침",
   "backup.export": "백업 내보내기",
   "backup.hint": "office + run 기록(loom.db)을 zip 으로 저장. data/ 는 gitignore 라 이게 유일한 복구 수단이에요.",

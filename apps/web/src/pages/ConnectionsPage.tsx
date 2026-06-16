@@ -5,9 +5,10 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, Zap } from "lucide-react";
-import type { AdapterManifest, TestAdapterResult } from "@loom/core";
+import type { AdapterKind, AdapterManifest, TestAdapterResult } from "@loom/core";
 import { api } from "../api/client.js";
 import { AdapterIcon } from "../components/AdapterIcon.js";
+import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Badge, Button, PageShell } from "../components/ui.js";
 import { Skeleton } from "../components/ui/skeleton.js";
 import { useI18n } from "../context/I18nContext.js";
@@ -60,7 +61,51 @@ export function ConnectionsPage() {
       {adapters.isError ? (
         <p className="mt-6 text-sm text-destructive">{adapters.error.message}</p>
       ) : null}
+
+      <CliSessionFootprint />
     </PageShell>
+  );
+}
+
+function fmtBytes(n: number): string {
+  if (n <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+// CLI 세션 저장 용량(읽기 전용) — 각 CLI 가 자기 root 에 세션을 쌓는다. 헌법상
+// loom 이 지울 수 없어 "용량만" 보여주고 정리는 사용자 몫(경로 안내).
+function CliSessionFootprint() {
+  const { t } = useI18n();
+  const q = useQuery({ queryKey: ["cli-sessions"], queryFn: api.cliSessions });
+  const stores = (q.data?.stores ?? []).filter((s) => s.exists);
+  if (q.isLoading || stores.length === 0) return null;
+
+  return (
+    <section className="mt-8">
+      <h2 className="text-sm font-semibold text-foreground">{t("conn.sessions.title")}</h2>
+      <p className="mt-0.5 mb-3 text-xs text-muted-foreground">{t("conn.sessions.hint")}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {stores.map((s) => (
+          <div
+            key={s.kind}
+            className="flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2"
+          >
+            <AgentAvatar adapter={s.kind as AdapterKind} size={20} className="shrink-0 rounded-md" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-foreground">{s.kind}</span>
+                <span className="font-mono text-xs tabular-nums text-primary">{fmtBytes(s.bytes)}</span>
+              </div>
+              <p className="truncate font-mono text-[10px] text-muted-foreground" title={s.path}>
+                {s.path}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -13,6 +13,7 @@ import { failOrphanRuns } from "./db.js";
 import { logger } from "./logger.js";
 import { ensureOffice } from "./office.js";
 import { adaptersRoute } from "./routes/adapters.js";
+import { cliSessionsRoute } from "./routes/cli-sessions.js";
 import { healthRoute } from "./routes/health.js";
 import { officeRoute } from "./routes/office.js";
 import { fsRoute } from "./routes/fs.js";
@@ -97,6 +98,7 @@ export async function bootServer(): Promise<BootedServer> {
 
   app.route("/api/health", healthRoute);
   app.route("/api/adapters", adaptersRoute);
+  app.route("/api/cli-sessions", cliSessionsRoute);
   app.route("/api/office", officeRoute);
   app.route("/api/fs", fsRoute);
   app.route("/api/mcp", mcpRoute);
