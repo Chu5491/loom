@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
-  ListTodo, Loader2, NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
+  ListTodo, Loader2, Network, NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
 } from "lucide-react";
 import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, WorkflowSpec } from "@loom/core";
 import { api } from "../api/client.js";
@@ -22,6 +22,7 @@ import { GitView } from "../components/GitView.js";
 import { Markdown } from "../components/Markdown.js";
 import { MeetingView } from "../components/MeetingView.js";
 import { TasksView } from "../components/TasksView.js";
+import { OrgView } from "../components/OrgView.js";
 import { WorkflowLiveGraph } from "../components/WorkflowLiveGraph.js";
 import { Button } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
@@ -35,7 +36,7 @@ interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fr
 type Msg = UserMsg | AgentMsg;
 
 /** 워크스페이스 내부 뷰 — 대화 / 파일(Monaco) / Git / 분석 / 스케줄. */
-type WsView = "talk" | "tasks" | "meeting" | "files" | "git" | "analysis" | "schedules";
+type WsView = "talk" | "tasks" | "org" | "meeting" | "files" | "git" | "analysis" | "schedules";
 
 export function TalkPage({ project }: { project: Project }) {
   const { t } = useI18n();
@@ -99,7 +100,7 @@ export function TalkPage({ project }: { project: Project }) {
   const [renaming, setRenaming] = useState<string | null>(null); // rename 중인 thread id
   const [view, setView] = useState<WsView>(() => {
     const p = getParam("view");
-    return (["talk", "tasks", "meeting", "files", "git", "analysis", "schedules"] as const).includes(p as WsView) ? (p as WsView) : "talk";
+    return (["talk", "tasks", "org", "meeting", "files", "git", "analysis", "schedules"] as const).includes(p as WsView) ? (p as WsView) : "talk";
   });
   // 스레드·뷰를 URL 에 반영(새로고침/딥링크 복원). talk 은 기본값이라 키 생략.
   useEffect(() => {
@@ -287,6 +288,7 @@ export function TalkPage({ project }: { project: Project }) {
   const wsViews: { key: WsView; label: string; icon: React.ReactNode }[] = [
     { key: "talk", label: t("ws.talk"), icon: <MessagesSquare className="size-4" /> },
     { key: "tasks", label: t("ws.tasks"), icon: <ListTodo className="size-4" /> },
+    { key: "org", label: t("ws.org"), icon: <Network className="size-4" /> },
     { key: "meeting", label: t("ws.meeting"), icon: <Users className="size-4" /> },
     { key: "files", label: t("ws.files"), icon: <FolderOpen className="size-4" /> },
     { key: "git", label: t("ws.git"), icon: <GitBranch className="size-4" /> },
@@ -394,6 +396,8 @@ export function TalkPage({ project }: { project: Project }) {
         >
           {view === "tasks" ? (
             <TasksView project={project} />
+          ) : view === "org" ? (
+            <OrgView project={project} />
           ) : view === "meeting" ? (
             <MeetingView project={project} />
           ) : view === "files" ? (
