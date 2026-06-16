@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
-  ListTodo, Loader2, Network, NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
+  ListTodo, Loader2, NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
 } from "lucide-react";
 import type { AgentSpec, OfficeEvent, Project, RunInfo, SkillSpec, Thread, WorkflowSpec } from "@loom/core";
 import { api } from "../api/client.js";
@@ -22,7 +22,6 @@ import { GitView } from "../components/GitView.js";
 import { Markdown } from "../components/Markdown.js";
 import { MeetingView } from "../components/MeetingView.js";
 import { TasksView } from "../components/TasksView.js";
-import { OrgView } from "../components/OrgView.js";
 import { WorkflowLiveGraph } from "../components/WorkflowLiveGraph.js";
 import { Button } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
@@ -36,7 +35,7 @@ interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fr
 type Msg = UserMsg | AgentMsg;
 
 /** 워크스페이스 내부 뷰 — 대화 / 파일(Monaco) / Git / 분석 / 스케줄. */
-type WsView = "talk" | "tasks" | "org" | "meeting" | "files" | "git" | "analysis" | "schedules";
+type WsView = "talk" | "tasks" | "meeting" | "files" | "git" | "analysis" | "schedules";
 
 export function TalkPage({ project }: { project: Project }) {
   const { t } = useI18n();
@@ -100,7 +99,7 @@ export function TalkPage({ project }: { project: Project }) {
   const [renaming, setRenaming] = useState<string | null>(null); // rename 중인 thread id
   const [view, setView] = useState<WsView>(() => {
     const p = getParam("view");
-    return (["talk", "tasks", "org", "meeting", "files", "git", "analysis", "schedules"] as const).includes(p as WsView) ? (p as WsView) : "talk";
+    return (["talk", "tasks", "meeting", "files", "git", "analysis", "schedules"] as const).includes(p as WsView) ? (p as WsView) : "talk";
   });
   // 스레드·뷰를 URL 에 반영(새로고침/딥링크 복원). talk 은 기본값이라 키 생략.
   useEffect(() => {
@@ -135,9 +134,10 @@ export function TalkPage({ project }: { project: Project }) {
   }, []);
   useEffect(() => setFeed([]), [threadId]);
 
-  // 첫 에이전트를 기본 대상으로.
+  // 기본 대상 = 리드(위임 가능 에이전트). 그냥 보내면 리드가 받아 내부 위임 →
+  // 한 작업이 된다. 특정 에이전트와 직접 대화하려면 컴포저에서 바꾸면 된다.
   useEffect(() => {
-    if (!active && agents.length) setActive(agents[0]!.name);
+    if (!active && agents.length) setActive((agents.find((a) => a.delegate) ?? agents[0]!).name);
   }, [agents, active]);
 
   // ⌘K 팔레트의 프로젝트 내부 명령 — 뷰 전환·스레드 점프·워크플로우 모달·타겟.
@@ -288,7 +288,6 @@ export function TalkPage({ project }: { project: Project }) {
   const wsViews: { key: WsView; label: string; icon: React.ReactNode }[] = [
     { key: "talk", label: t("ws.talk"), icon: <MessagesSquare className="size-4" /> },
     { key: "tasks", label: t("ws.tasks"), icon: <ListTodo className="size-4" /> },
-    { key: "org", label: t("ws.org"), icon: <Network className="size-4" /> },
     { key: "meeting", label: t("ws.meeting"), icon: <Users className="size-4" /> },
     { key: "files", label: t("ws.files"), icon: <FolderOpen className="size-4" /> },
     { key: "git", label: t("ws.git"), icon: <GitBranch className="size-4" /> },
@@ -396,8 +395,6 @@ export function TalkPage({ project }: { project: Project }) {
         >
           {view === "tasks" ? (
             <TasksView project={project} />
-          ) : view === "org" ? (
-            <OrgView project={project} />
           ) : view === "meeting" ? (
             <MeetingView project={project} />
           ) : view === "files" ? (
@@ -1125,6 +1122,19 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
               <span className="text-[11px] text-muted-foreground">${view.result.costUsd.toFixed(4)}</span>
             ) : null}
             <RatingButtons runId={runId} initial={run?.rating ?? null} />
+            {/* 완료 → 작업 상세로(전체 파싱 결과 + 위임 흐름). 리드가 받아 위임한 흐름은
+                여기서 한 작업으로 본다. */}
+            {run?.threadId ? (
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("loom:cmd", { detail: { view: "tasks", threadId: run.threadId } }))}
+                className="ml-auto inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
+              >
+                <ListTodo className="size-3" />
+                {t("talk.viewTask")}
+                <ChevronRight className="size-3" />
+              </button>
+            ) : null}
           </div>
         ) : null}
         {!isStartError && !running ? <PromptPeek runId={runId} /> : null}

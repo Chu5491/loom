@@ -166,7 +166,7 @@ function OrgNode({
   );
 }
 
-function OrgTree({ threadId, request, adapterOf }: { threadId: string; request: string; adapterOf: (name: string) => string }) {
+export function OrgTree({ threadId, request, adapterOf }: { threadId: string; request: string; adapterOf: (name: string) => string }) {
   const { t } = useI18n();
   const runsQ = useQuery({
     queryKey: ["runs", threadId],

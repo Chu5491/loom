@@ -3,13 +3,14 @@
 // useRunStream 으로 비춰 loom-report(결과 양식)를 구조화 표시한다. "이어서"는 같은
 // 스레드에 run 을 더해 세션을 잇고, 채팅창 없이도 반복 수정이 된다.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Send, ListTodo, RotateCcw, CornerDownRight, ChevronRight, Check, Sparkles, FilePen, Wrench, User, Play } from "lucide-react";
+import { Loader2, Send, ListTodo, RotateCcw, CornerDownRight, ChevronRight, ChevronLeft, Check, Sparkles, FilePen, FileText, Wrench, User, Play, ListChecks, AlertTriangle, HelpCircle, Network } from "lucide-react";
 import type { AdapterKind, OfficeEvent, Project, RunInfo } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
 import { Markdown } from "./Markdown.js";
+import { OrgTree } from "./OrgView.js";
 import { Button } from "./ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
@@ -239,6 +240,119 @@ function TaskCard({
   );
 }
 
+// 작업 상세 — loom-report 를 최대한 파싱해 수행 내용을 섹션별로 + 위임 흐름 트리.
+function TaskDetail({
+  task,
+  adapterOf,
+  onBack,
+  onFollowUp,
+}: {
+  task: Task;
+  adapterOf: (name: string) => string;
+  onBack: () => void;
+  onFollowUp: (task: Task, text: string) => void;
+}) {
+  const { t } = useI18n();
+  const stream = useRunStream(task.latest.id);
+  const { body, report } = extractReport(streamText(stream.events));
+  const running = stream.status === "running" && task.latest.status === "running";
+  const [followText, setFollowText] = useState("");
+
+  const sections: { key: string; icon: React.ReactNode; title: string; items: string[]; tone?: string }[] = [];
+  if (report?.steps?.length) sections.push({ key: "steps", icon: <ListChecks className="size-3.5" />, title: t("tasks.d.steps"), items: report.steps });
+  if (report?.decisions?.length) sections.push({ key: "decisions", icon: <Sparkles className="size-3.5" />, title: t("tasks.d.decisions"), items: report.decisions });
+  if (report?.blockers?.length) sections.push({ key: "blockers", icon: <AlertTriangle className="size-3.5" />, title: t("tasks.d.blockers"), items: report.blockers, tone: "warn" });
+
+  return (
+    <div className="mx-auto w-full max-w-4xl flex-1 overflow-y-auto pb-12">
+      <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <ChevronLeft className="size-4" />{t("tasks.d.back")}
+      </button>
+
+      {/* 지시 */}
+      <div className="mb-5 rounded-2xl border border-border bg-muted/20 p-4">
+        <p className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <User className="size-3.5" />{t("tasks.d.request")}
+        </p>
+        <p className="whitespace-pre-wrap text-sm text-foreground">{task.title}</p>
+      </div>
+
+      {/* 결과 — loom-report 전체 파싱 */}
+      <h3 className="mb-2 text-sm font-bold text-foreground">{t("tasks.d.result")}</h3>
+      <div className="mb-6 rounded-2xl border border-border bg-card p-4 shadow-sm">
+        {report?.summary ? <p className="text-sm font-medium leading-relaxed text-foreground">{report.summary}</p> : null}
+        {!report && body ? <div className="max-w-none text-sm leading-relaxed text-foreground/90"><Markdown>{body}</Markdown></div> : null}
+        {!report && !body ? <p className="text-sm text-muted-foreground">{running ? `${t("tasks.working")}…` : t("tasks.noOutput")}</p> : null}
+
+        {sections.map((s) => (
+          <div key={s.key} className="mt-4">
+            <p className={`mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${s.tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+              {s.icon}{s.title}
+            </p>
+            <ul className="space-y-1">
+              {s.items.map((it, i) => (
+                <li key={i} className="flex gap-2 text-[13px] leading-relaxed text-foreground/90">
+                  <span className="mt-1.5 size-1 shrink-0 rounded-full bg-primary/60" />
+                  <span>{it}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+
+        {report?.files?.length ? (
+          <div className="mt-4">
+            <p className="mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <FilePen className="size-3.5" />{t("tasks.d.files")} ({report.files.length})
+            </p>
+            <ul className="space-y-1">
+              {report.files.map((f, i) => (
+                <li key={i} className="flex items-center gap-2 font-mono text-[12px] text-foreground/80">
+                  <FileText className="size-3 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{f.path}</span>
+                  {f.action ? <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">{f.action}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {report?.question ? (
+          <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
+            <p className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+              <HelpCircle className="size-3.5" />{t("tasks.d.question")}
+            </p>
+            <p className="text-sm text-foreground/90">{report.question}</p>
+          </div>
+        ) : null}
+      </div>
+
+      {/* 흐름 — 당신 → 리드 → 팀원 위임 트리 */}
+      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-foreground"><Network className="size-4" />{t("tasks.d.flow")}</h3>
+      <div className="mb-6">
+        <OrgTree threadId={task.threadId} request={task.title} adapterOf={adapterOf} />
+      </div>
+
+      {/* 이어서 */}
+      {!running ? (
+        <div className="flex items-end gap-2">
+          <textarea
+            value={followText}
+            onChange={(e) => setFollowText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && followText.trim()) { onFollowUp(task, followText.trim()); setFollowText(""); } }}
+            placeholder={t("tasks.followPlaceholder")}
+            rows={2}
+            className="min-w-0 flex-1 resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50"
+          />
+          <Button onClick={() => { if (followText.trim()) { onFollowUp(task, followText.trim()); setFollowText(""); } }} disabled={!followText.trim()} className="shrink-0">
+            <CornerDownRight className="size-4" />{t("tasks.followUp")}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TasksView({ project }: { project: Project }) {
   const { t } = useI18n();
   const qc = useQueryClient();
@@ -256,6 +370,17 @@ export function TasksView({ project }: { project: Project }) {
 
   const [input, setInput] = useState("");
   const [target, setTarget] = useState("auto"); // "auto" | agent name
+  const [selected, setSelected] = useState<string | null>(null); // 열어둔 작업 threadId
+
+  // 대화의 [작업 보기] → loom:cmd { view:"tasks", threadId } 로 특정 작업 상세 열기.
+  useEffect(() => {
+    const onCmd = (e: Event) => {
+      const d = (e as CustomEvent<{ view?: string; threadId?: string }>).detail;
+      if (d?.view === "tasks" && d.threadId) setSelected(d.threadId);
+    };
+    window.addEventListener("loom:cmd", onCmd);
+    return () => window.removeEventListener("loom:cmd", onCmd);
+  }, []);
 
   const refetch = () => void qc.invalidateQueries({ queryKey: ["runs", "project", project.id] });
 
@@ -279,11 +404,17 @@ export function TasksView({ project }: { project: Project }) {
       .catch(() => {});
   };
 
-  const openThread = (threadId: string) => {
-    window.dispatchEvent(new CustomEvent("loom:cmd", { detail: { view: "talk", threadId } }));
-  };
-
   const canAssign = input.trim().length > 0 && !assign.isPending;
+  const current = selected ? tasks.find((x) => x.threadId === selected) ?? null : null;
+
+  // 작업 상세 — 전체 파싱 결과 + 위임 흐름.
+  if (current) {
+    return (
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4 sm:p-6 lg:p-8">
+        <TaskDetail task={current} adapterOf={adapterOf} onBack={() => setSelected(null)} onFollowUp={followUp} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-6 p-4 sm:p-6 lg:p-8 bg-background/50">
@@ -356,7 +487,7 @@ export function TasksView({ project }: { project: Project }) {
         ) : (
           <div className="space-y-5">
             {tasks.map((task) => (
-              <TaskCard key={task.threadId} task={task} adapterOf={adapterOf} onFollowUp={followUp} onOpen={openThread} />
+              <TaskCard key={task.threadId} task={task} adapterOf={adapterOf} onFollowUp={followUp} onOpen={setSelected} />
             ))}
           </div>
         )}
