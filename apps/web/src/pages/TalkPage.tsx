@@ -1084,6 +1084,12 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
         {/* 실행 중 — 강한 라이브 패널(이 프로젝트에서 작업 중) + 로드아웃 + 타임라인. */}
         {running ? (
           <>
+            {stream.reconnecting ? (
+              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                {t("talk.status.reconnecting")}
+              </div>
+            ) : null}
             <WorkingPanel
               agent={agent}
               trace={view.trace}

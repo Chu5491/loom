@@ -9,23 +9,30 @@ export interface RunStream {
   events: OfficeEvent[];
   run: RunInfo | null;
   status: RunStatus;
+  /** 일시 단절 후 EventSource 가 자동 재접속 중 — UI 가 "재연결 중" 을 보일 근거. */
+  reconnecting: boolean;
 }
 
 export function useRunStream(runId: string | null): RunStream {
   const [events, setEvents] = useState<OfficeEvent[]>([]);
   const [run, setRun] = useState<RunInfo | null>(null);
   const [status, setStatus] = useState<RunStatus>("running");
+  const [reconnecting, setReconnecting] = useState(false);
 
   useEffect(() => {
     if (!runId) return;
     setEvents([]);
     setRun(null);
     setStatus("running");
+    setReconnecting(false);
 
     const es = new EventSource(runEventsUrl(runId));
 
     // (재)연결 때마다 서버는 replay 부터 다시 보낸다 — 누적분을 비워 중복 렌더 방지.
-    es.onopen = () => setEvents([]);
+    es.onopen = () => {
+      setEvents([]);
+      setReconnecting(false);
+    };
 
     es.addEventListener("event", (e) => {
       try {
@@ -50,12 +57,16 @@ export function useRunStream(runId: string | null): RunStream {
     // 굳는다. readyState CLOSED 는 영구 실패(run 소실 등) — 그때만 failed 처리.
     es.addEventListener("error", () => {
       if (es.readyState === EventSource.CLOSED) {
+        setReconnecting(false);
         setStatus((s) => (s === "running" ? "failed" : s));
+      } else {
+        // CONNECTING — 브라우저가 자동 재접속 중. onopen 에서 해제된다.
+        setReconnecting(true);
       }
     });
 
     return () => es.close();
   }, [runId]);
 
-  return { events, run, status };
+  return { events, run, status, reconnecting };
 }

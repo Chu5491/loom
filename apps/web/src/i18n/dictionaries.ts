@@ -240,6 +240,7 @@ const en = {
   "talk.noOutput": "No output.",
   "talk.status.failed": "Run failed",
   "talk.status.cancelled": "Cancelled",
+  "talk.status.reconnecting": "Reconnecting…",
 
   "office.title": "Office",
   "office.subtitle": "Your rules, skills, agents and MCP — defined here, committed to git. No CLI roots touched.",
@@ -695,6 +696,7 @@ const ko: Dictionary = {
   "talk.noOutput": "출력 없음.",
   "talk.status.failed": "실행 실패",
   "talk.status.cancelled": "취소됨",
+  "talk.status.reconnecting": "재연결 중…",
 
   "office.title": "오피스",
   "office.subtitle": "규약·스킬·에이전트·MCP를 여기서 정의하고 git에 커밋합니다. CLI root는 건드리지 않아요.",
