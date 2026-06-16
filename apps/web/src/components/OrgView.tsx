@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Send, Network, Check, ChevronDown, ChevronRight, Crown, CornerDownRight } from "lucide-react";
+import { Loader2, Send, Network, Check, ChevronDown, ChevronRight, Crown, CornerDownRight, MessageSquare } from "lucide-react";
 import type { AdapterKind, OfficeEvent, Project, RunInfo } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
@@ -56,27 +56,40 @@ function groupSessions(runs: RunInfo[]): OrgSession[] {
 const statusTone = (s: RunInfo["status"]) =>
   s === "running" ? "running" : s === "failed" ? "failed" : s === "cancelled" ? "cancelled" : "done";
 
-// 조직 노드 — 한 에이전트의 작업. 클릭하면 결과 펼침. 위임 자식은 아래로 재귀(연결선).
+// 조직 노드 — 한 에이전트의 작업. 한 스트림으로 상태 + 위임 사유 + 결과를 모두 본다.
+// reason = 부모가 이 노드에게 위임한 이유(흐름 추적의 핵심). 자식은 아래로 재귀(연결선).
 function OrgNode({
   run,
   childrenOf,
   adapterOf,
   depth,
+  reason,
 }: {
   run: RunInfo;
   childrenOf: (id: string) => RunInfo[];
   adapterOf: (name: string) => string;
   depth: number;
+  reason?: string;
 }) {
   const { t } = useI18n();
-  const stream = useRunStream(run.status === "running" ? run.id : null);
-  const live = stream.events.length ? stream : null;
-  const status = live ? statusTone(live.status === "running" ? "running" : run.status) : statusTone(run.status);
+  const stream = useRunStream(run.id);
+  const status = statusTone(stream.status === "running" && run.status === "running" ? "running" : run.status);
   const running = status === "running";
   const [open, setOpen] = useState(depth === 0); // 리드는 기본 펼침
   const kids = childrenOf(run.id);
 
-  // 결과는 펼쳤을 때만 스트림(가벼운 트리 유지).
+  // 이 노드가 자식에게 위임한 사유 — handoff 이벤트(toAgent → reason)로 흐름을 잇는다.
+  const reasonFor = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of stream.events) {
+      if (e.kind === "handoff" && e.reason) m.set(e.toAgent, e.reason);
+    }
+    return (agentName: string) => m.get(agentName);
+  }, [stream.events]);
+
+  const { body, report } = extractReport(streamText(stream.events));
+  const resultText = report?.summary || body;
+
   return (
     <div>
       <div
@@ -93,7 +106,9 @@ function OrgNode({
           <span className="truncate text-sm font-semibold text-foreground">@{run.agent}</span>
           {depth === 0 ? (
             <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">{t("org.lead")}</span>
-          ) : null}
+          ) : (
+            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{t("org.depth", { n: String(depth) })}</span>
+          )}
           {kids.length ? (
             <span className="shrink-0 inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
               <CornerDownRight className="size-3" />{kids.length}
@@ -118,36 +133,35 @@ function OrgNode({
         </button>
       </div>
 
-      {open ? <OrgNodeResult run={run} /> : null}
+      {/* 위임 사유 — 부모가 왜 이 팀원에게 넘겼나(흐름 추적) */}
+      {reason ? (
+        <p className="ml-9 mt-1 flex items-start gap-1 text-[11px] italic text-muted-foreground">
+          <MessageSquare className="mt-0.5 size-3 shrink-0" />{reason}
+        </p>
+      ) : null}
+
+      {/* 결과 */}
+      {open ? (
+        resultText ? (
+          <div className="mb-2 ml-9 mt-1 rounded-lg border border-border/50 bg-muted/20 p-3 text-[13px] text-foreground/90">
+            {report?.summary ? (
+              <p className="font-medium leading-relaxed">{report.summary}</p>
+            ) : (
+              <div className="max-w-none"><Markdown>{body.length > 500 ? body.slice(0, 500) + "…" : body}</Markdown></div>
+            )}
+          </div>
+        ) : (
+          <p className="mb-2 ml-9 mt-1 text-[12px] text-muted-foreground">{running ? `${t("org.working")}…` : t("org.noOutput")}</p>
+        )
+      ) : null}
 
       {kids.length ? (
         <div className="ml-5 mt-2 space-y-2 border-l-2 border-border/60 pl-4">
           {kids.map((c) => (
-            <OrgNode key={c.id} run={c} childrenOf={childrenOf} adapterOf={adapterOf} depth={depth + 1} />
+            <OrgNode key={c.id} run={c} childrenOf={childrenOf} adapterOf={adapterOf} depth={depth + 1} reason={reasonFor(c.agent)} />
           ))}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-// 노드 결과 — 펼쳤을 때만 스트림. loom-report 요약 우선, 없으면 본문(요약).
-function OrgNodeResult({ run }: { run: RunInfo }) {
-  const { t } = useI18n();
-  const stream = useRunStream(run.id);
-  const { body, report } = extractReport(streamText(stream.events));
-  const running = stream.status === "running" && run.status === "running";
-  if (running && !report && !body) {
-    return <p className="mb-2 ml-9 mt-1 text-[12px] text-muted-foreground">{t("org.working")}…</p>;
-  }
-  if (!report && !body) return <p className="mb-2 ml-9 mt-1 text-[12px] text-muted-foreground">{t("org.noOutput")}</p>;
-  return (
-    <div className="mb-2 ml-9 mt-1 rounded-lg border border-border/50 bg-muted/20 p-3 text-[13px] text-foreground/90">
-      {report?.summary ? (
-        <p className="font-medium leading-relaxed">{report.summary}</p>
-      ) : (
-        <div className="max-w-none"><Markdown>{body.length > 500 ? body.slice(0, 500) + "…" : body}</Markdown></div>
-      )}
     </div>
   );
 }
