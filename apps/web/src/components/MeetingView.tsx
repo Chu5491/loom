@@ -217,7 +217,7 @@ export function MeetingView({ project }: { project: Project }) {
   const canStart = proposal.trim().length > 0 && participants.size > 0 && !!chair && !start.isPending;
 
   return (
-    <div className="flex h-full min-h-0 gap-4 p-4 sm:p-6">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 gap-4 p-4 sm:p-6">
       {/* 좌측 — 새 회의 + 지난 회의 목록 */}
       <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto">
         <Button onClick={() => { setComposing(true); setSelected(null); }} className="justify-center">
