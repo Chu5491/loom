@@ -27,8 +27,9 @@ import {
   Trash2,
   Upload,
   Workflow,
+  Wrench,
 } from "lucide-react";
-import type { AdapterKind, AgentSpec, McpServer, McpServerKind, Office } from "@loom/core";
+import type { AdapterKind, AgentSpec, FunctionSpec, McpServer, McpServerKind, Office } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Markdown } from "../components/Markdown.js";
@@ -44,7 +45,7 @@ const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-ring";
 const areaCls = inputCls + " font-mono text-xs leading-relaxed";
 
-type Kind = "agent" | "rule" | "skill" | "mcp" | "workflow" | "prompt";
+type Kind = "agent" | "rule" | "skill" | "mcp" | "workflow" | "function" | "prompt";
 
 type Selection =
   | { kind: "overview" }
@@ -58,7 +59,8 @@ type Selection =
   | { kind: "mcp"; name: string }
   | { kind: "mcp-new" }
   | { kind: "workflow"; name?: string }
-  | { kind: "prompt"; name: string };
+  | { kind: "prompt"; name: string }
+  | { kind: "function"; name: string };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Entry
@@ -97,6 +99,7 @@ export function OfficePage() {
     skill: true,
     mcp: true,
     workflow: true,
+    function: true,
     prompt: true,
   });
   const toggleGroup = (k: Kind) => setExpanded((s) => ({ ...s, [k]: !s[k] }));
@@ -287,7 +290,10 @@ function OfficeTree({
   const skills = office.skills.filter((s) => match(s.name, s.description, s.body));
   const mcps = office.mcp.filter((m) => match(m.name, m.description, m.kind, m.command, m.url));
   const workflows = office.workflows.filter((w) => match(w.name, w.description));
-  const prompts = office.prompts.filter((p) => match(p.name, p.body));
+  // 기능(Functions)으로 분리된 프롬프트는 프롬프트 섹션에서 빼고 Functions 섹션에만 노출.
+  const fnNames = new Set(office.functions.map((f) => f.name));
+  const prompts = office.prompts.filter((p) => !fnNames.has(p.name) && match(p.name, p.body));
+  const functions = office.functions.filter((f) => match(f.name, f.prompt, f.adapter, f.model));
 
   // 가져오기 (rules/skills 아카이브). 서버 검증 실패(zip-slip·용량·SKILL.md 누락)가
   // 무음이면 "아무 일도 안 일어난" 것처럼 보인다 — alert 로 표면화.
@@ -447,9 +453,29 @@ function OfficeTree({
       </TreeGroup>
 
       <TreeGroup
+        icon={<Wrench className="size-3.5" />}
+        label={t("office.section.functions")}
+        total={office.functions.length}
+        matched={functions.length}
+        expanded={expanded.function}
+        onToggle={() => toggleGroup("function")}
+      >
+        {functions.map((f) => (
+          <TreeItem
+            key={f.name}
+            active={selection.kind === "function" && selection.name === f.name}
+            onClick={() => onSelect({ kind: "function", name: f.name })}
+            avatar={<TreeIcon><Wrench className="size-3.5" /></TreeIcon>}
+            label={t(`office.fp.${f.name}`)}
+            sub={`${f.adapter}${f.model ? ` · ${f.model}` : ""}`}
+          />
+        ))}
+      </TreeGroup>
+
+      <TreeGroup
         icon={<SlidersHorizontal className="size-3.5" />}
         label={t("office.section.prompts")}
-        total={office.prompts.length}
+        total={prompts.length}
         matched={prompts.length}
         expanded={expanded.prompt}
         onToggle={() => toggleGroup("prompt")}
@@ -763,6 +789,11 @@ function DetailView({
       const p = office.prompts.find((x) => x.name === selection.name);
       if (!p) return <NotFound onBack={() => onSelect({ kind: "overview" })} />;
       return <PromptDetail key={p.name} prompt={p} registerDirty={registerDirty} />;
+    }
+    case "function": {
+      const f = office.functions.find((x) => x.name === selection.name);
+      if (!f) return <NotFound onBack={() => onSelect({ kind: "overview" })} />;
+      return <FunctionDetail key={f.name} fn={f} registerDirty={registerDirty} />;
     }
   }
 }
@@ -1744,6 +1775,58 @@ function PromptDetail({
     >
       <p className="mb-3 text-xs text-muted-foreground">{t("office.fp.hint")}</p>
       <MarkdownField value={body} onChange={setBody} placeholder="…" minH="min-h-[400px]" />
+      {err ? <p className="mt-3 text-xs text-destructive">{err}</p> : null}
+      <SaveRow onSave={() => save.mutate()} pending={save.isPending} saved={saved} />
+    </DetailShell>
+  );
+}
+
+// 기능(Function) 편집 — 지침(prompt) + 어댑터 + 모델. 에이전트가 아니라 '쓰는 기능'.
+function FunctionDetail({
+  fn,
+  registerDirty,
+}: {
+  fn: FunctionSpec;
+  registerDirty?: (fn: () => boolean) => void;
+}) {
+  const { t } = useI18n();
+  const invalidate = useInvalidate();
+  const [adapter, setAdapter] = useState<AdapterKind>(fn.adapter);
+  const [model, setModel] = useState<string | undefined>(fn.model);
+  const [body, setBody] = useState(fn.prompt);
+  const [err, setErr] = useState<string | null>(null);
+  const snapshot = `${adapter} ${model ?? ""} ${body}`;
+  const initial = `${fn.adapter} ${fn.model ?? ""} ${fn.prompt}`;
+  const { saved, markSaved } = useEditorGuard(registerDirty, snapshot, initial);
+  const save = useMutation({
+    mutationFn: () => api.putFunction(fn.name, { prompt: body, adapter, model }),
+    onSuccess: () => { setErr(null); markSaved(); invalidate(); },
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
+  });
+  return (
+    <DetailShell
+      icon={<Wrench className="size-5" />}
+      title={t(`office.fp.${fn.name}`)}
+      subtitle={fn.name}
+    >
+      <p className="mb-3 text-xs text-muted-foreground">{t("office.fn.hint")}</p>
+      <div className="mb-4 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">{t("office.agent.adapter")}</span>
+          <select
+            className={inputCls}
+            value={adapter}
+            onChange={(e) => { setAdapter(e.target.value as AdapterKind); setModel(undefined); }}
+          >
+            {ADAPTERS.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">{t("office.agent.model")}</span>
+          <ModelField adapter={adapter} value={model} onChange={setModel} />
+        </label>
+      </div>
+      <MarkdownField value={body} onChange={setBody} placeholder="…" minH="min-h-[320px]" />
       {err ? <p className="mt-3 text-xs text-destructive">{err}</p> : null}
       <SaveRow onSave={() => save.mutate()} pending={save.isPending} saved={saved} />
     </DetailShell>

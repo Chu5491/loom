@@ -5,6 +5,7 @@ import type {
   AdapterProbeResult,
   AgentSpec,
   BudgetSpec,
+  FunctionSpec,
   McpServer,
   ModelListResult,
   Office,
@@ -202,6 +203,13 @@ export const api = {
     request<unknown>(`/api/office/prompts/${encodeURIComponent(name)}`, {
       method: "PUT",
       body: JSON.stringify({ body }),
+    }),
+
+  /** 기능 저장 — 지침(prompt) + 어댑터 + 모델. office/prompts/<name>.md frontmatter. */
+  putFunction: (name: string, spec: { prompt: string; adapter: string; model?: string }) =>
+    request<{ function: FunctionSpec }>(`/api/office/functions/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify(spec),
     }),
 
   /** 워크플로우 정의 저장/삭제 — office/workflows/<name>.json. */
