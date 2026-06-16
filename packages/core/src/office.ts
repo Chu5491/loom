@@ -60,6 +60,20 @@ export interface AgentSpec {
   config?: AdapterConfig;
 }
 
+/** 기능(Function) = 고정 역할(깃 커밋·분석·스킬/에이전트 생성)을 도는 단위.
+ *  에이전트(팀원)와 달리 페르소나·스킬·위임이 없다 — 지침 프롬프트 + 실행 모델뿐.
+ *  그래서 '생성하는 에이전트'로 관리하지 않고, 어댑터+모델만 지정해 쓴다. */
+export interface FunctionSpec {
+  /** 기능 식별자 — git-commit / analysis / skill-author / agent-author. */
+  name: string;
+  /** 조정 가능한 지침(office/prompts/<name>.md 본문). */
+  prompt: string;
+  /** 실행 CLI. */
+  adapter: AdapterKind;
+  /** 실행 모델(없으면 어댑터 기본). */
+  model?: string;
+}
+
 // ── 워크플로우 — 다단계 에이전트 그래프. office/workflows/<name>.json ─────────
 // 실행: 수동(사용자 버튼) 또는 트리거(에이전트 run 종료 시 자동/제안).
 // 1-hop 하네스(edges.json)를 흡수한 단일 오케스트레이션 개념.
@@ -124,6 +138,8 @@ export interface Office {
   workflows: WorkflowSpec[];
   /** 기능 프롬프트 — git 커밋·분석 같은 내장 기능의 조정 가능한 지침(양식은 코드 고정). */
   prompts: RuleSpec[];
+  /** 기능(Functions) — 깃·분석·스킬/에이전트 생성. 에이전트가 아니라 지침+어댑터+모델. */
+  functions: FunctionSpec[];
 }
 
 // ── 런타임 (data/, gitignore) ────────────────────────────────────────────────

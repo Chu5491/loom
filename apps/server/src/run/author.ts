@@ -6,18 +6,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnCapture } from "@loom/adapter-utils";
-import type { AgentSpec } from "@loom/core";
-import { readFeaturePrompt, type FeaturePromptName } from "../office.js";
+import { readFunction, type FunctionName } from "../office.js";
 import { getRunEventsDb } from "../db.js";
 import { cancelRun, startRun, waitForRun } from "./engine.js";
 
 const AUTHOR_TIMEOUT_MS = 5 * 60_000;
-
-/** roles 에 author 가 있는 에이전트 우선, 없으면 null(라우트가 안내). */
-export function pickAuthor(agents: AgentSpec[], override?: string): AgentSpec | null {
-  if (override) return agents.find((a) => a.name === override) ?? null;
-  return agents.find((a) => a.roles?.includes("author")) ?? null;
-}
 
 // 첫 { 부터 짝 맞는 } 까지 잘라낸다(문자열 안의 중괄호·백틱은 무시) — 펜스/프로즈
 // 와 무관. 펜스 정규식은 본문에 ``` 코드블록이 있으면 거기서 잘려 깨지므로 안 쓴다.
@@ -64,17 +57,15 @@ async function makeScratchRepo(): Promise<string> {
   return dir;
 }
 
-/** authoring run 을 돌려 result 텍스트를 반환. 실패는 throw. */
-export async function runAuthor(
-  authorAgent: string,
-  feature: FeaturePromptName,
-  prompt: string,
-): Promise<string> {
+/** authoring run 을 돌려 result 텍스트를 반환. 실패는 throw.
+ *  기능(skill-author/agent-author)으로 실행 — 에이전트 선택 없이 기능의 모델로. */
+export async function runAuthor(feature: FunctionName, prompt: string): Promise<string> {
   const scratch = await makeScratchRepo();
+  const fn = readFunction(feature);
   const started = await startRun({
-    agent: authorAgent,
+    fn: { name: fn.name, adapter: fn.adapter, model: fn.model },
     prompt,
-    promptOverride: readFeaturePrompt(feature),
+    promptOverride: fn.prompt,
     cwd: scratch,
   });
   if (!started.ok) {

@@ -29,6 +29,8 @@ import {
   writeAgent,
   writeBudget,
   writeFeaturePrompt,
+  isFunctionName,
+  writeFunction,
   writeMcp,
   writeRule,
   writeSkill,
@@ -181,13 +183,12 @@ officeRoute.delete("/agents/:name", (c) =>
 
 // 프롬프트로 에이전트 초안 생성 — 실재 스킬/mcp/어댑터만 참조. 저장은 PUT 으로 따로.
 officeRoute.post("/agents/generate", async (c) => {
-  const data = await parseBody(c, z.object({ prompt: z.string().min(1).max(4000), agent: z.string().optional() }));
+  const data = await parseBody(c, z.object({ prompt: z.string().min(1).max(4000) }));
   if (isResponse(data)) return data;
   try {
-    return c.json(await generateAgentDraft(data.prompt, data.agent));
+    return c.json(await generateAgentDraft(data.prompt));
   } catch (e) {
-    const msg = (e as Error).message;
-    return c.json({ error: msg }, msg === "no_author" ? 400 : 502);
+    return c.json({ error: (e as Error).message }, 502);
   }
 });
 
@@ -207,6 +208,19 @@ officeRoute.put("/prompts/:name", async (c) => {
   const data = await parseBody(c, ruleSchema);
   if (isResponse(data)) return data;
   return c.json({ prompt: writeFeaturePrompt(name as FeaturePromptName, data.body) });
+});
+
+// ── functions — 기능(깃·분석·스킬/에이전트 생성)의 지침 + 어댑터 + 모델 ───────────
+officeRoute.put("/functions/:name", async (c) => {
+  const name = c.req.param("name");
+  if (!isFunctionName(name)) return c.json({ error: `unknown_function: ${name}` }, 404);
+  const data = await parseBody(c, z.object({
+    prompt: z.string(),
+    adapter: z.string().min(1),
+    model: z.string().optional(),
+  }));
+  if (isResponse(data)) return data;
+  return c.json({ function: writeFunction(name, data) });
 });
 
 // ── workflows (per-name) — 참조 무결성은 저장 경계에서 검증 ────────────────────

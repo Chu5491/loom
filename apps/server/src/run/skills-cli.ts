@@ -7,8 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnCapture, stripAnsi } from "@loom/adapter-utils";
 import type { SkillSpec } from "@loom/core";
-import { readAgents, safeName, splitFrontmatter, writeSkillFromFolder } from "../office.js";
-import { extractJson, pickAuthor, runAuthor } from "./author.js";
+import { safeName, splitFrontmatter, writeSkillFromFolder } from "../office.js";
+import { extractJson, runAuthor } from "./author.js";
 
 const CLI_TIMEOUT_MS = 90_000;
 
@@ -127,22 +127,19 @@ export async function importSkill(pkg: string): Promise<ImportedSkill> {
     const name = safeName(meta.name || path.basename(srcDir));
     const fileList = fs.existsSync(srcDir) ? listTopFiles(srcDir) : [];
 
-    // skill-author run 으로 다듬기 — 실패하면 원본 그대로(가져오기는 성공시킴).
+    // skill-author 기능으로 다듬기 — 실패하면 원본 그대로(가져오기는 성공시킴).
     let description = meta.description || `Imported skill ${name}`;
     let adaptedBody = body;
     let adapted = false;
-    const author = pickAuthor(readAgents());
-    if (author) {
-      try {
-        const out = await runAuthor(author.name, "skill-author",
-          `Skill name: ${name}\nAttached files: ${fileList.join(", ") || "(none)"}\n\n--- SKILL.md body ---\n${body}`);
-        const j = extractJson(out) as { description?: unknown; body?: unknown };
-        if (typeof j.body === "string" && j.body.trim()) adaptedBody = j.body;
-        if (typeof j.description === "string" && j.description.trim()) description = j.description.trim();
-        adapted = true;
-      } catch {
-        // 다듬기 실패는 치명적이지 않다 — 원본으로 들이고 사용자가 손보면 된다.
-      }
+    try {
+      const out = await runAuthor("skill-author",
+        `Skill name: ${name}\nAttached files: ${fileList.join(", ") || "(none)"}\n\n--- SKILL.md body ---\n${body}`);
+      const j = extractJson(out) as { description?: unknown; body?: unknown };
+      if (typeof j.body === "string" && j.body.trim()) adaptedBody = j.body;
+      if (typeof j.description === "string" && j.description.trim()) description = j.description.trim();
+      adapted = true;
+    } catch {
+      // 다듬기 실패는 치명적이지 않다 — 원본으로 들이고 사용자가 손보면 된다.
     }
 
     const { skill, skipped } = writeSkillFromFolder(name, description, adaptedBody, srcDir);

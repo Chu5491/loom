@@ -4,8 +4,8 @@
 
 import type { AdapterKind, AgentSpec } from "@loom/core";
 import { listAdapterKinds, probeAdapter } from "../adapters/registry.js";
-import { readAgents, readMcp, readRules, readSkills } from "../office.js";
-import { extractJson, pickAuthor, runAuthor } from "./author.js";
+import { readFunction, readMcp, readRules, readSkills } from "../office.js";
+import { extractJson, runAuthor } from "./author.js";
 
 // LLM 이 준 이름을 안전한 식별자로 정리(safeName 은 검증만 하고 throw 하므로 직접 청소).
 // 허용 외 문자 제거 + 영숫자로 시작 보장, 비면 fallback.
@@ -95,13 +95,10 @@ async function buildContext(prompt: string): Promise<string> {
   );
 }
 
-export async function generateAgentDraft(prompt: string, authorOverride?: string): Promise<AgentDraft> {
-  const agents = readAgents();
-  const author = pickAuthor(agents, authorOverride);
-  if (!author) throw new Error("no_author"); // 라우트가 400 으로 변환(역할 지정 안내)
-
+export async function generateAgentDraft(prompt: string): Promise<AgentDraft> {
+  const fn = readFunction("agent-author");
   const context = await buildContext(prompt);
-  const out = await runAuthor(author.name, "agent-author", context);
+  const out = await runAuthor("agent-author", context);
   const raw = extractJson(out);
 
   const kinds = listAdapterKinds();
@@ -111,7 +108,7 @@ export async function generateAgentDraft(prompt: string, authorOverride?: string
     rules: new Set(readRules().map((r) => r.name)),
     adapters: new Set(kinds),
   };
-  // fallback 어댑터 — author 자신의 어댑터(분명 인증돼 동작 중)를 기본값으로.
-  const fallback = (kinds.includes(author.adapter) ? author.adapter : kinds[0]) as AdapterKind;
+  // fallback 어댑터 — agent-author 기능의 어댑터(인증돼 동작 중)를 기본값으로.
+  const fallback = (kinds.includes(fn.adapter) ? fn.adapter : kinds[0]) as AdapterKind;
   return sanitizeAgentDraft(raw, names, fallback);
 }

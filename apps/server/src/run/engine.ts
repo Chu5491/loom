@@ -55,7 +55,10 @@ function releaseSlot(): void {
 }
 
 export interface StartRunInput {
-  agent: string; // office agent name
+  agent?: string; // office agent name (fn 이면 생략)
+  /** 기능 실행 — office 에이전트 대신 기능(adapter+model)으로 ad-hoc. rules/skills/mcp·
+   *  위임·resume 없음(자동주입 0). promptOverride 가 지침. info.agent = "fn:<name>". */
+  fn?: { name: string; adapter: string; model?: string };
   prompt: string;
   cwd?: string;
   /** 실행할 프로젝트(작업 디렉토리) id. 있으면 그 경로가 cwd. */
@@ -275,7 +278,11 @@ export function previewRunPrompt(
 }
 
 export async function startRun(input: StartRunInput): Promise<StartRunResult> {
-  const agent = readAgents().find((a) => a.name === input.agent);
+  // 기능 실행은 임시(ephemeral) 에이전트 — office 에 없는 adapter+model 만의 스펙.
+  // rules/skills/mcp 비움 = 자동주입 0(헌법). delegate/resume/페르소나 없음.
+  const agent: AgentSpec | undefined = input.fn
+    ? { name: `fn:${input.fn.name}`, adapter: input.fn.adapter as AgentSpec["adapter"], ...(input.fn.model ? { model: input.fn.model } : {}), prompt: "", rules: [], skills: [], mcp: [] }
+    : readAgents().find((a) => a.name === input.agent);
   if (!agent) return { ok: false, status: 404, error: "agent_not_found" };
   const adapter = getAdapter(agent.adapter);
   if (!adapter) return { ok: false, status: 400, error: `adapter_not_registered: ${agent.adapter}` };

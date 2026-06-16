@@ -5,8 +5,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type {
+  AdapterKind,
   AgentSpec,
   BudgetSpec,
+  FunctionSpec,
   McpServer,
   Office,
   RuleSpec,
@@ -316,12 +318,18 @@ function featurePromptFile(name: FeaturePromptName): string {
   return path.join(paths.office, "prompts", `${name}.md`);
 }
 
-export function readFeaturePrompt(name: FeaturePromptName): string {
+function readPromptRaw(name: FeaturePromptName): string {
   try {
     return fs.readFileSync(featurePromptFile(name), "utf8");
   } catch {
     return DEFAULT_FEATURE_PROMPTS[name]; // 파일이 없으면 기본값 — 저장 시 생성
   }
+}
+
+/** 지침 본문만 — frontmatter(기능의 adapter/model)는 떼고 프롬프트만. CLI 에 들어가는 건 본문. */
+export function readFeaturePrompt(name: FeaturePromptName): string {
+  const body = splitFrontmatter(readPromptRaw(name)).body.trim();
+  return body || DEFAULT_FEATURE_PROMPTS[name];
 }
 
 export function readFeaturePrompts(): RuleSpec[] {
@@ -331,6 +339,53 @@ export function readFeaturePrompts(): RuleSpec[] {
 export function writeFeaturePrompt(name: FeaturePromptName, body: string): RuleSpec {
   writeFileEnsured(featurePromptFile(name), body);
   return { name, body };
+}
+
+// ── 기능(Functions) — 고정 역할(깃·분석·스킬/에이전트 생성). 에이전트가 아니라
+//    '지침 프롬프트 + 어댑터 + 모델'. office/prompts/<name>.md 의 frontmatter 에 모델 저장.
+//    standup·meeting 은 기능에서 제외(스케줄 의존 / 다중 에이전트 협업).
+export const FUNCTION_NAMES = ["git-commit", "analysis", "skill-author", "agent-author"] as const;
+export type FunctionName = (typeof FUNCTION_NAMES)[number];
+
+// 기능 기본 모델 — frontmatter 미지정 시. 인증된 CLI 기준 합리적 기본값.
+const DEFAULT_FUNCTION_MODELS: Record<FunctionName, { adapter: AdapterKind; model?: string }> = {
+  "git-commit": { adapter: "codex", model: "gpt-5.5" },
+  analysis: { adapter: "codex", model: "gpt-5.5" },
+  "skill-author": { adapter: "claude-code", model: "claude-opus-4-8" },
+  "agent-author": { adapter: "claude-code", model: "claude-opus-4-8" },
+};
+
+export function isFunctionName(name: string): name is FunctionName {
+  return (FUNCTION_NAMES as readonly string[]).includes(name);
+}
+
+export function readFunction(name: FunctionName): FunctionSpec {
+  const { meta } = splitFrontmatter(readPromptRaw(name));
+  const def = DEFAULT_FUNCTION_MODELS[name];
+  return {
+    name,
+    prompt: readFeaturePrompt(name),
+    adapter: (meta.adapter as AdapterKind) || def.adapter,
+    model: meta.model || def.model,
+  };
+}
+
+export function readFunctions(): FunctionSpec[] {
+  return FUNCTION_NAMES.map(readFunction);
+}
+
+const functionSchema = z.object({
+  prompt: z.string(),
+  adapter: z.string().min(1),
+  model: z.string().optional(),
+});
+
+export function writeFunction(name: FunctionName, spec: { prompt: string; adapter: string; model?: string }): FunctionSpec {
+  const parsed = functionSchema.parse(spec);
+  // frontmatter 직렬화는 splitFrontmatter 읽기와 대칭(JSON 따옴표) — 왕복 안전.
+  const fm = `---\nadapter: ${JSON.stringify(parsed.adapter)}\nmodel: ${JSON.stringify(parsed.model ?? "")}\n---\n`;
+  writeFileEnsured(featurePromptFile(name), fm + parsed.prompt);
+  return readFunction(name);
 }
 
 export function readWorkflows(): WorkflowSpec[] {
@@ -352,6 +407,7 @@ export function readOffice(): Office {
     agents: readAgents(),
     workflows: readWorkflows(),
     prompts: readFeaturePrompts(),
+    functions: readFunctions(),
   };
 }
 

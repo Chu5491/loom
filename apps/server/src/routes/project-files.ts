@@ -10,7 +10,7 @@ import { z } from "zod";
 import { paths } from "../config.js";
 import { getProjectDb, getRunEventsDb, listAgentFileActivity } from "../db.js";
 import { logger } from "../logger.js";
-import { readFeaturePrompt } from "../office.js";
+import { readFunction } from "../office.js";
 import { startRun, waitForRun } from "../run/engine.js";
 import {
   analysisDocPath,
@@ -282,8 +282,6 @@ const MAX_DIFF_CHARS = 30_000;
 projectFilesRoute.post("/:id/git/suggest-commit", async (c) => {
   const p = project(c);
   if (!p) return c.json({ error: "not_found" }, 404);
-  const data = await parseBody(c, z.object({ agent: z.string().min(1) }));
-  if (isResponse(data)) return data;
 
   let diff: string;
   try {
@@ -296,8 +294,8 @@ projectFilesRoute.post("/:id/git/suggest-commit", async (c) => {
     return c.json({ error: (e as Error).message }, 400);
   }
 
-  // 양식 = 코드 고정 / 지침(스타일) = office/prompts/git-commit.md — 에이전트의
-  // 개인 prompt 는 쓰지 않는다(promptOverride). 기능 출력의 일관성이 목적.
+  // 양식 = 코드 고정 / 지침(스타일) = office/prompts/git-commit.md. 기능(git-commit)
+  // 으로 실행 — 에이전트 선택 없이 기능에 지정된 어댑터·모델로.
   const prompt =
     "Write a git commit message for the staged diff below.\n" +
     "Mandatory format: first line `<scope>: <imperative summary>` under 72 chars; " +
@@ -305,7 +303,8 @@ projectFilesRoute.post("/:id/git/suggest-commit", async (c) => {
     "Reply with ONLY the commit message — no quotes, no code fences, no explanations.\n\n" +
     "```diff\n" + diff + "\n```";
 
-  const started = await startRun({ agent: data.agent, prompt, promptOverride: readFeaturePrompt("git-commit") });
+  const gitFn = readFunction("git-commit");
+  const started = await startRun({ fn: { name: gitFn.name, adapter: gitFn.adapter, model: gitFn.model }, prompt, promptOverride: gitFn.prompt });
   if (!started.ok) return c.json({ error: started.error }, started.status);
   try {
     const done = await waitForRun(started.run.id, 120_000);
@@ -365,7 +364,7 @@ const ANALYZE_TIMEOUT_MS = 5 * 60_000;
 projectFilesRoute.post("/:id/analyze", async (c) => {
   const p = project(c);
   if (!p) return c.json({ error: "not_found" }, 404);
-  const data = await parseBody(c, z.object({ agent: z.string().min(1), lang: z.enum(["en", "ko"]).default("en") }));
+  const data = await parseBody(c, z.object({ lang: z.enum(["en", "ko"]).default("en") }));
   if (isResponse(data)) return data;
 
   const prompt =
@@ -386,7 +385,8 @@ projectFilesRoute.post("/:id/analyze", async (c) => {
     "The JSON shape above is mandatory.\n" +
     (data.lang === "ko" ? "Write all string values in Korean.\n" : "");
 
-  const started = await startRun({ agent: data.agent, prompt, projectId: p.id, promptOverride: readFeaturePrompt("analysis") });
+  const anFn = readFunction("analysis");
+  const started = await startRun({ fn: { name: anFn.name, adapter: anFn.adapter, model: anFn.model }, prompt, projectId: p.id, promptOverride: anFn.prompt });
   if (!started.ok) return c.json({ error: started.error }, started.status);
   try {
     const done = await waitForRun(started.run.id, ANALYZE_TIMEOUT_MS);
@@ -408,7 +408,7 @@ projectFilesRoute.post("/:id/analyze", async (c) => {
     } catch {
       return c.json({ error: "unparseable_report", raw: raw.slice(0, 2000) }, 502);
     }
-    const analysis: AnalysisRecord = { analyzedAt: new Date().toISOString(), agent: data.agent, runId: started.run.id, report };
+    const analysis: AnalysisRecord = { analyzedAt: new Date().toISOString(), agent: `fn:${anFn.name}`, runId: started.run.id, report };
     // 히스토리 — 직전 리포트들을 보존(최신 20개). 건강도 추이의 원천.
     let history: unknown[] = [];
     try {
