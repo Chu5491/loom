@@ -27,6 +27,7 @@ import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
 import { getParam, setParams } from "../lib/url.js";
+import { extractReport, type WorkReport } from "../lib/report.js";
 
 interface UserMsg { id: string; role: "user"; agent: string; text: string }
 interface AgentMsg { id: string; role: "agent"; agent: string; runId: string; fromAgent?: string; startedAt?: string }
@@ -1525,16 +1526,6 @@ interface TraceItem {
   target?: string;
   action?: "edit" | "write";
 }
-// 작업 리포트 — 에이전트가 작업 턴 끝에 붙이는 고정 스키마(global 규칙). 전 CLI 가
-// "끝에 텍스트로 적는" 방식이라 평문 CLI(agy/devin)도 동일하게 낸다.
-interface WorkReport {
-  summary?: string;
-  steps?: string[];
-  files?: { path: string; action?: string }[];
-  decisions?: string[];
-  blockers?: string[];
-  question?: string | null;
-}
 interface DerivedView {
   trace: TraceItem[];
   body: string;
@@ -1545,23 +1536,6 @@ interface DerivedView {
   loadout?: { skills: string[]; mcp: string[]; delegate: boolean };
 }
 
-// 본문 끝의 ```loom-report 펜스 블록을 떼어 리포트로 파싱. 코드 예시(```json 등)와
-// 충돌하지 않도록 전용 태그를 쓴다. 파싱 실패·미존재면 report=undefined, 본문 그대로.
-const REPORT_FENCE = /```loom-report\s*\n([\s\S]*?)```\s*$/;
-function extractReport(body: string): { body: string; report?: WorkReport } {
-  const m = REPORT_FENCE.exec(body);
-  if (!m) return { body };
-  const raw = m[1]!.trim();
-  // 일부 CLI 가 펜스 안 JSON 의 따옴표를 \" 로 이스케이프해 내놓는다 — 1차 파싱
-  // 실패 시 한 번 de-escape 해 재시도(전 CLI 견고화).
-  const tryParse = (s: string): WorkReport | null => {
-    try { const v = JSON.parse(s); return v && typeof v === "object" ? (v as WorkReport) : null; }
-    catch { return null; }
-  };
-  const parsed = tryParse(raw) ?? tryParse(raw.replace(/\\"/g, '"').replace(/\\\\/g, "\\"));
-  if (parsed) return { body: body.slice(0, m.index).trimEnd(), report: parsed };
-  return { body };
-}
 // 도구 표시명 정리 — mcp__server__tool → server·tool, 그 외는 그대로.
 function prettyTool(name: string): string {
   const m = /^mcp__([^_]+)__(.+)$/.exec(name);
