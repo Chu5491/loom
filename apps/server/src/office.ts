@@ -66,6 +66,7 @@ export const agentSchema = z.object({
   reasoning: z.enum(["high", "medium", "low"]).optional(),
   permission: z.enum(["default", "acceptEdits", "bypass"]).optional(),
   delegate: z.boolean().optional(),
+  master: z.boolean().optional(),
   roles: z.array(z.enum(["git", "analyst", "author"])).optional(),
   prompt: z.string().optional(),
   rules: z.array(z.string()).optional(),

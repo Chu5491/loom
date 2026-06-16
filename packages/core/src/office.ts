@@ -45,6 +45,9 @@ export interface AgentSpec {
   /** 팀원 위임 허용 — run 에 loom 의 delegate MCP 도구가 실려, 에이전트가 작업 중
    *  다른 office 에이전트를 서브에이전트로 직접 호출할 수 있다(opt-in). */
   delegate?: boolean;
+  /** 마스터 — 채팅의 기본·유일 인입점. 사용자 요청을 파악해 직접 답하거나 팀원에게
+   *  위임(워크플로우)한다. 단 하나만 master:true(첫 번째를 마스터로 취급). */
+  master?: boolean;
   /** 전담 역할 — UI 의 해당 기능이 이 에이전트를 기본 선택한다.
    *  git=커밋 메시지 생성, analyst=프로젝트 분석 리포트. */
   roles?: AgentRole[];

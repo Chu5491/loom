@@ -134,10 +134,10 @@ export function TalkPage({ project }: { project: Project }) {
   }, []);
   useEffect(() => setFeed([]), [threadId]);
 
-  // 기본 대상 = 리드(위임 가능 에이전트). 그냥 보내면 리드가 받아 내부 위임 →
-  // 한 작업이 된다. 특정 에이전트와 직접 대화하려면 컴포저에서 바꾸면 된다.
+  // 기본 대상 = 마스터(유일 인입점). 그냥 보내면 마스터가 받아 직접 답하거나 팀원에게
+  // 위임 → 한 작업이 된다. 특정 에이전트와 직접 대화하려면 컴포저에서 바꾸면 된다.
   useEffect(() => {
-    if (!active && agents.length) setActive((agents.find((a) => a.delegate) ?? agents[0]!).name);
+    if (!active && agents.length) setActive((agents.find((a) => a.master) ?? agents.find((a) => a.delegate) ?? agents[0]!).name);
   }, [agents, active]);
 
   // ⌘K 팔레트의 프로젝트 내부 명령 — 뷰 전환·스레드 점프·워크플로우 모달·타겟.
@@ -806,7 +806,7 @@ function TeamPanel({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{a.label || a.name}</span>
-                    {a.delegate ? <span title={t("talk.target.lead")} className="shrink-0"><Crown className="size-3 text-amber-500" /></span> : null}
+                    {a.master ? <span title={t("talk.target.master")} className="shrink-0"><Crown className="size-3 text-amber-500" /></span> : null}
                     {on ? <span className="shrink-0 rounded-full bg-primary/15 px-1.5 text-[9px] font-semibold uppercase text-primary">{t("talk.talkingTo")}</span> : null}
                   </span>
                   <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
@@ -1810,10 +1810,10 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
   }, [open]);
   const isAuto = active === "auto";
   const cur = agents.find((a) => a.name === active) ?? agents[0];
-  // 리드 = 위임 가능 에이전트. 대표(사용자)가 브리핑하는 대상이라 상단에 따로 묶어 보여준다.
-  const leads = agents.filter((a) => a.delegate);
-  const team = agents.filter((a) => !a.delegate);
-  const curIsLead = !!cur?.delegate;
+  // 마스터 = 채팅의 기본·유일 인입점. 나머지는 팀원(직접 지명 가능).
+  const master = agents.find((a) => a.master);
+  const team = agents.filter((a) => !a.master);
+  const curIsMaster = !!cur?.master;
 
   const Row = (a: AgentSpec) => (
     <button
@@ -1829,7 +1829,7 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="truncate font-medium">{a.label || a.name}</span>
-          {a.delegate ? <Crown className="size-3 shrink-0 text-amber-500" /> : null}
+          {a.master ? <Crown className="size-3 shrink-0 text-amber-500" /> : null}
         </span>
         <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
       </span>
@@ -1848,10 +1848,10 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
         {isAuto ? (
           <span className="flex size-5 items-center justify-center rounded-full bg-primary/20 text-primary"><Sparkles className="size-3" /></span>
         ) : cur ? <Avatar agent={cur} size={20} /> : null}
-        {/* 현재 대상이 리드면 '리드' 배지를 같이 — "대화는 리드에게 간다"가 한눈에 보이게. */}
-        {curIsLead ? (
+        {/* 현재 대상이 마스터면 '마스터' 배지 — "대화는 마스터에게 간다"가 한눈에. */}
+        {curIsMaster ? (
           <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/15 px-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-            <Crown className="size-2.5" />{t("talk.target.lead")}
+            <Crown className="size-2.5" />{t("talk.target.master")}
           </span>
         ) : null}
         <span className="max-w-28 truncate">{isAuto ? t("talk.target.auto") : cur?.label || cur?.name || "—"}</span>
@@ -1859,13 +1859,13 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
       </button>
       {open ? (
         <div className="absolute bottom-full left-0 z-30 mb-1.5 w-56 rounded-xl border border-border bg-card p-1 shadow-lg">
-          {/* 리드 — 대표가 일을 맡기면 받아서 내부로 위임하는 책임자. */}
-          {leads.length > 0 ? (
+          {/* 마스터 — 요청을 받아 직접 답하거나 팀원에게 위임하는 인입점. */}
+          {master ? (
             <>
               <p className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
-                <Crown className="size-3" />{t("talk.target.lead")}
+                <Crown className="size-3" />{t("talk.target.master")}
               </p>
-              {leads.map(Row)}
+              {Row(master)}
             </>
           ) : null}
           {/* 팀원 — 특정 전문가에게 직접 지명. */}
