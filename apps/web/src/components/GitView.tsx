@@ -63,13 +63,13 @@ export function GitView({ project }: { project: Project }) {
   const suggest = useMutation({
     mutationFn: (agent: string) => api.gitSuggestCommit(project.id, agent),
     onSuccess: (r) => { setMessage(r.message); setErr(null); },
-    onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
   // 원격 동기화 — push/pull/fetch. 결과·에러를 그대로 표면화.
   const remote = useMutation({
     mutationFn: (op: "push" | "pull" | "fetch") => api.gitRemote(project.id, op),
     onSuccess: (r) => { setErr(null); invalidate(); if (r.output && r.output !== "done") setErr(null); },
-    onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
   const s = status.data;

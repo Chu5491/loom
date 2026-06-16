@@ -140,7 +140,7 @@ export function WorkflowEditor({
   const save = useMutation({
     mutationFn: (wf: WorkflowSpec) => api.putWorkflow(wf),
     onSuccess: () => { setDirty(false); setErr(null); void qc.invalidateQueries({ queryKey: ["office"] }); },
-    onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
   const del = useMutation({
     mutationFn: (name: string) => api.deleteWorkflow(name),

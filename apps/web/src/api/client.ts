@@ -61,7 +61,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
+    // 서버는 실패를 { error: "..." } 로 준다 — 그 메시지만 꺼내 사용자에게 보인다.
+    // JSON 이 아니면(프록시 HTML 등) 원문, 그것도 없으면 상태 텍스트로 폴백.
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: unknown };
+      if (typeof parsed.error === "string") message = parsed.error;
+    } catch {
+      // body 가 JSON 이 아님 — 원문 텍스트를 그대로 쓴다
+    }
+    throw new Error(message || res.statusText || `HTTP ${res.status}`);
   }
   return (await res.json()) as T;
 }

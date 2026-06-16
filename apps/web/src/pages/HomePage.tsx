@@ -561,7 +561,7 @@ export function AddProject({
         onError: (e) =>
             setErr(
                 e instanceof Error
-                    ? e.message.replace(/^\d+ [^:]+: /, "")
+                    ? e.message
                     : String(e)
             ),
     });

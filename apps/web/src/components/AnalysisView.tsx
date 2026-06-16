@@ -51,7 +51,7 @@ export function AnalysisView({ project }: { project: Project }) {
   const analyze = useMutation({
     mutationFn: () => api.analyzeProject(project.id, picked, lang),
     onSuccess: () => { setErr(null); void qc.invalidateQueries({ queryKey: ["analysis", project.id] }); },
-    onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
   const analysis = stored.data?.analysis ?? null;

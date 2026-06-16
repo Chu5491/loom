@@ -33,7 +33,7 @@ export function SchedulesView({ project }: { project: Project }) {
 
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const onErr = (e: unknown) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e));
+  const onErr = (e: unknown) => setErr(e instanceof Error ? e.message : String(e));
 
   const create = useMutation({
     mutationFn: (body: { name: string; agent: string; prompt: string; cron: string; workflow: string | null; feature?: "standup" | null }) =>
@@ -194,7 +194,7 @@ function StandupCard({
   const gen = useMutation({
     mutationFn: (a: string) => api.runStandup(project.id, a, lang === "ko" ? "ko" : "en"),
     onSuccess: () => { setErr(null); void qc.invalidateQueries({ queryKey: ["standup", project.id] }); },
-    onError: (e) => setErr(e instanceof Error ? e.message.replace(/^\d+ [^:]+: /, "") : String(e)),
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
   const picked = agent || agents[0] || "";
   const latest = standup.data?.standup ?? null;
