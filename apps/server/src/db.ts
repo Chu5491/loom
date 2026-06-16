@@ -342,6 +342,21 @@ export function deleteRunDb(id: string): void {
   db.prepare(`DELETE FROM runs WHERE id = ?`).run(id);
 }
 
+/** 보존 스윕용 — ended_at 이 cutoff 이전인 끝난 run id 들(running 은 제외). */
+export function runIdsEndedBefore(cutoffIso: string): string[] {
+  return getDb()
+    .prepare<[string], { id: string }>(
+      `SELECT id FROM runs WHERE status != 'running' AND ended_at IS NOT NULL AND ended_at < ?`,
+    )
+    .all(cutoffIso)
+    .map((r) => r.id);
+}
+
+/** 삭제 후 디스크 회수 — sqlite 는 행을 지워도 파일이 안 줄어든다(VACUUM 필요). */
+export function vacuumDb(): void {
+  getDb().exec(`VACUUM`);
+}
+
 /** 에이전트 파일 활동 — 이 프로젝트에서 file 이벤트를 남긴 run 들의 요약(최신순). */
 export interface AgentFileActivity {
   runId: string;

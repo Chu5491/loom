@@ -33,7 +33,15 @@ if (!Number.isInteger(maxConcurrentRuns) || maxConcurrentRuns < 1) {
   throw new Error(`LOOM_MAX_RUNS 값이 잘못됨: "${rawMax}" — 1 이상 정수 필요`);
 }
 
-export const config = { port, host, home, maxConcurrentRuns, webDir } as const;
+// 기록 보존 일수 — ended_at 이 이보다 오래된 run(+로그)을 자동 정리. 0=비활성(무한 보존).
+// 헌법: data/ 는 기록일 뿐 — 디스크가 무한정 차지 않게 한다.
+const rawRetention = process.env.LOOM_RETENTION_DAYS ?? "30";
+const retentionDays = Number(rawRetention);
+if (!Number.isInteger(retentionDays) || retentionDays < 0) {
+  throw new Error(`LOOM_RETENTION_DAYS 값이 잘못됨: "${rawRetention}" — 0 이상 정수 필요(0=비활성)`);
+}
+
+export const config = { port, host, home, maxConcurrentRuns, webDir, retentionDays } as const;
 
 export const paths = {
   office: path.join(home, "office"),
