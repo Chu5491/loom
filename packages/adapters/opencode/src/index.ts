@@ -77,6 +77,22 @@ function readUserOpencodeConfig(): Record<string, unknown> {
   }
 }
 
+/** 순수 — 사용자 opencode 설정에 우리 MCP 서버만 더한다(이름 충돌 시 우리 우선).
+ *  사용자의 기존 .mcp 서버·다른 설정은 보존: 통째로 덮어쓰면 run 중 사용자
+ *  전역 MCP 가 사라진다. 새 객체를 돌려준다(입력 불변). */
+export function mergeOpencodeMcp(
+  userConfig: Record<string, unknown>,
+  servers: McpServer[],
+): Record<string, unknown> {
+  const existingMcp =
+    userConfig.mcp && typeof userConfig.mcp === "object"
+      ? (userConfig.mcp as Record<string, unknown>)
+      : {};
+  const mcp: Record<string, unknown> = { ...existingMcp };
+  for (const s of servers) mcp[s.name] = toOpencodeMcpEntry(s);
+  return { ...userConfig, mcp };
+}
+
 // ── --format json extraction ───────────────────────────────────────────
 // `opencode run --format json` emits NDJSON:
 //   { type: "tool_use",    timestamp, sessionID, part: { tool, state: { status, input, output } } }
@@ -210,10 +226,7 @@ export const opencodeAdapter = defineCliAdapter<OpencodeConfig>({
     const opencodeDir = path.join(xdgRoot, "opencode");
     fs.mkdirSync(opencodeDir, { recursive: true });
 
-    const merged = readUserOpencodeConfig();
-    const mcpMap: Record<string, unknown> = {};
-    for (const s of servers) mcpMap[s.name] = toOpencodeMcpEntry(s);
-    merged.mcp = mcpMap;
+    const merged = mergeOpencodeMcp(readUserOpencodeConfig(), servers);
     fs.writeFileSync(
       path.join(opencodeDir, "opencode.json"),
       JSON.stringify(merged, null, 2),

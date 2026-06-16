@@ -4,6 +4,7 @@ import {
   buildOpencodeCommand,
   opencodeAdapter,
   toOpencodeMcpEntry,
+  mergeOpencodeMcp,
   extractOpencodeSessionId,
   extractOpencodeTouchedEdits,
   extractOpencodeTouchedPaths,
@@ -145,6 +146,36 @@ describe("toOpencodeMcpEntry", () => {
       makeServer({ name: "y", kind: "http", url: "https://y.com" }),
     );
     expect(remote).not.toHaveProperty("headers");
+  });
+});
+
+describe("mergeOpencodeMcp", () => {
+  const loom = makeServer({ name: "loom", kind: "http", url: "https://loom.local/mcp" });
+
+  it("preserves the user's existing mcp servers and other config while adding loom's", () => {
+    const user = {
+      model: "anthropic/claude",
+      mcp: { mine: { type: "local", command: ["my-mcp"] } },
+    };
+    const merged = mergeOpencodeMcp(user, [loom]) as {
+      model: string;
+      mcp: Record<string, unknown>;
+    };
+    expect(merged.mcp.mine).toBeDefined(); // 사용자 서버 보존
+    expect(merged.mcp.loom).toBeDefined(); // loom 서버 추가
+    expect(merged.model).toBe("anthropic/claude"); // 다른 설정 보존
+  });
+
+  it("starts from empty when the user has no mcp field", () => {
+    const merged = mergeOpencodeMcp({ model: "x" }, [loom]) as { mcp: Record<string, unknown> };
+    expect(Object.keys(merged.mcp)).toEqual(["loom"]);
+  });
+
+  it("loom wins on name conflict and does not mutate the input", () => {
+    const user = { mcp: { loom: { type: "local", command: ["stale"] } } };
+    const merged = mergeOpencodeMcp(user, [loom]) as { mcp: Record<string, { type: string }> };
+    expect(merged.mcp.loom?.type).toBe("remote"); // 우리 항목으로 교체
+    expect((user.mcp.loom as { command: string[] }).command).toEqual(["stale"]); // 입력 불변
   });
 });
 
