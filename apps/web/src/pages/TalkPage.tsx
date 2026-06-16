@@ -285,36 +285,56 @@ export function TalkPage({ project }: { project: Project }) {
     return <Centered>{t("talk.noAgents")}</Centered>;
   }
 
-  const wsViews: { key: WsView; label: string; icon: React.ReactNode }[] = [
-    { key: "talk", label: t("ws.talk"), icon: <MessagesSquare className="size-4" /> },
-    { key: "tasks", label: t("ws.tasks"), icon: <ListTodo className="size-4" /> },
-    { key: "meeting", label: t("ws.meeting"), icon: <Users className="size-4" /> },
-    { key: "files", label: t("ws.files"), icon: <FolderOpen className="size-4" /> },
-    { key: "git", label: t("ws.git"), icon: <GitBranch className="size-4" /> },
-    { key: "analysis", label: t("ws.analysis"), icon: <ScanSearch className="size-4" /> },
-    { key: "schedules", label: t("ws.schedules"), icon: <CalendarClock className="size-4" /> },
+  // 두 그룹으로 분리 — 협업(대화·작업·회의실)과 프로젝트 도구(파일·깃·분석·스케줄)는
+  // 기능이 다르다(req 7). 한 워크스페이스 안에서 구분선 + 그룹 라벨로 나눈다.
+  const wsGroups: { key: string; label: string; items: { key: WsView; label: string; icon: React.ReactNode }[] }[] = [
+    {
+      key: "collab",
+      label: t("ws.group.collab"),
+      items: [
+        { key: "talk", label: t("ws.talk"), icon: <MessagesSquare className="size-4" /> },
+        { key: "tasks", label: t("ws.tasks"), icon: <ListTodo className="size-4" /> },
+        { key: "meeting", label: t("ws.meeting"), icon: <Users className="size-4" /> },
+      ],
+    },
+    {
+      key: "tools",
+      label: t("ws.group.tools"),
+      items: [
+        { key: "files", label: t("ws.files"), icon: <FolderOpen className="size-4" /> },
+        { key: "git", label: t("ws.git"), icon: <GitBranch className="size-4" /> },
+        { key: "analysis", label: t("ws.analysis"), icon: <ScanSearch className="size-4" /> },
+        { key: "schedules", label: t("ws.schedules"), icon: <CalendarClock className="size-4" /> },
+      ],
+    },
   ];
 
   return (
     <div className="workspace-enter flex min-h-0 flex-1 flex-col px-4 py-3 sm:px-6 lg:px-8">
       {/* 워크스페이스 바 — 뷰 스위처(헤더 네비와 같은 글로우 필) + 스레드 컨트롤 */}
       <div className="flex items-center gap-2 py-2">
-        <div className="inline-flex gap-1">
-          {wsViews.map((v) => (
-            <button
-              key={v.key}
-              type="button"
-              onClick={() => setView(v.key)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all",
-                view === v.key
-                  ? "bg-primary/15 text-foreground shadow-[var(--shadow-glow-sm)]"
-                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-              )}
-            >
-              <span className={cn(view === v.key && "text-primary")}>{v.icon}</span>
-              {v.label}
-            </button>
+        <div className="inline-flex items-center gap-1">
+          {wsGroups.map((g, gi) => (
+            <div key={g.key} className="inline-flex items-center gap-1">
+              {gi > 0 ? <span className="mx-1.5 h-5 w-px shrink-0 bg-border" /> : null}
+              <span className="hidden shrink-0 px-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/60 xl:inline">{g.label}</span>
+              {g.items.map((v) => (
+                <button
+                  key={v.key}
+                  type="button"
+                  onClick={() => setView(v.key)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all",
+                    view === v.key
+                      ? "bg-primary/15 text-foreground shadow-[var(--shadow-glow-sm)]"
+                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                  )}
+                >
+                  <span className={cn(view === v.key && "text-primary")}>{v.icon}</span>
+                  {v.label}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
 
@@ -1123,7 +1143,7 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
               <span className="text-[11px] text-muted-foreground">${view.result.costUsd.toFixed(4)}</span>
             ) : null}
             <RatingButtons runId={runId} initial={run?.rating ?? null} />
-            {/* 완료 → 작업 상세로(전체 파싱 결과 + 위임 흐름). 리드가 받아 위임한 흐름은
+            {/* 완료 → 작업 상세로(전체 파싱 결과 + 위임 흐름). 마스터가 받아 위임한 흐름은
                 여기서 한 작업으로 본다. */}
             {run?.threadId ? (
               <button

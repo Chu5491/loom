@@ -4,17 +4,16 @@
 // useRunStream 으로 비춰 loom-report 요약·작업량을 표시하고, 상세는 전체 파싱 + 위임 트리.
 
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Loader2, ListTodo, CornerDownRight, ChevronRight, ChevronLeft, Check, Sparkles,
-  FilePen, FileText, Wrench, User, Play, ListChecks, AlertTriangle, HelpCircle, Network, ArrowRight, Crown,
+  ListTodo, ChevronRight, ChevronLeft, Check, Sparkles, MessageSquare,
+  FilePen, FileText, Wrench, User, ListChecks, AlertTriangle, HelpCircle, Network, ArrowRight, Crown,
 } from "lucide-react";
 import type { AdapterKind, OfficeEvent, Project, RunInfo } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
 import { Markdown } from "./Markdown.js";
 import { OrgTree } from "./OrgView.js";
-import { Button } from "./ui.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
 import { extractReport } from "../lib/report.js";
@@ -180,22 +179,20 @@ function TaskRow({
 }
 
 // 작업 상세 — loom-report 를 최대한 파싱해 수행 내용을 섹션별로 + 위임 흐름 트리.
+// 채팅 없음(req 8) — 분석 전용. 이어서/수정은 대화에서 마스터에게.
 function TaskDetail({
   task,
   adapterOf,
   onBack,
-  onFollowUp,
 }: {
   task: Task;
   adapterOf: (name: string) => string;
   onBack: () => void;
-  onFollowUp: (task: Task, text: string) => void;
 }) {
   const { t } = useI18n();
   const stream = useRunStream(task.latest.id);
   const { body, report } = extractReport(streamText(stream.events));
   const running = stream.status === "running" && task.latest.status === "running";
-  const [followText, setFollowText] = useState("");
 
   const files = report?.files?.length ?? 0;
   const steps = report?.steps?.length ?? 0;
@@ -276,35 +273,17 @@ function TaskDetail({
         ) : null}
       </div>
 
-      {/* 흐름 — 당신 → 리드 → 팀원 위임 트리 */}
+      {/* 흐름 — 당신 → 마스터 → 팀원 위임 트리(각 위임의 프롬프트·답변·비용·도구) */}
       <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-foreground"><Network className="size-4" />{t("tasks.d.flow")}</h3>
       <div className="mb-6">
         <OrgTree threadId={task.threadId} request={task.title} adapterOf={adapterOf} />
       </div>
-
-      {/* 이어서 */}
-      {!running ? (
-        <div className="flex items-end gap-2">
-          <textarea
-            value={followText}
-            onChange={(e) => setFollowText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && followText.trim()) { onFollowUp(task, followText.trim()); setFollowText(""); } }}
-            placeholder={t("tasks.followPlaceholder")}
-            rows={2}
-            className="min-w-0 flex-1 resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50"
-          />
-          <Button onClick={() => { if (followText.trim()) { onFollowUp(task, followText.trim()); setFollowText(""); } }} disabled={!followText.trim()} className="shrink-0">
-            <CornerDownRight className="size-4" />{t("tasks.followUp")}
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }
 
 export function TasksView({ project }: { project: Project }) {
   const { t } = useI18n();
-  const qc = useQueryClient();
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
   const agents = useMemo(() => office.data?.office.agents ?? [], [office.data]);
   const adapterOf = (name: string) => agents.find((a) => a.name === name)?.adapter ?? "claude-code";
@@ -318,8 +297,6 @@ export function TasksView({ project }: { project: Project }) {
   const tasks = useMemo(() => groupTasks(runsQ.data?.runs ?? []), [runsQ.data]);
   const runningCount = useMemo(() => tasks.filter((x) => x.latest.status === "running").length, [tasks]);
 
-  const [input, setInput] = useState("");
-  const [target, setTarget] = useState("auto"); // "auto" | agent name
   const [selected, setSelected] = useState<string | null>(null); // 열어둔 작업 threadId
 
   // 대화의 [작업 보기] → loom:cmd { view:"tasks", threadId } 로 특정 작업 상세 열기.
@@ -332,45 +309,23 @@ export function TasksView({ project }: { project: Project }) {
     return () => window.removeEventListener("loom:cmd", onCmd);
   }, []);
 
-  const refetch = () => void qc.invalidateQueries({ queryKey: ["runs", "project", project.id] });
-
-  const assign = useMutation({
-    mutationFn: async () => {
-      const prompt = input.trim();
-      const { thread } = await api.createThread(prompt.slice(0, 60), project.id);
-      if (target === "auto") {
-        await api.dispatchRun({ prompt, projectId: project.id, threadId: thread.id });
-      } else {
-        await api.startRun({ agent: target, prompt, projectId: project.id, threadId: thread.id });
-      }
-    },
-    onSuccess: () => { setInput(""); refetch(); },
-  });
-
-  const followUp = (task: Task, text: string) => {
-    void api
-      .startRun({ agent: task.latest.agent, prompt: text, projectId: project.id, threadId: task.threadId })
-      .then(refetch)
-      .catch(() => {});
-  };
-
-  const canAssign = input.trim().length > 0 && !assign.isPending;
   const current = selected ? tasks.find((x) => x.threadId === selected) ?? null : null;
-  const lead = agents.find((a) => a.delegate);
+  // 새 작업/이어서는 대화에서 마스터에게 — 작업탭은 분석 전용(req 8, 채팅 없음).
+  const goTalk = () => window.dispatchEvent(new CustomEvent("loom:cmd", { detail: { view: "talk" } }));
 
   // 작업 상세 — 전체 파싱 결과 + 위임 흐름.
   if (current) {
     return (
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4 sm:p-6 lg:p-8">
-        <TaskDetail task={current} adapterOf={adapterOf} onBack={() => setSelected(null)} onFollowUp={followUp} />
+        <TaskDetail task={current} adapterOf={adapterOf} onBack={() => setSelected(null)} />
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-6 p-4 sm:p-6 lg:p-8">
-      {/* 헤더 + 업무 맡기기 */}
-      <div className="mx-auto flex w-full max-w-4xl shrink-0 flex-col gap-4">
+      {/* 헤더 — 분석 전용(채팅 없음). 새 작업은 대화에서 마스터에게. */}
+      <div className="mx-auto flex w-full max-w-4xl shrink-0 flex-col gap-3">
         <div className="flex items-end justify-between gap-3 px-1">
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">{t("ws.tasks")}</h2>
@@ -384,46 +339,15 @@ export function TasksView({ project }: { project: Project }) {
           ) : null}
         </div>
 
-        <div className="group relative rounded-2xl border border-border bg-card p-1.5 shadow-sm transition-all focus-within:border-primary/50 focus-within:shadow-md focus-within:ring-1 focus-within:ring-primary/20">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canAssign) assign.mutate(); }}
-            placeholder={t("tasks.placeholder")}
-            rows={2}
-            className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground/70"
-            style={{ minHeight: "60px" }}
-          />
-          <div className="mt-1 flex items-center justify-between rounded-xl border-t border-border/40 bg-muted/20 px-2 py-1.5">
-            <select
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              className="cursor-pointer appearance-none rounded-lg border-none bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <option value="auto">🎯 {t("tasks.auto")}</option>
-              {agents.map((a) => (
-                <option key={a.name} value={a.name}>{a.delegate ? "👑 " : ""}{a.label || a.name}{a.delegate ? ` (${t("talk.target.lead")})` : ""}</option>
-              ))}
-            </select>
-            <div className="flex items-center gap-3">
-              <span className="hidden text-[10px] font-medium text-muted-foreground sm:inline-block">{t("tasks.hint")}</span>
-              <Button onClick={() => assign.mutate()} disabled={!canAssign} size="sm" className="h-8 gap-1.5 rounded-lg px-3">
-                {assign.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5 fill-current" />}
-                {t("tasks.assign")}
-              </Button>
-            </div>
-          </div>
-        </div>
-        {/* 기본 대상이 리드면 안내 — "그냥 맡기면 리드가 받아 위임한다". */}
-        {target === "auto" && lead ? (
-          <p className="px-2 text-[11px] text-muted-foreground">
-            <Crown className="mr-1 inline size-3 text-amber-500" />{t("tasks.leadHint")}
-          </p>
-        ) : null}
-
-        {assign.isError ? (
-          <p className="px-2 text-sm text-destructive">{assign.error instanceof Error ? assign.error.message : String(assign.error)}</p>
-        ) : null}
+        <button
+          type="button"
+          onClick={goTalk}
+          className="group flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/20 px-3.5 py-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          <MessageSquare className="size-4 shrink-0 text-primary" />
+          <span className="flex-1">{t("tasks.newInTalk")}</span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-primary" />
+        </button>
       </div>
 
       {/* 작업 목록 — 분석 행 */}

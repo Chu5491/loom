@@ -87,6 +87,8 @@ const en = {
   "talk.team.handing": "handing off",
   "talk.sidebar.threads": "Conversations",
 
+  "ws.group.collab": "Collaborate",
+  "ws.group.tools": "Project tools",
   "ws.talk": "Talk",
   "ws.tasks": "Tasks",
   "ws.org": "Org",
@@ -140,6 +142,7 @@ const en = {
   "tasks.hint": "⌘ + Enter",
   "tasks.statTasks": "tasks",
   "tasks.statRunning": "running",
+  "tasks.newInTalk": "New work starts in Talk — brief the Master and it delegates.",
   "tasks.leadHint": "Auto routes to the lead, who delegates internally — one task, one flow.",
   "meeting.title": "Meeting room",
   "meeting.subtitle": "Send one proposal; each agent gives its own take, then the chair synthesizes a plan.",
@@ -622,6 +625,8 @@ const ko: Dictionary = {
   "talk.team.handing": "넘기는 중",
   "talk.sidebar.threads": "대화",
 
+  "ws.group.collab": "협업",
+  "ws.group.tools": "프로젝트 도구",
   "ws.talk": "대화",
   "ws.tasks": "작업",
   "ws.org": "조직",
@@ -675,6 +680,7 @@ const ko: Dictionary = {
   "tasks.hint": "⌘ + Enter",
   "tasks.statTasks": "작업",
   "tasks.statRunning": "진행 중",
+  "tasks.newInTalk": "새 작업은 대화에서 — 마스터에게 맡기면 위임합니다.",
   "tasks.leadHint": "자동은 리드에게 보내고, 리드가 내부로 위임합니다 — 하나의 작업, 하나의 흐름.",
   "meeting.title": "회의실",
   "meeting.subtitle": "제안 하나를 보내면 각 에이전트가 자기 의견을 내고, 의장이 계획으로 종합합니다.",
