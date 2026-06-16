@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, FilePen, FilePlus2, FileSearch, FileText, Info,
+  ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, Crown, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare, MessageSquarePlus,
   ListTodo, Loader2, NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
 } from "lucide-react";
@@ -806,6 +806,7 @@ function TeamPanel({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{a.label || a.name}</span>
+                    {a.delegate ? <span title={t("talk.target.lead")} className="shrink-0"><Crown className="size-3 text-amber-500" /></span> : null}
                     {on ? <span className="shrink-0 rounded-full bg-primary/15 px-1.5 text-[9px] font-semibold uppercase text-primary">{t("talk.talkingTo")}</span> : null}
                   </span>
                   <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
@@ -1809,6 +1810,32 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
   }, [open]);
   const isAuto = active === "auto";
   const cur = agents.find((a) => a.name === active) ?? agents[0];
+  // 리드 = 위임 가능 에이전트. 대표(사용자)가 브리핑하는 대상이라 상단에 따로 묶어 보여준다.
+  const leads = agents.filter((a) => a.delegate);
+  const team = agents.filter((a) => !a.delegate);
+  const curIsLead = !!cur?.delegate;
+
+  const Row = (a: AgentSpec) => (
+    <button
+      key={a.name}
+      type="button"
+      onClick={() => { onActive(a.name); setOpen(false); }}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
+        a.name === active ? "bg-primary/10" : "hover:bg-muted/60",
+      )}
+    >
+      <Avatar agent={a} size={22} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate font-medium">{a.label || a.name}</span>
+          {a.delegate ? <Crown className="size-3 shrink-0 text-amber-500" /> : null}
+        </span>
+        <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
+      </span>
+      {a.name === active ? <Check className="size-3.5 shrink-0 text-primary" /> : null}
+    </button>
+  );
 
   return (
     <div ref={ref} className="relative">
@@ -1821,13 +1848,33 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
         {isAuto ? (
           <span className="flex size-5 items-center justify-center rounded-full bg-primary/20 text-primary"><Sparkles className="size-3" /></span>
         ) : cur ? <Avatar agent={cur} size={20} /> : null}
+        {/* 현재 대상이 리드면 '리드' 배지를 같이 — "대화는 리드에게 간다"가 한눈에 보이게. */}
+        {curIsLead ? (
+          <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/15 px-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+            <Crown className="size-2.5" />{t("talk.target.lead")}
+          </span>
+        ) : null}
         <span className="max-w-28 truncate">{isAuto ? t("talk.target.auto") : cur?.label || cur?.name || "—"}</span>
         <ChevronDown className={cn("size-3.5 text-primary transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
         <div className="absolute bottom-full left-0 z-30 mb-1.5 w-56 rounded-xl border border-border bg-card p-1 shadow-lg">
-          <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("talk.target.change")}</p>
+          {/* 리드 — 대표가 일을 맡기면 받아서 내부로 위임하는 책임자. */}
+          {leads.length > 0 ? (
+            <>
+              <p className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                <Crown className="size-3" />{t("talk.target.lead")}
+              </p>
+              {leads.map(Row)}
+            </>
+          ) : null}
+          {/* 팀원 — 특정 전문가에게 직접 지명. */}
+          {team.length > 0 ? (
+            <p className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("talk.target.team")}</p>
+          ) : null}
+          {team.map(Row)}
           {/* @auto — 서버가 작업 텍스트로 적임자 자동 선택. */}
+          <p className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("talk.target.other")}</p>
           <button
             type="button"
             onClick={() => { onActive("auto"); setOpen(false); }}
@@ -1843,24 +1890,6 @@ function TargetSelector({ agents, active, onActive }: { agents: AgentSpec[]; act
             </span>
             {isAuto ? <Check className="size-3.5 shrink-0 text-primary" /> : null}
           </button>
-          {agents.map((a) => (
-            <button
-              key={a.name}
-              type="button"
-              onClick={() => { onActive(a.name); setOpen(false); }}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
-                a.name === active ? "bg-primary/10" : "hover:bg-muted/60",
-              )}
-            >
-              <Avatar agent={a} size={22} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{a.label || a.name}</span>
-                <span className="block truncate font-mono text-[10px] text-muted-foreground">{a.model || a.adapter}</span>
-              </span>
-              {a.name === active ? <Check className="size-3.5 shrink-0 text-primary" /> : null}
-            </button>
-          ))}
         </div>
       ) : null}
     </div>
