@@ -254,7 +254,7 @@ export function MeetingView({ project }: { project: Project }) {
       {/* 우측 — 작성 폼 또는 선택한 회의 상세 */}
       <div className="min-w-0 flex-1 overflow-y-auto">
         {composing || !current ? (
-          <div className="mx-auto flex w-full max-w-4xl animate-in fade-in slide-in-from-bottom-4 flex-col gap-8 pb-12 pt-4">
+          <div className="mx-auto flex w-full max-w-5xl animate-in fade-in slide-in-from-bottom-4 flex-col gap-8 pb-12 pt-4">
             
             <div className="text-center">
               <div className="mx-auto mb-4 inline-flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-sm shadow-primary/10">
@@ -265,7 +265,7 @@ export function MeetingView({ project }: { project: Project }) {
             </div>
 
             {/* 1. 안건 보드 */}
-            <div className="relative mx-auto w-full max-w-3xl">
+            <div className="relative w-full">
               <div className="absolute -inset-x-6 -inset-y-4 z-0 rounded-[3rem] bg-gradient-to-b from-primary/5 to-transparent blur-xl" />
               <div className="relative z-10 flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/80 shadow-sm backdrop-blur-md transition-all focus-within:border-primary/50 focus-within:shadow-md focus-within:shadow-primary/5">
                 <div className="flex items-center gap-2 border-b border-border/50 bg-muted/20 px-6 py-4">
@@ -285,7 +285,7 @@ export function MeetingView({ project }: { project: Project }) {
             </div>
 
             {/* 2. 회의 설정 영역 (통합형 대시보드 구조) */}
-            <div className="mx-auto mt-4 flex w-full max-w-3xl flex-col rounded-3xl border border-border/50 bg-card/50 p-6 shadow-sm backdrop-blur-sm sm:p-8">
+            <div className="mt-4 flex w-full flex-col rounded-3xl border border-border/50 bg-card/50 p-6 shadow-sm backdrop-blur-sm sm:p-8">
               {/* 참석자 선택 그리드 */}
               <div className="mb-8">
                 <div className="mb-5 flex items-center justify-between">
