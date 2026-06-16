@@ -40,5 +40,6 @@ export const paths = {
   data: path.join(home, "data"),
   logs: path.join(home, "data", "logs"),
   loadouts: path.join(home, "data", "loadouts"),
+  runPids: path.join(home, "data", "run-pids"), // 살아있는 run 의 그룹 pid — 하드 크래시 후 부팅 시 회수.
   db: path.join(home, "data", "loom.db"), // 런 기록(history) — 정의 아님. gitignore.
 } as const;

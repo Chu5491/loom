@@ -24,6 +24,7 @@ import { gatesRoute } from "./routes/gates.js";
 import { schedulesRoute } from "./routes/schedules.js";
 import { usageRoute } from "./routes/usage.js";
 import { cancelAllRunning, pruneOrphanLogs } from "./run/engine.js";
+import { reapOrphanPids } from "./run/orphans.js";
 import { reschedule, stopScheduler } from "./run/scheduler.js";
 import { restoreWorkflowState } from "./run/workflow.js";
 import { threadsRoute } from "./routes/threads.js";
@@ -78,6 +79,9 @@ export async function bootServer(): Promise<BootedServer> {
   ensureOffice();
   // run 스코프 loadout 잔재 청소 — 크래시로 finish 를 못 거친 디렉토리가 쌓이지 않게.
   fs.rmSync(paths.loadouts, { recursive: true, force: true });
+  // 하드 크래시(서버 SIGKILL) 후 살아남은 자식 프로세스 그룹 회수 — DB 정리 전에.
+  const reaped = reapOrphanPids();
+  if (reaped > 0) logger.warn({ reaped }, "reaped orphan child process groups from a previous crash");
   // 직전 서버와 함께 죽은 run 들 — "running" 좀비로 남아 UI 에서 멈출 수 없게 되는 것 방지.
   const orphans = failOrphanRuns();
   if (orphans > 0) logger.warn({ orphans }, "marked orphan running runs as failed");

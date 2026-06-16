@@ -22,6 +22,7 @@ import { composePrompt } from "./compose.js";
 import { gitFilesTouchedSince } from "./git-changes.js";
 import { analysisDocPath, notesPath } from "./project-memory.js";
 import { materializeLoadout } from "./loadout.js";
+import { clearRunPid, recordRunPid } from "./orphans.js";
 import { parseLine } from "./parse.js";
 import { estimateCost } from "./pricing.js";
 // 순환 import (workflow.ts ↔ engine.ts) — 양쪽 다 호출 시점에만 쓰는 함수 참조라 안전.
@@ -549,6 +550,8 @@ async function run(
       adapterConfig,
     );
     state.kill = handle.kill;
+    // 그룹 pid 기록 — 하드 크래시(서버 SIGKILL) 후 부팅 시 이 자식을 회수한다.
+    recordRunPid(state.info.id, handle.pid);
     const { exitCode } = await handle.promise;
 
     if (state.buf.trim()) {
@@ -814,6 +817,8 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
       // 정리 실패는 무해 — 부팅 시 loadouts 전체 청소가 잔재를 거둔다
     }
   }
+  // 정상 종료 — pidfile 제거(부팅 시 헛된 회수 kill 방지).
+  clearRunPid(state.info.id);
   for (const fn of state.listeners) {
     try {
       fn({ kind: "done", run: state.info });

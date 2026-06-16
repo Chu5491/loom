@@ -8,14 +8,17 @@ const IS_WIN = process.platform === "win32";
 /** SIGTERM 을 무시하는 CLI 대비 — 이 유예 안에 안 죽으면 SIGKILL 승격. */
 const KILL_GRACE_MS = 5_000;
 
-function killProc(pid: number | undefined): void {
-  if (pid === undefined) return;
+/** 프로세스 그룹 종료 — SIGTERM 후 유예 내 안 죽으면 SIGKILL 승격.
+ *  detached spawn 으로 자식이 그룹 리더라, 음수 pid 시그널로 CLI 가 띄운
+ *  손자(MCP stdio 서버, bash 도구)까지 함께 거둔다. 직계만 죽이면 고아가 남는다.
+ *  부팅 시 고아 프로세스 회수에도 재사용(주의: 하드 크래시~부팅 사이 pid 가
+ *  재사용되면 다른 그룹을 건드릴 수 있는 best-effort — 직접 kill 의 본질적 한계). */
+export function killProcessGroup(pid: number | undefined): void {
+  if (pid === undefined || pid <= 0) return;
   if (IS_WIN) {
     try { exec(`taskkill /PID ${pid} /T /F`).unref(); } catch { /* process may have exited */ }
     return;
   }
-  // detached spawn 으로 자식이 프로세스 그룹 리더 — 음수 pid 시그널로 CLI 가
-  // 띄운 손자(MCP stdio 서버, bash 도구)까지 함께 종료. 직계만 죽이면 고아가 남는다.
   const group = -pid;
   try {
     process.kill(group, "SIGTERM");
@@ -26,6 +29,10 @@ function killProc(pid: number | undefined): void {
     try { process.kill(group, "SIGKILL"); } catch { /* 유예 중 종료됨 */ }
   }, KILL_GRACE_MS);
   escalate.unref();
+}
+
+function killProc(pid: number | undefined): void {
+  killProcessGroup(pid);
 }
 
 export interface SpawnProcessOptions {

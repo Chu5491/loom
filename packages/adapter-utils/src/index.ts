@@ -1,4 +1,4 @@
-export { spawnProcess, type SpawnProcessOptions } from "./spawn.js";
+export { spawnProcess, killProcessGroup, type SpawnProcessOptions } from "./spawn.js";
 export {
   defineCliAdapter,
   applyPrompt,
