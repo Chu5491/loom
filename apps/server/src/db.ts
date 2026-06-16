@@ -60,6 +60,7 @@ export function getDb(): DB {
       project_id  TEXT,
       enabled     INTEGER NOT NULL DEFAULT 1,
       last_run_at TEXT,
+      last_run_id TEXT,
       created_at  TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS gates (
@@ -109,6 +110,10 @@ export function getDb(): DB {
   }
   if (schedCols.length > 0 && !schedCols.some((c) => c.name === "feature")) {
     db.exec(`ALTER TABLE schedules ADD COLUMN feature TEXT`);
+  }
+  // 직전 발화 run id — 재시작 후에도 "직전 run 이 아직 도는지" 가드를 시드한다.
+  if (schedCols.length > 0 && !schedCols.some((c) => c.name === "last_run_id")) {
+    db.exec(`ALTER TABLE schedules ADD COLUMN last_run_id TEXT`);
   }
   _db = db;
   return db;
@@ -513,6 +518,21 @@ export function deleteScheduleDb(id: string): boolean {
 
 export function touchScheduleLastRun(id: string, at: string): void {
   getDb().prepare(`UPDATE schedules SET last_run_at = ? WHERE id = ?`).run(at, id);
+}
+
+/** 발화한 run id 를 영속 — 재시작 후 중복 발화 가드(lastFired) 시드용. */
+export function setScheduleLastRunId(id: string, runId: string): void {
+  getDb().prepare(`UPDATE schedules SET last_run_id = ? WHERE id = ?`).run(runId, id);
+}
+
+/** 부팅 시 스케줄러가 lastFired 맵을 시드 — { scheduleId: lastRunId }. */
+export function scheduleLastRunIds(): Array<{ id: string; lastRunId: string }> {
+  return getDb()
+    .prepare<[], { id: string; last_run_id: string | null }>(
+      `SELECT id, last_run_id FROM schedules WHERE last_run_id IS NOT NULL`,
+    )
+    .all()
+    .map((r) => ({ id: r.id, lastRunId: r.last_run_id! }));
 }
 
 /** 이번 달(UTC, 1일 0시 기준) 누적 비용 — 예산 가드용. agent 지정 시 그 에이전트만. */

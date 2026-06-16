@@ -89,6 +89,30 @@ describe("threads + session resume lookup", () => {
   });
 });
 
+// 스케줄 직전-run 영속 — 재시작 후 중복 발화 가드를 시드하는 근거.
+describe("schedule last-run id", () => {
+  it("persists the fired run id and surfaces it for the restart guard", () => {
+    db.insertSchedule({
+      id: "sc1",
+      name: "nightly",
+      agent: "claude",
+      prompt: "go",
+      cron: "0 0 * * *",
+      workflow: null,
+      feature: null,
+      projectId: null,
+      enabled: true,
+      lastRunAt: null,
+      createdAt: "2026-06-12T00:00:00.000Z",
+    });
+    // 발화 전엔 시드할 게 없다.
+    expect(db.scheduleLastRunIds().some((s) => s.id === "sc1")).toBe(false);
+
+    db.setScheduleLastRunId("sc1", "run-xyz");
+    expect(db.scheduleLastRunIds()).toContainEqual({ id: "sc1", lastRunId: "run-xyz" });
+  });
+});
+
 // 워크플로우 일시정지 상태(게이트·join) — 재시작 생존의 근거가 되는 라운드트립.
 describe("gates & join arrivals", () => {
   it("gate roundtrip: insert → list restores all fields → delete", () => {

@@ -3,7 +3,7 @@
 
 import { Cron } from "croner";
 import type { Schedule } from "@loom/core";
-import { listSchedulesDb, touchScheduleLastRun } from "../db.js";
+import { listSchedulesDb, scheduleLastRunIds, setScheduleLastRunId, touchScheduleLastRun } from "../db.js";
 import { logger } from "../logger.js";
 import { readWorkflows } from "../office.js";
 import { getRun, startRun } from "./engine.js";
@@ -49,7 +49,10 @@ function fire(s: Schedule): void {
       logger.warn({ schedule: s.id, name: s.name }, "standup schedule has no project — skipped");
       return;
     }
-    void runStandup(s.projectId, s.agent, "ko", (runId) => lastFired.set(s.id, runId))
+    void runStandup(s.projectId, s.agent, "ko", (runId) => {
+      lastFired.set(s.id, runId);
+      setScheduleLastRunId(s.id, runId);
+    })
       .then((r) => {
         if (!r.ok) logger.warn({ schedule: s.id, name: s.name, error: r.error }, "scheduled standup failed");
         else logger.info({ schedule: s.id, name: s.name, runId: r.standup.runId }, "scheduled standup generated");
@@ -70,6 +73,7 @@ function fire(s: Schedule): void {
       if (!r.ok) logger.warn({ schedule: s.id, name: s.name, error: r.error }, "scheduled run did not start");
       else {
         lastFired.set(s.id, r.run.id);
+        setScheduleLastRunId(s.id, r.run.id);
         logger.info({ schedule: s.id, name: s.name, runId: r.run.id }, "scheduled run fired");
       }
     })
@@ -80,6 +84,10 @@ function fire(s: Schedule): void {
 export function reschedule(): void {
   for (const job of jobs.values()) job.stop();
   jobs.clear();
+  // 재시작 후에도 "직전 run 이 아직 도는지" 가드가 작동하도록 영속된 run id 로 시드.
+  if (lastFired.size === 0) {
+    for (const { id, lastRunId } of scheduleLastRunIds()) lastFired.set(id, lastRunId);
+  }
   for (const s of listSchedulesDb()) {
     if (!s.enabled) continue;
     try {
