@@ -22,6 +22,7 @@ import { projectFilesRoute } from "./routes/project-files.js";
 import { projectsRoute } from "./routes/projects.js";
 import { runsRoute } from "./routes/runs.js";
 import { gatesRoute } from "./routes/gates.js";
+import { meetingsRoute } from "./routes/meetings.js";
 import { schedulesRoute } from "./routes/schedules.js";
 import { usageRoute } from "./routes/usage.js";
 import { cancelAllRunning, pruneOrphanLogs } from "./run/engine.js";
@@ -111,6 +112,7 @@ export async function bootServer(): Promise<BootedServer> {
   app.route("/api/schedules", schedulesRoute);
   app.route("/api/usage", usageRoute);
   app.route("/api/gates", gatesRoute);
+  app.route("/api/meetings", meetingsRoute);
   app.route("/api/backup", backupRoute);
 
   app.onError((err, c) => {

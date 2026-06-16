@@ -322,6 +322,17 @@ export function lastSessionId(threadId: string, agent: string): string | null {
   return row?.session_id ?? null;
 }
 
+/** 회의실 — workflow="meeting:<id>" 로 묶인 run 들(프로젝트 스코프, 오래된 순).
+ *  라우트가 meeting id 로 그룹핑해 패널/의장 run 을 구성한다. */
+export function listMeetingRunsDb(projectId: string | null): RunInfo[] {
+  return getDb()
+    .prepare<[string | null], RunRow>(
+      `SELECT * FROM runs WHERE workflow LIKE 'meeting:%' AND project_id IS ? ORDER BY started_at ASC`,
+    )
+    .all(projectId)
+    .map(toInfo);
+}
+
 export function getRunDb(id: string): RunInfo | null {
   const row = getDb().prepare<[string], RunRow>(`SELECT * FROM runs WHERE id = ?`).get(id);
   return row ? toInfo(row) : null;
