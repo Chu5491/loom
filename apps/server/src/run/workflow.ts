@@ -20,6 +20,10 @@ import { cancelRun, startRun, waitForRun, type StartRunResult } from "./engine.j
 export const MAX_WORKFLOW_STEPS = 20;
 // 위임(10분)보다 길게 — 워크플로우 스텝은 코딩 에이전트의 실제 작업 단위.
 const STEP_TIMEOUT_MS = 30 * 60_000;
+// join backstop — 한 분기가 (fail 엣지가 join 으로 안 이어져) 영영 도착 안 하면
+// join 이 영구 대기하던 한계를 끊는다. 느린 형제 분기(스텝 타임아웃 30분)가
+// 정상 도착할 시간을 충분히 주고도 남게 길게 잡는다.
+export const JOIN_TIMEOUT_MS = 60 * 60_000;
 
 // ── 트리거 판정 (순수) — run 이 끝났을 때 어떤 워크플로우가 발화하는지 ─────────
 export interface RunOutcome {
@@ -119,8 +123,11 @@ export async function resolveGate(id: string, approved: boolean): Promise<{ ok: 
 // 병렬 join — 들어오는 엣지가 2개 이상인 노드는 모든 분기가 도착해야 실행.
 // 도착분은 sqlite 에도 적어 재시작을 견딘다(게이트와 짝을 이루는 시나리오:
 // 한 분기는 join 도착, 다른 분기는 게이트 대기 중 재시작 → 승인 시 합쳐져야 함).
-// 한계: 도착하지 않는 분기(실패로 끊김)가 있으면 join 은 영원히 대기.
+// 도착하지 않는 분기(실패로 끊김)가 있어도 JOIN_TIMEOUT_MS 후 backstop 이 도착분만으로
+// 진행시킨다(armJoinTimeout). 이번 서버 수명 내 join 에 적용 — 재시작으로 복원된
+// join 은 새 분기 도착에 의존(드문 케이스).
 const joinArrivals = new Map<string, { results: string[]; lastRunId: string | null }>();
+const joinTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** 서버 부팅 시 — DB 에 남은 게이트·join 도착분을 인메모리로 복원.
  *  exec 는 office 의 현재 워크플로우 정의로 재구성(편집됐다면 최신 기준).
@@ -219,6 +226,45 @@ async function fanOut(exec: Exec, fromNodeId: string, outcome: "success" | "fail
   }
 }
 
+/** 순수 — 도착분과 누락 분기 안내를 구분선으로 합쳐 {{result}} 로 넘길 텍스트. */
+export function mergeJoinResults(results: string[], missing: number): string {
+  const parts = [...results];
+  if (missing > 0) {
+    parts.push(`(${missing} branch(es) did not arrive within ${JOIN_TIMEOUT_MS / 60_000}m — proceeded without them)`);
+  }
+  return parts.join("\n\n---\n\n");
+}
+
+function clearJoinTimeout(key: string): void {
+  const t = joinTimers.get(key);
+  if (t) {
+    clearTimeout(t);
+    joinTimers.delete(key);
+  }
+}
+
+// join 첫 대기 시 1회 무장 — 만료되면 도착한 분기만으로 강제 진행(영구 대기 방지).
+function armJoinTimeout(exec: Exec, node: Exec["wf"]["nodes"][number], nodeId: string, key: string, incoming: number): void {
+  if (joinTimers.has(key)) return; // 이미 무장됨
+  const timer = setTimeout(() => {
+    joinTimers.delete(key);
+    const arrival = joinArrivals.get(key);
+    if (!arrival) return; // 그새 모두 도착해 정상 진행됨
+    joinArrivals.delete(key);
+    deleteJoinArrivalsDb(exec.chainId, nodeId);
+    const missing = incoming - arrival.results.length;
+    logger.warn(
+      { workflow: exec.wf.name, node: nodeId, arrived: arrival.results.length, incoming, missing },
+      "join timed out — proceeding with arrived branches",
+    );
+    void proceedNode(exec, node, nodeId, mergeJoinResults(arrival.results, missing), arrival.lastRunId).catch((err) =>
+      logger.error({ err, workflow: exec.wf.name, node: nodeId }, "join-timeout proceed threw"),
+    );
+  }, JOIN_TIMEOUT_MS);
+  timer.unref?.();
+  joinTimers.set(key, timer);
+}
+
 // 노드 진입 — join 대기 → 게이트 정지 → 에이전트 run 순으로 분기.
 async function enterNode(exec: Exec, nodeId: string, result: string, prevRunId: string | null): Promise<void> {
   const log = logger.child({ workflow: exec.wf.name, node: nodeId, chain: exec.chainId.slice(0, 8) });
@@ -230,7 +276,6 @@ async function enterNode(exec: Exec, nodeId: string, result: string, prevRunId: 
 
   // join — 들어오는 엣지 수만큼 도착해야 진행. 결과는 구분선으로 합쳐 {{result}} 에.
   const incoming = exec.wf.edges.filter((e) => e.to === nodeId).length;
-  let joinedResult = result;
   if (incoming > 1) {
     const key = `${exec.chainId}:${nodeId}`;
     const arrival = joinArrivals.get(key) ?? { results: [], lastRunId: null };
@@ -240,13 +285,22 @@ async function enterNode(exec: Exec, nodeId: string, result: string, prevRunId: 
     insertJoinArrivalDb(exec.chainId, nodeId, arrival.results.length - 1, result, arrival.lastRunId);
     if (arrival.results.length < incoming) {
       log.info({ arrived: arrival.results.length, incoming }, "join waiting for branches");
+      armJoinTimeout(exec, node, nodeId, key, incoming);
       return;
     }
+    clearJoinTimeout(key);
     joinArrivals.delete(key);
     deleteJoinArrivalsDb(exec.chainId, nodeId);
-    joinedResult = arrival.results.join("\n\n---\n\n");
-    prevRunId = arrival.lastRunId;
+    await proceedNode(exec, node, nodeId, arrival.results.join("\n\n---\n\n"), arrival.lastRunId);
+    return;
   }
+
+  await proceedNode(exec, node, nodeId, result, prevRunId);
+}
+
+// join/단일 진입 후 공통 진행 — 스텝 한도 → 게이트 정지 → 에이전트 run.
+async function proceedNode(exec: Exec, node: Exec["wf"]["nodes"][number], nodeId: string, joinedResult: string, prevRunId: string | null): Promise<void> {
+  const log = logger.child({ workflow: exec.wf.name, node: nodeId, chain: exec.chainId.slice(0, 8) });
 
   if (exec.counter.steps >= MAX_WORKFLOW_STEPS) {
     // 루프 방어 backstop 도달 — 그래프가 여기서 멈춘다. run 컨텍스트 밖이라("raw 는

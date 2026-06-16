@@ -24,7 +24,7 @@ vi.mock("../src/office.js", () => ({
 
 import { startRun as startRunFn, waitForRun as waitForRunFn } from "../src/run/engine.js";
 import { getRunEventsDb as getRunEventsDbFn, insertGateDb as insertGateDbFn } from "../src/db.js";
-import { listGates, resolveGate, startWorkflow } from "../src/run/workflow.js";
+import { JOIN_TIMEOUT_MS, listGates, mergeJoinResults, resolveGate, startWorkflow } from "../src/run/workflow.js";
 
 const mockStartRun = vi.mocked(startRunFn);
 const mockWaitForRun = vi.mocked(waitForRunFn);
@@ -141,17 +141,42 @@ describe("parallel join", () => {
     expect(joined).toContain("RES-r3");
   });
 
-  it("one failed branch leaves the join waiting (documented limitation)", async () => {
-    let n = 0;
-    mockStartRun.mockImplementation(async () => ({ ok: true, run: runInfo(`f${++n}`) }));
-    // n2(f2)는 성공, n3(f3)는 실패 — fail 엣지가 없어 그 분기는 끊긴다.
-    mockWaitForRun.mockImplementation(async (id: string) => runInfo(id, id === "f3" ? "failed" : "succeeded"));
-    mockGetEvents.mockImplementation((id: string) => [{ kind: "result", text: `RES-${id}` }]);
+  it("a lost branch keeps the join waiting until the timeout backstop, then proceeds", async () => {
+    vi.useFakeTimers();
+    try {
+      let n = 0;
+      mockStartRun.mockImplementation(async () => ({ ok: true, run: runInfo(`f${++n}`) }));
+      // n2(f2)는 성공, n3(f3)는 실패 — fail 엣지가 없어 그 분기는 join 에 안 닿는다.
+      mockWaitForRun.mockImplementation(async (id: string) => runInfo(id, id === "f3" ? "failed" : "succeeded"));
+      mockGetEvents.mockImplementation((id: string) => [{ kind: "result", text: `RES-${id}` }]);
 
-    await startWorkflow(wf, { input: "x" });
-    await settle();
+      await startWorkflow(wf, { input: "x" });
+      await vi.advanceTimersByTimeAsync(0); // 초기 비동기(엔트리·분기 run) 흘림
 
-    const agents = mockStartRun.mock.calls.map((c) => c[0].agent);
-    expect(agents).toEqual(["a", "b", "c"]); // n4 미진입 — join 영구 대기
+      // backstop 전: join 은 아직 대기 — n4 미진입.
+      expect(mockStartRun.mock.calls.map((c) => c[0].agent)).toEqual(["a", "b", "c"]);
+
+      await vi.advanceTimersByTimeAsync(JOIN_TIMEOUT_MS + 1_000);
+
+      // backstop 후: 도착한 분기(f2)만으로 n4 진입, 누락 안내가 결과에 들어간다.
+      const agents = mockStartRun.mock.calls.map((c) => c[0].agent);
+      expect(agents).toEqual(["a", "b", "c", "d"]);
+      const joined = mockStartRun.mock.calls[3]![0].prompt as string;
+      expect(joined).toContain("did not arrive");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("mergeJoinResults", () => {
+  it("joins arrived results with a divider and no note when nothing is missing", () => {
+    expect(mergeJoinResults(["a", "b"], 0)).toBe("a\n\n---\n\nb");
+  });
+
+  it("appends a missing-branch note when branches were lost", () => {
+    const merged = mergeJoinResults(["a"], 1);
+    expect(merged.startsWith("a\n\n---\n\n")).toBe(true);
+    expect(merged).toContain("did not arrive");
   });
 });
