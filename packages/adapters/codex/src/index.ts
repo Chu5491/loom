@@ -24,6 +24,11 @@ export interface CodexConfig extends AdapterConfig {
   ephemeral?: boolean;
   /** Override the working dir codex sees (--cd). Distinct from spawn cwd. */
   cd?: string;
+  /** 사용자 전역 `~/.codex/config.toml`·execpolicy(`.rules`)를 이 run 에서 무시
+   *  (`--ignore-user-config --ignore-rules`). 기본 켜짐 — loom 이 명시한 설정만
+   *  들어가게(헌법2 자동주입 금지, claude `--setting-sources project,local` 와 같은
+   *  결). 끄려면 false. 한계: 전역 `~/.codex/AGENTS.md` 는 이 플래그로 안 막힌다. */
+  isolateUserConfig?: boolean;
 }
 
 export function buildCodexCommand(config: CodexConfig = {}): BuiltCommand {
@@ -32,6 +37,10 @@ export function buildCodexCommand(config: CodexConfig = {}): BuiltCommand {
   // `--search` 는 exec 서브커맨드가 아닌 루트 전역 플래그 — exec 뒤에 두면
   // `unexpected argument` (exit 2) 로 모든 run 이 즉사한다.
   const args: string[] = config.search ? ["--search", "exec", "--json"] : ["exec", "--json"];
+  // 사용자 전역 config·rules 격리(기본). exec 전용 global 플래그라 exec 뒤에 둔다.
+  if (config.isolateUserConfig !== false) {
+    args.push("--ignore-user-config", "--ignore-rules");
+  }
   if (config.dangerouslyBypassApprovalsAndSandbox || config.dangerouslySkipPermissions) {
     args.push("--dangerously-bypass-approvals-and-sandbox");
   } else {

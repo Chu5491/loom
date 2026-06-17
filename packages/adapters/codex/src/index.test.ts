@@ -58,12 +58,21 @@ function makeServer(
 }
 
 describe("buildCodexCommand", () => {
-  it("defaults: codex exec --json --sandbox workspace-write -", () => {
+  it("defaults: codex exec --json + 격리 + --sandbox workspace-write -", () => {
     const { command, args } = buildCodexCommand();
     expect(command).toBe("codex");
-    // 비-bypass 는 exec 가 비실행이라 승인을 안 물으니 샌드박스 등급만 명시 —
-    // 기본 read-only 면 편집이 막혀 코딩이 조용히 실패한다.
-    expect(args).toEqual(["exec", "--json", "--sandbox", "workspace-write", "-"]);
+    // 기본: 사용자 전역 config·rules 격리(--ignore-user-config --ignore-rules) +
+    // 비-bypass 샌드박스 등급(read-only 면 편집이 막혀 코딩이 조용히 실패).
+    expect(args).toEqual([
+      "exec", "--json", "--ignore-user-config", "--ignore-rules",
+      "--sandbox", "workspace-write", "-",
+    ]);
+  });
+
+  it("isolateUserConfig=false 면 격리 플래그를 빼고 사용자 전역 설정을 쓴다", () => {
+    const { args } = buildCodexCommand({ isolateUserConfig: false });
+    expect(args).not.toContain("--ignore-user-config");
+    expect(args).not.toContain("--ignore-rules");
   });
 
   it("non-bypass uses --sandbox; bypass uses the bypass flag instead (no --sandbox)", () => {
