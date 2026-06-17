@@ -259,6 +259,15 @@ describe("captureDevinActivity", () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devin-noexp-"));
     expect(await captureDevinActivity({ cwd, since: 0 })).toBeNull();
   });
+
+  it("keeps a corrupt/partial export instead of deleting it (no silent data loss)", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devin-corrupt-"));
+    const file = path.join(cwd, DEVIN_EXPORT_REL);
+    fs.writeFileSync(file, "{ partial json — interrupted mid-write");
+    const mtime = fs.statSync(file).mtimeMs;
+    expect(await captureDevinActivity({ cwd, since: mtime - 1000 })).toBeNull();
+    expect(fs.existsSync(file)).toBe(true); // 다음 run 이 덮어쓴다 — 검사 여지 보존
+  });
 });
 
 describe("devinAdapter wiring", () => {

@@ -94,9 +94,11 @@ export async function captureDevinActivity(
   let stat: fs.Stats;
   try { stat = fs.statSync(file); } catch { return null; }
   if (stat.mtimeMs + 2000 < ctx.since) return null; // 이 run 보다 오래됨 → 잔재
-  let activity: DevinActivity | null = null;
-  try { activity = parseDevinActivity(JSON.parse(fs.readFileSync(file, "utf8"))); } catch { activity = null; }
-  fs.rmSync(file, { force: true }); // 읽었으면 정리 — 프로젝트 루트에 남기지 않는다
+  let activity: DevinActivity | null;
+  try { activity = parseDevinActivity(JSON.parse(fs.readFileSync(file, "utf8"))); }
+  catch { return null; } // 파싱 실패(부분/손상 export) → 파일을 지우지 않는다. 다음 devin
+                         // run 이 같은 경로에 덮어쓰니 누적되지 않고, 검사 여지도 남는다.
+  fs.rmSync(file, { force: true }); // 성공 파싱 후에만 정리 — 프로젝트 루트에 안 남긴다.
   return activity;
 }
 
