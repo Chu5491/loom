@@ -18,6 +18,13 @@ export interface DevinConfig extends AdapterConfig {
   dangerouslySkipPermissions?: boolean;
 }
 
+// devin 은 stdout 에 토큰/비용을 안 흘린다(평문). 대신 `--export` 가 턴마다 ATIF
+// 대화 파일을 떨군다 — 거기 metadata.metrics.{input,output}_tokens 가 있다. 매 run
+// cwd 루트의 dotfile 에 써두고(부모 디렉토리가 항상 존재 — `.devin/` 은 MCP 없으면
+// 안 생김), 종료 후 captureDevinUsage 가 읽어 토큰을 돌려주고 파일을 지운다(정리).
+// 엔진이 단가로 비용 추정 — devin 은 ACU 과금이라 USD 는 근사치.
+export const DEVIN_EXPORT_REL = ".loom-devin-export.json";
+
 export function buildDevinCommand(config: DevinConfig = {}): BuiltCommand {
   const command = config.command ?? "devin";
   const args: string[] = [];
@@ -25,8 +32,40 @@ export function buildDevinCommand(config: DevinConfig = {}): BuiltCommand {
   if (config.dangerouslySkipPermissions) {
     args.push("--permission-mode", "dangerous");
   }
+  // 상대 경로 → run cwd 기준. 종료 후 같은 경로를 captureDevinUsage 가 읽는다.
+  args.push("--export", DEVIN_EXPORT_REL);
   if (config.extraArgs?.length) args.push(...config.extraArgs);
   return { command, args };
+}
+
+/** devin `--export` ATIF 파일에서 토큰 합산. steps[].metadata.metrics 에
+ *  input/output_tokens 가 있다(마지막 어시스턴트 스텝이 그 턴 합계). since(epoch-ms)
+ *  보다 오래된 파일은 이전 run 잔재 — 무시. exported for tests. */
+export function sumDevinUsage(data: unknown): { inputTokens?: number; outputTokens?: number } | null {
+  const steps = (data as { steps?: unknown })?.steps;
+  if (!Array.isArray(steps)) return null;
+  let inp = 0, out = 0, found = false;
+  for (const s of steps) {
+    const m = (s as { metadata?: { metrics?: { input_tokens?: unknown; output_tokens?: unknown } } })?.metadata?.metrics;
+    if (!m) continue;
+    if (typeof m.input_tokens === "number") { inp += m.input_tokens; found = true; }
+    if (typeof m.output_tokens === "number") { out += m.output_tokens; found = true; }
+  }
+  if (!found) return null;
+  return { inputTokens: inp || undefined, outputTokens: out || undefined };
+}
+
+export async function captureDevinUsage(
+  ctx: { cwd: string; since: number },
+): Promise<{ inputTokens?: number; outputTokens?: number } | null> {
+  const file = path.join(ctx.cwd, DEVIN_EXPORT_REL);
+  let stat: fs.Stats;
+  try { stat = fs.statSync(file); } catch { return null; }
+  if (stat.mtimeMs + 2000 < ctx.since) return null; // 이 run 보다 오래됨 → 잔재
+  let usage: { inputTokens?: number; outputTokens?: number } | null = null;
+  try { usage = sumDevinUsage(JSON.parse(fs.readFileSync(file, "utf8"))); } catch { usage = null; }
+  fs.rmSync(file, { force: true }); // 읽었으면 정리 — 프로젝트 루트에 남기지 않는다
+  return usage;
 }
 
 /** McpServer → devin `.devin/config.local.json` mcpServers 한 엔트리.
@@ -101,6 +140,7 @@ export const devinAdapter = defineCliAdapter<DevinConfig>({
   resolveEnv: (cfg) => ({ ...(cfg.env ?? {}) }),
   applyResume: (args, sessionId) => [...args, "--resume", sessionId],
   captureSessionFromDisk: captureDevinSession,
+  captureUsageFromDisk: captureDevinUsage,
   applyMcpServers: ({ args, servers, cwd }) => {
     // servers 가 비어도 호출 — 직전 run 이 남긴 transient loom 엔트리를 정리해야
     // 한다(아래). loadoutDir 이 항상 전달되므로 define 이 매 run 훅을 부른다.

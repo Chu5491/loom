@@ -6,9 +6,12 @@ import { applyPrompt } from "@loom/adapter-utils";
 import {
   buildDevinCommand,
   captureDevinSession,
+  captureDevinUsage,
+  sumDevinUsage,
   devinAdapter,
   toDevinMcpEntry,
   syncDevinMcpConfig,
+  DEVIN_EXPORT_REL,
   DEVIN_PRESET_MODELS,
 } from "./index.js";
 
@@ -121,16 +124,18 @@ describe("devin MCP injection (.devin/config.local.json)", () => {
 });
 
 describe("buildDevinCommand", () => {
-  it("defaults: devin with no flags", () => {
+  it("defaults: devin with just --export (for token capture)", () => {
     const { command, args } = buildDevinCommand();
     expect(command).toBe("devin");
-    expect(args).toEqual([]);
+    expect(args).toEqual(["--export", DEVIN_EXPORT_REL]);
   });
 
   it("adds --model when set", () => {
     expect(buildDevinCommand({ model: "claude-opus-4.6" }).args).toEqual([
       "--model",
       "claude-opus-4.6",
+      "--export",
+      DEVIN_EXPORT_REL,
     ]);
   });
 
@@ -138,12 +143,16 @@ describe("buildDevinCommand", () => {
     expect(buildDevinCommand({ dangerouslySkipPermissions: true }).args).toEqual([
       "--permission-mode",
       "dangerous",
+      "--export",
+      DEVIN_EXPORT_REL,
     ]);
     expect(buildDevinCommand().args).not.toContain("--permission-mode");
   });
 
-  it("appends extraArgs at the end", () => {
+  it("appends extraArgs after --export", () => {
     expect(buildDevinCommand({ extraArgs: ["--sandbox"] }).args).toEqual([
+      "--export",
+      DEVIN_EXPORT_REL,
       "--sandbox",
     ]);
   });
@@ -162,7 +171,7 @@ describe("devin prompt delivery", () => {
       "fix the login bug",
       { via: "arg", flag: "--print" },
     );
-    expect(args).toEqual(["--model", "opus", "--print", "fix the login bug"]);
+    expect(args).toEqual(["--model", "opus", "--export", DEVIN_EXPORT_REL, "--print", "fix the login bug"]);
     expect(stdin).toBe("");
   });
 });
@@ -181,5 +190,60 @@ describe("DEVIN_PRESET_MODELS", () => {
       expect(m.label).toBeTruthy();
       expect(m.category).toBeTruthy();
     }
+  });
+});
+
+describe("buildDevinCommand --export (token capture)", () => {
+  it("always appends --export to a cwd-local file", () => {
+    const { args } = buildDevinCommand();
+    const i = args.indexOf("--export");
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(args[i + 1]).toBe(DEVIN_EXPORT_REL);
+  });
+});
+
+describe("sumDevinUsage", () => {
+  it("sums input/output_tokens from steps[].metadata.metrics", () => {
+    const data = { steps: [
+      { metadata: { num_tokens: null } },
+      { metadata: { metrics: { input_tokens: 2555, output_tokens: 103, cache_read_tokens: 11968 } } },
+    ] };
+    expect(sumDevinUsage(data)).toEqual({ inputTokens: 2555, outputTokens: 103 });
+  });
+
+  it("returns null when no step carries metrics", () => {
+    expect(sumDevinUsage({ steps: [{ metadata: {} }] })).toBeNull();
+    expect(sumDevinUsage({})).toBeNull();
+  });
+});
+
+describe("captureDevinUsage", () => {
+  it("reads tokens from a fresh export, then cleans the file up", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devin-exp-"));
+    const file = path.join(cwd, DEVIN_EXPORT_REL);
+    fs.writeFileSync(file, JSON.stringify({ steps: [{ metadata: { metrics: { input_tokens: 10, output_tokens: 4 } } }] }));
+    const mtime = fs.statSync(file).mtimeMs;
+    expect(await captureDevinUsage({ cwd, since: mtime - 1000 })).toEqual({ inputTokens: 10, outputTokens: 4 });
+    expect(fs.existsSync(file)).toBe(false); // 읽었으면 정리
+  });
+
+  it("ignores a stale export (older than this run) without deleting it", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devin-stale-"));
+    const file = path.join(cwd, DEVIN_EXPORT_REL);
+    fs.writeFileSync(file, JSON.stringify({ steps: [{ metadata: { metrics: { input_tokens: 10 } } }] }));
+    const mtime = fs.statSync(file).mtimeMs;
+    expect(await captureDevinUsage({ cwd, since: mtime + 60_000 })).toBeNull();
+    expect(fs.existsSync(file)).toBe(true); // 잔재(우리 것 아님)는 안 지운다
+  });
+
+  it("returns null when the export is absent", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devin-noexp-"));
+    expect(await captureDevinUsage({ cwd, since: 0 })).toBeNull();
+  });
+});
+
+describe("devinAdapter wiring", () => {
+  it("exposes captureUsageFromDisk", () => {
+    expect(typeof devinAdapter.captureUsageFromDisk).toBe("function");
   });
 });

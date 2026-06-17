@@ -595,6 +595,18 @@ async function run(
       }
     }
 
+    // 평문 CLI(devin)는 stdout 에 비용·토큰이 없다 — CLI export 에서 토큰을 되찾아
+    // 단가로 추정한다(스트림이 비용을 안 줬을 때만; 아래 estimateCost 가 받는다).
+    if (!state.costReported && exitCode === 0 && !state.abort.signal.aborted && adapter.captureUsageFromDisk) {
+      try {
+        const u = await adapter.captureUsageFromDisk({ cwd, since: sessionSince }, adapterConfig);
+        if (u?.inputTokens != null) state.inputTokens = (state.inputTokens ?? 0) + u.inputTokens;
+        if (u?.outputTokens != null) state.outputTokens = (state.outputTokens ?? 0) + u.outputTokens;
+      } catch (err) {
+        log.warn({ err }, "disk usage capture failed");
+      }
+    }
+
     // stream 으로 파일 편집을 못 잡은 run(평문 CLI 등)은 git 작업트리에서 변경
     // 파일을 되찾아 귀속한다 — 파일 탭의 "누가 뭘 고쳤나"가 전 CLI 에서 채워진다.
     if (exitCode === 0 && !state.abort.signal.aborted && !state.events.some((e) => e.kind === "file")) {

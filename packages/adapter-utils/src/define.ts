@@ -47,6 +47,13 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
     ctx: { cwd: string; since: number },
     config: TConfig,
   ): Promise<string | null>;
+  /** Optional: recover token usage from the CLI's on-disk export for
+   *  plain-text CLIs (devin) that emit no usage in stdout. Engine calls it
+   *  after exit when no cost was streamed; tokens feed the cost estimate. */
+  captureUsageFromDisk?(
+    ctx: { cwd: string; since: number },
+    config: TConfig,
+  ): Promise<{ inputTokens?: number; outputTokens?: number } | null>;
   /** Optional: scan a stdout chunk for tool-use events and return the
    *  file paths the agent is currently editing. */
   extractTouchedPaths?(chunk: string): string[];
@@ -102,6 +109,9 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
     extractSessionId: def.extractSessionId,
     captureSessionFromDisk: def.captureSessionFromDisk
       ? (ctx, config) => def.captureSessionFromDisk!(ctx, config as TConfig)
+      : undefined,
+    captureUsageFromDisk: def.captureUsageFromDisk
+      ? (ctx, config) => def.captureUsageFromDisk!(ctx, config as TConfig)
       : undefined,
     extractTouchedPaths: def.extractTouchedPaths,
     extractTouchedEdits: def.extractTouchedEdits,
