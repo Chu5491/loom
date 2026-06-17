@@ -34,6 +34,23 @@ export const opencodeManifest: AdapterManifest = {
       options: [],
     },
     {
+      kind: "select",
+      key: "variant",
+      label: "Reasoning effort",
+      help: "--variant. 프로바이더별 추론 강도(OpenAI minimal~xhigh, Anthropic high/max, Google low/high). 비우면 모델 기본값.",
+      allowCustom: true,
+      placeholder: "모델 기본값",
+      group: "basic",
+      options: [
+        { value: "minimal", label: "Minimal" },
+        { value: "low", label: "Low" },
+        { value: "medium", label: "Medium" },
+        { value: "high", label: "High" },
+        { value: "xhigh", label: "xHigh" },
+        { value: "max", label: "Max" },
+      ],
+    },
+    {
       kind: "string",
       key: "agent",
       label: "Agent profile",

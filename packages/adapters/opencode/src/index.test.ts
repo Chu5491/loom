@@ -52,6 +52,15 @@ describe("buildOpencodeCommand", () => {
     expect(args[args.indexOf("--agent") + 1]).toBe("build");
   });
 
+  it("appends --variant (reasoning effort) when configured", () => {
+    const { args } = buildOpencodeCommand({ variant: "high" });
+    expect(args[args.indexOf("--variant") + 1]).toBe("high");
+  });
+
+  it("omits --variant when not set", () => {
+    expect(buildOpencodeCommand({ model: "x" }).args).not.toContain("--variant");
+  });
+
   it("respects command override", () => {
     expect(buildOpencodeCommand({ command: "/opt/opencode" }).command).toBe(
       "/opt/opencode",

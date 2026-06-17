@@ -18,8 +18,12 @@ export interface OpencodeConfig extends AdapterConfig {
   continueSession?: boolean;
   /** Resume a specific session by id. */
   sessionId?: string;
-  /** Tools to allow / deny — passed through verbatim. */
+  /** OpenCode agent profile name (--agent). */
   agent?: string;
+  /** 추론 강도(opencode --variant) — 프로바이더별로 번역된다: minimal/low/medium/
+   *  high/xhigh(OpenAI reasoning_effort), high/max(Anthropic thinking budget),
+   *  low/high(Google). claude --effort·codex model_reasoning_effort 의 opencode 짝. */
+  variant?: string;
 }
 
 export function buildOpencodeCommand(config: OpencodeConfig = {}): BuiltCommand {
@@ -28,6 +32,7 @@ export function buildOpencodeCommand(config: OpencodeConfig = {}): BuiltCommand 
   if (config.continueSession) args.push("--continue");
   if (config.sessionId) args.push("--session", config.sessionId);
   if (config.model) args.push("--model", config.model);
+  if (config.variant) args.push("--variant", config.variant);
   if (config.agent) args.push("--agent", config.agent);
   if (config.extraArgs?.length) args.push(...config.extraArgs);
   return { command, args };
