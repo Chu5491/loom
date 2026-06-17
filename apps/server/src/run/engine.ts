@@ -383,8 +383,10 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   }
 
   const loadout = materializeLoadout(agent, skills, mcp, bridge, id);
-  // 프로젝트 공유 기억 — 노트·분석 모두 파일이 있을 때만 경로 안내(없으면 침묵,
-  // 자동 생성 안 함). 분석 뷰는 다른 CLI 도구가 만든 이해를 이어 읽는 통로.
+  // 프로젝트 공유 기억. notes 는 파일이 없어도 경로를 안내한다 — 서로 다른 CLI 팀원이
+  // 대화 이력을 공유 못 하므로 이 파일이 유일한 공유 채널인데, "있을 때만 안내"하면
+  // 아무도 첫 파일을 안 만들어 영영 안 생긴다(닭-달걀). 본문은 주입 안 함(헌법2) — 경로만.
+  // 분석 뷰는 다른 CLI 가 만든 이해를 이어 읽는 통로라 있을 때만(읽기 전용).
   const notes = project ? notesPath(project.path) : null;
   const analysisDoc = project ? analysisDocPath(project.path) : null;
   const composed = composePrompt({
@@ -393,7 +395,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     // 기능 실행(git 커밋·분석)은 에이전트 개성 대신 기능 프롬프트 — 출력 일관성.
     agentPrompt: input.promptOverride ?? agent.prompt,
     loadout,
-    projectNotesPath: notes && fs.existsSync(notes) ? notes : null,
+    projectNotesPath: notes,
     projectAnalysisPath: analysisDoc && fs.existsSync(analysisDoc) ? analysisDoc : null,
     // 이어가는 턴이면 rules·페르소나 재주입 생략 — 매 턴 자기소개 반복 방지.
     resuming: !!resumeSessionId,

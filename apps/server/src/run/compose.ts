@@ -52,16 +52,18 @@ export function composePrompt(input: ComposeInput): ComposedPrompt {
   if (input.projectNotesPath || input.projectAnalysisPath) {
     const lines = [
       "=== Project Memory ===",
-      "Shared, persistent context for this project (written by you and your teammate agents). Read on demand:",
+      // 핵심: 팀원은 서로 다른 CLI 라 대화 이력을 공유하지 못한다. 이 파일이 유일한
+      // 공유 채널 — 그래서 "읽고 / 없으면 만들고 / 넘기기 전에 적어라"를 명시한다.
+      "Shared, persistent context for this project. Your teammates run on different CLIs and CANNOT see each other's chat history — this file is the ONLY channel you share with them. Read it before you start:",
     ];
     if (input.projectNotesPath) {
-      lines.push(`- Team notes (read + append durable notes): ${input.projectNotesPath}`);
+      lines.push(`- Team notes (read it first; create the file if it doesn't exist yet; append durable notes): ${input.projectNotesPath}`);
     }
     if (input.projectAnalysisPath) {
       lines.push(`- Latest project analysis — structure, stack, risks (read-only, may be from another agent): ${input.projectAnalysisPath}`);
     }
     if (input.projectNotesPath) {
-      lines.push("After meaningful work, append concise durable notes (decisions, gotchas, conventions) to the team notes — keep entries short.");
+      lines.push("After meaningful work or before handing off, append concise durable notes (decisions, results, gotchas) here so a teammate on another CLI can continue where you left off. Keep entries short.");
     }
     lines.push("=== End Project Memory ===");
     userSections.push(lines.join("\n"));
