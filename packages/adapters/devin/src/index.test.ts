@@ -6,8 +6,8 @@ import { applyPrompt } from "@loom/adapter-utils";
 import {
   buildDevinCommand,
   captureDevinSession,
-  captureDevinUsage,
-  sumDevinUsage,
+  captureDevinActivity,
+  parseDevinActivity,
   devinAdapter,
   toDevinMcpEntry,
   syncDevinMcpConfig,
@@ -202,28 +202,47 @@ describe("buildDevinCommand --export (token capture)", () => {
   });
 });
 
-describe("sumDevinUsage", () => {
-  it("sums input/output_tokens from steps[].metadata.metrics", () => {
+describe("parseDevinActivity", () => {
+  it("sums tokens and collects tool calls from steps", () => {
     const data = { steps: [
       { metadata: { num_tokens: null } },
+      { tool_calls: [{ function_name: "find_file_by_name", arguments: { pattern: "math.js" } }] },
+      { tool_calls: [{ function_name: "read", arguments: { file_path: "/p/math.js" } }] },
       { metadata: { metrics: { input_tokens: 2555, output_tokens: 103, cache_read_tokens: 11968 } } },
     ] };
-    expect(sumDevinUsage(data)).toEqual({ inputTokens: 2555, outputTokens: 103 });
+    expect(parseDevinActivity(data)).toEqual({
+      inputTokens: 2555,
+      outputTokens: 103,
+      tools: [
+        { name: "find_file_by_name", target: "math.js" },
+        { name: "read", target: "/p/math.js" },
+      ],
+    });
   });
 
-  it("returns null when no step carries metrics", () => {
-    expect(sumDevinUsage({ steps: [{ metadata: {} }] })).toBeNull();
-    expect(sumDevinUsage({})).toBeNull();
+  it("returns tools even when no token metrics are present", () => {
+    expect(parseDevinActivity({ steps: [{ tool_calls: [{ function_name: "bash", arguments: { command: "ls" } }] }] }))
+      .toEqual({ tools: [{ name: "bash", target: "ls" }] });
+  });
+
+  it("returns null when nothing usable is present", () => {
+    expect(parseDevinActivity({ steps: [{ metadata: {} }] })).toBeNull();
+    expect(parseDevinActivity({})).toBeNull();
   });
 });
 
-describe("captureDevinUsage", () => {
-  it("reads tokens from a fresh export, then cleans the file up", async () => {
+describe("captureDevinActivity", () => {
+  it("reads activity from a fresh export, then cleans the file up", async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devin-exp-"));
     const file = path.join(cwd, DEVIN_EXPORT_REL);
-    fs.writeFileSync(file, JSON.stringify({ steps: [{ metadata: { metrics: { input_tokens: 10, output_tokens: 4 } } }] }));
+    fs.writeFileSync(file, JSON.stringify({ steps: [
+      { tool_calls: [{ function_name: "read", arguments: { file_path: "/p/x.js" } }] },
+      { metadata: { metrics: { input_tokens: 10, output_tokens: 4 } } },
+    ] }));
     const mtime = fs.statSync(file).mtimeMs;
-    expect(await captureDevinUsage({ cwd, since: mtime - 1000 })).toEqual({ inputTokens: 10, outputTokens: 4 });
+    expect(await captureDevinActivity({ cwd, since: mtime - 1000 })).toEqual({
+      inputTokens: 10, outputTokens: 4, tools: [{ name: "read", target: "/p/x.js" }],
+    });
     expect(fs.existsSync(file)).toBe(false); // 읽었으면 정리
   });
 
@@ -232,18 +251,18 @@ describe("captureDevinUsage", () => {
     const file = path.join(cwd, DEVIN_EXPORT_REL);
     fs.writeFileSync(file, JSON.stringify({ steps: [{ metadata: { metrics: { input_tokens: 10 } } }] }));
     const mtime = fs.statSync(file).mtimeMs;
-    expect(await captureDevinUsage({ cwd, since: mtime + 60_000 })).toBeNull();
+    expect(await captureDevinActivity({ cwd, since: mtime + 60_000 })).toBeNull();
     expect(fs.existsSync(file)).toBe(true); // 잔재(우리 것 아님)는 안 지운다
   });
 
   it("returns null when the export is absent", async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devin-noexp-"));
-    expect(await captureDevinUsage({ cwd, since: 0 })).toBeNull();
+    expect(await captureDevinActivity({ cwd, since: 0 })).toBeNull();
   });
 });
 
 describe("devinAdapter wiring", () => {
-  it("exposes captureUsageFromDisk", () => {
-    expect(typeof devinAdapter.captureUsageFromDisk).toBe("function");
+  it("exposes captureActivityFromDisk", () => {
+    expect(typeof devinAdapter.captureActivityFromDisk).toBe("function");
   });
 });

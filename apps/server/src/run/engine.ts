@@ -595,15 +595,21 @@ async function run(
       }
     }
 
-    // 평문 CLI(devin)는 stdout 에 비용·토큰이 없다 — CLI export 에서 토큰을 되찾아
-    // 단가로 추정한다(스트림이 비용을 안 줬을 때만; 아래 estimateCost 가 받는다).
-    if (!state.costReported && exitCode === 0 && !state.abort.signal.aborted && adapter.captureUsageFromDisk) {
+    // 평문 CLI(devin)는 stdout 에 비용·토큰·도구가 없다 — CLI export 에서 활동을
+    // 되찾는다. 토큰은 아래 estimateCost 로 비용 추정, 도구는 활동 카드/작업 상세에
+    // 채운다(stream-json CLI 처럼 "무슨 도구를 썼나"). 스트림이 못 준 것만 보강.
+    if (exitCode === 0 && !state.abort.signal.aborted && adapter.captureActivityFromDisk) {
       try {
-        const u = await adapter.captureUsageFromDisk({ cwd, since: sessionSince }, adapterConfig);
-        if (u?.inputTokens != null) state.inputTokens = (state.inputTokens ?? 0) + u.inputTokens;
-        if (u?.outputTokens != null) state.outputTokens = (state.outputTokens ?? 0) + u.outputTokens;
+        const act = await adapter.captureActivityFromDisk({ cwd, since: sessionSince }, adapterConfig);
+        if (!state.costReported) {
+          if (act?.inputTokens != null) state.inputTokens = (state.inputTokens ?? 0) + act.inputTokens;
+          if (act?.outputTokens != null) state.outputTokens = (state.outputTokens ?? 0) + act.outputTokens;
+        }
+        if (act?.tools?.length && !state.events.some((e) => e.kind === "tool")) {
+          emit(state, act.tools.map((t) => ({ kind: "tool", name: t.name, ...(t.target ? { target: t.target } : {}) })));
+        }
       } catch (err) {
-        log.warn({ err }, "disk usage capture failed");
+        log.warn({ err }, "disk activity capture failed");
       }
     }
 

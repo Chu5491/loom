@@ -68,16 +68,22 @@ export interface CliAdapter {
     ctx: { cwd: string; since: number },
     config: AdapterConfig,
   ): Promise<string | null>;
-  /** Recover token usage from the CLI's own on-disk export, for plain-text
-   *  CLIs (devin) that don't emit usage in their stdout. Called after exit
-   *  when the stream reported no cost; tokens feed the engine's cost estimate
-   *  (devin bills in compute units, so the USD value is approximate — same
-   *  policy as codex's token-based estimate). `since` (epoch-ms, pre-spawn)
-   *  lets the adapter ignore a stale export. Disk *read* only (헌법 3조). */
-  captureUsageFromDisk?(
+  /** Recover the agent's activity (token usage + tool calls) from the CLI's
+   *  own on-disk export, for plain-text CLIs (devin) whose stdout carries no
+   *  machine-readable activity. Called after exit. Tokens feed the engine's
+   *  cost estimate (devin bills in compute units → approximate USD, same
+   *  policy as codex). `tools` backfills the activity card / task detail so a
+   *  plain-text CLI shows what it reached for, like the stream-json CLIs.
+   *  `since` (epoch-ms, pre-spawn) lets the adapter ignore a stale export.
+   *  Disk *read* only (헌법 3조). */
+  captureActivityFromDisk?(
     ctx: { cwd: string; since: number },
     config: AdapterConfig,
-  ): Promise<{ inputTokens?: number; outputTokens?: number } | null>;
+  ): Promise<{
+    inputTokens?: number;
+    outputTokens?: number;
+    tools?: { name: string; target?: string }[];
+  } | null>;
   /** Pluck file paths out of tool-use events as the CLI streams them.
    *  Run-service surfaces these to the UI so the file tree can flag
    *  "an agent is editing this *right now*" — without it, files only

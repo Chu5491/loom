@@ -32,40 +32,72 @@ export function buildDevinCommand(config: DevinConfig = {}): BuiltCommand {
   if (config.dangerouslySkipPermissions) {
     args.push("--permission-mode", "dangerous");
   }
-  // 상대 경로 → run cwd 기준. 종료 후 같은 경로를 captureDevinUsage 가 읽는다.
+  // 상대 경로 → run cwd 기준. 종료 후 같은 경로를 captureDevinActivity 가 읽는다.
   args.push("--export", DEVIN_EXPORT_REL);
   if (config.extraArgs?.length) args.push(...config.extraArgs);
   return { command, args };
 }
 
-/** devin `--export` ATIF 파일에서 토큰 합산. steps[].metadata.metrics 에
- *  input/output_tokens 가 있다(마지막 어시스턴트 스텝이 그 턴 합계). since(epoch-ms)
- *  보다 오래된 파일은 이전 run 잔재 — 무시. exported for tests. */
-export function sumDevinUsage(data: unknown): { inputTokens?: number; outputTokens?: number } | null {
-  const steps = (data as { steps?: unknown })?.steps;
-  if (!Array.isArray(steps)) return null;
-  let inp = 0, out = 0, found = false;
-  for (const s of steps) {
-    const m = (s as { metadata?: { metrics?: { input_tokens?: unknown; output_tokens?: unknown } } })?.metadata?.metrics;
-    if (!m) continue;
-    if (typeof m.input_tokens === "number") { inp += m.input_tokens; found = true; }
-    if (typeof m.output_tokens === "number") { out += m.output_tokens; found = true; }
-  }
-  if (!found) return null;
-  return { inputTokens: inp || undefined, outputTokens: out || undefined };
+export interface DevinActivity {
+  inputTokens?: number;
+  outputTokens?: number;
+  tools?: { name: string; target?: string }[];
 }
 
-export async function captureDevinUsage(
+// 도구 인자에서 표시할 대상 한 줄 — 파일 경로 > 패턴 > 명령 > 첫 문자열 인자.
+function toolTarget(argsObj: unknown): string | undefined {
+  const a = argsObj as Record<string, unknown> | undefined;
+  if (!a || typeof a !== "object") return undefined;
+  for (const k of ["file_path", "path", "filename", "pattern", "command", "query", "url"]) {
+    if (typeof a[k] === "string") return a[k] as string;
+  }
+  const first = Object.values(a).find((v) => typeof v === "string");
+  return typeof first === "string" ? first : undefined;
+}
+
+/** devin `--export` ATIF 파일 파싱 — 토큰(steps[].metadata.metrics) + 도구 호출
+ *  (steps[].tool_calls[].function_name + arguments). 평문 stdout 엔 둘 다 없어서
+ *  여기서 되살린다. since 보다 오래된 파일은 이전 run 잔재. exported for tests. */
+export function parseDevinActivity(data: unknown): DevinActivity | null {
+  const steps = (data as { steps?: unknown })?.steps;
+  if (!Array.isArray(steps)) return null;
+  let inp = 0, out = 0;
+  const tools: { name: string; target?: string }[] = [];
+  for (const s of steps) {
+    const step = s as {
+      metadata?: { metrics?: { input_tokens?: unknown; output_tokens?: unknown } };
+      tool_calls?: Array<{ function_name?: unknown; arguments?: unknown }>;
+    };
+    const m = step?.metadata?.metrics;
+    if (typeof m?.input_tokens === "number") inp += m.input_tokens;
+    if (typeof m?.output_tokens === "number") out += m.output_tokens;
+    if (Array.isArray(step?.tool_calls)) {
+      for (const tc of step.tool_calls) {
+        if (typeof tc?.function_name === "string") {
+          tools.push({ name: tc.function_name, ...(toolTarget(tc.arguments) ? { target: toolTarget(tc.arguments) } : {}) });
+        }
+      }
+    }
+  }
+  if (!inp && !out && tools.length === 0) return null;
+  return {
+    ...(inp ? { inputTokens: inp } : {}),
+    ...(out ? { outputTokens: out } : {}),
+    ...(tools.length ? { tools } : {}),
+  };
+}
+
+export async function captureDevinActivity(
   ctx: { cwd: string; since: number },
-): Promise<{ inputTokens?: number; outputTokens?: number } | null> {
+): Promise<DevinActivity | null> {
   const file = path.join(ctx.cwd, DEVIN_EXPORT_REL);
   let stat: fs.Stats;
   try { stat = fs.statSync(file); } catch { return null; }
   if (stat.mtimeMs + 2000 < ctx.since) return null; // 이 run 보다 오래됨 → 잔재
-  let usage: { inputTokens?: number; outputTokens?: number } | null = null;
-  try { usage = sumDevinUsage(JSON.parse(fs.readFileSync(file, "utf8"))); } catch { usage = null; }
+  let activity: DevinActivity | null = null;
+  try { activity = parseDevinActivity(JSON.parse(fs.readFileSync(file, "utf8"))); } catch { activity = null; }
   fs.rmSync(file, { force: true }); // 읽었으면 정리 — 프로젝트 루트에 남기지 않는다
-  return usage;
+  return activity;
 }
 
 /** McpServer → devin `.devin/config.local.json` mcpServers 한 엔트리.
@@ -140,7 +172,7 @@ export const devinAdapter = defineCliAdapter<DevinConfig>({
   resolveEnv: (cfg) => ({ ...(cfg.env ?? {}) }),
   applyResume: (args, sessionId) => [...args, "--resume", sessionId],
   captureSessionFromDisk: captureDevinSession,
-  captureUsageFromDisk: captureDevinUsage,
+  captureActivityFromDisk: captureDevinActivity,
   applyMcpServers: ({ args, servers, cwd }) => {
     // servers 가 비어도 호출 — 직전 run 이 남긴 transient loom 엔트리를 정리해야
     // 한다(아래). loadoutDir 이 항상 전달되므로 define 이 매 run 훅을 부른다.
