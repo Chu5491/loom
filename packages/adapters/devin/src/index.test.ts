@@ -115,10 +115,24 @@ describe("devin MCP injection (.devin/config.local.json)", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("does not create an empty config when there is nothing to write", () => {
+  it("writes isolation (read_config_from:false) even with no servers — 헌법2 자동흡수 차단", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
-    expect(syncDevinMcpConfig(tmp, [])).toBeNull();
-    expect(fs.existsSync(path.join(tmp, ".devin"))).toBe(false);
+    const file = syncDevinMcpConfig(tmp, []);
+    expect(file).toBe(path.join(tmp, ".devin", "config.local.json"));
+    const out = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(out.mcpServers).toEqual({});
+    expect(out.read_config_from).toEqual({ cursor: false, windsurf: false, claude: false });
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("respects a user-supplied read_config_from instead of overwriting it", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
+    const file = path.join(tmp, ".devin", "config.local.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ read_config_from: { cursor: true, windsurf: true, claude: true } }));
+    syncDevinMcpConfig(tmp, [CANARY]);
+    const out = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(out.read_config_from).toEqual({ cursor: true, windsurf: true, claude: true });
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 });
@@ -223,6 +237,22 @@ describe("parseDevinActivity", () => {
   it("returns tools even when no token metrics are present", () => {
     expect(parseDevinActivity({ steps: [{ tool_calls: [{ function_name: "bash", arguments: { command: "ls" } }] }] }))
       .toEqual({ tools: [{ name: "bash", target: "ls" }] });
+  });
+
+  it("reads tokens from final_metrics (ATIF v1.7) where steps carry no metadata", () => {
+    const data = {
+      final_metrics: { total_prompt_tokens: 14341, total_completion_tokens: 28, total_cached_tokens: 2560 },
+      steps: [{ step_id: "s1", source: "agent", message: "OK" }],
+    };
+    expect(parseDevinActivity(data)).toEqual({ inputTokens: 14341, outputTokens: 28 });
+  });
+
+  it("final_metrics (v1.7) wins over per-step metrics — no double count", () => {
+    const data = {
+      final_metrics: { total_prompt_tokens: 100, total_completion_tokens: 10 },
+      steps: [{ metadata: { metrics: { input_tokens: 999, output_tokens: 999 } } }],
+    };
+    expect(parseDevinActivity(data)).toEqual({ inputTokens: 100, outputTokens: 10 });
   });
 
   it("returns null when nothing usable is present", () => {

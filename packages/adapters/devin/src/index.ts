@@ -19,10 +19,11 @@ export interface DevinConfig extends AdapterConfig {
 }
 
 // devin 은 stdout 에 토큰/비용을 안 흘린다(평문). 대신 `--export` 가 턴마다 ATIF
-// 대화 파일을 떨군다 — 거기 metadata.metrics.{input,output}_tokens 가 있다. 매 run
-// cwd 루트의 dotfile 에 써두고(부모 디렉토리가 항상 존재 — `.devin/` 은 MCP 없으면
-// 안 생김), 종료 후 captureDevinUsage 가 읽어 토큰을 돌려주고 파일을 지운다(정리).
-// 엔진이 단가로 비용 추정 — devin 은 ACU 과금이라 USD 는 근사치.
+// 대화 파일을 떨군다. 매 run cwd 루트의 dotfile 에 써두고, 종료 후 captureDevinActivity
+// 가 읽어 토큰을 돌려주고 파일을 지운다(정리). 엔진이 단가로 비용 추정 — devin 은
+// ACU 과금이라 USD 는 근사치(실측: ATIF 에 비용/ACU 필드 자체가 없음, v1.7 확인).
+// 토큰 위치는 스키마 버전마다 다르다 — v1.7 은 `final_metrics`(집계), v1.4 는
+// `steps[].metadata.metrics`(스텝별). parseDevinActivity 가 둘 다 지원.
 export const DEVIN_EXPORT_REL = ".loom-devin-export.json";
 
 export function buildDevinCommand(config: DevinConfig = {}): BuiltCommand {
@@ -59,22 +60,38 @@ function toolTarget(argsObj: unknown): string | undefined {
  *  (steps[].tool_calls[].function_name + arguments). 평문 stdout 엔 둘 다 없어서
  *  여기서 되살린다. since 보다 오래된 파일은 이전 run 잔재. exported for tests. */
 export function parseDevinActivity(data: unknown): DevinActivity | null {
-  const steps = (data as { steps?: unknown })?.steps;
-  if (!Array.isArray(steps)) return null;
+  const root = data as {
+    steps?: unknown;
+    final_metrics?: { total_prompt_tokens?: unknown; total_completion_tokens?: unknown };
+  };
   let inp = 0, out = 0;
+  // ATIF v1.7: 토큰은 final_metrics 에 집계(스텝엔 metadata 가 없다 — v1.4 와 구조가
+  // 다름). final_metrics 가 있으면 그걸 진실로 삼고, 스텝 합산은 건너뛴다(이중계상 방지).
+  const fm = root?.final_metrics;
+  const hasFinal = !!fm && (typeof fm.total_prompt_tokens === "number" || typeof fm.total_completion_tokens === "number");
+  if (hasFinal) {
+    if (typeof fm!.total_prompt_tokens === "number") inp = fm!.total_prompt_tokens;
+    if (typeof fm!.total_completion_tokens === "number") out = fm!.total_completion_tokens;
+  }
   const tools: { name: string; target?: string }[] = [];
-  for (const s of steps) {
-    const step = s as {
-      metadata?: { metrics?: { input_tokens?: unknown; output_tokens?: unknown } };
-      tool_calls?: Array<{ function_name?: unknown; arguments?: unknown }>;
-    };
-    const m = step?.metadata?.metrics;
-    if (typeof m?.input_tokens === "number") inp += m.input_tokens;
-    if (typeof m?.output_tokens === "number") out += m.output_tokens;
-    if (Array.isArray(step?.tool_calls)) {
-      for (const tc of step.tool_calls) {
-        if (typeof tc?.function_name === "string") {
-          tools.push({ name: tc.function_name, ...(toolTarget(tc.arguments) ? { target: toolTarget(tc.arguments) } : {}) });
+  const steps = root?.steps;
+  if (Array.isArray(steps)) {
+    for (const s of steps) {
+      const step = s as {
+        metadata?: { metrics?: { input_tokens?: unknown; output_tokens?: unknown } };
+        tool_calls?: Array<{ function_name?: unknown; arguments?: unknown }>;
+      };
+      // v1.4 폴백: final_metrics 가 없을 때만 스텝별 metrics 를 합산.
+      if (!hasFinal) {
+        const m = step?.metadata?.metrics;
+        if (typeof m?.input_tokens === "number") inp += m.input_tokens;
+        if (typeof m?.output_tokens === "number") out += m.output_tokens;
+      }
+      if (Array.isArray(step?.tool_calls)) {
+        for (const tc of step.tool_calls) {
+          if (typeof tc?.function_name === "string") {
+            tools.push({ name: tc.function_name, ...(toolTarget(tc.arguments) ? { target: toolTarget(tc.arguments) } : {}) });
+          }
         }
       }
     }
@@ -187,32 +204,31 @@ export const devinAdapter = defineCliAdapter<DevinConfig>({
 // 죽은 runId 도구를 보게 된다(parent_run_not_found). 매 sync 에서 걷어낸다.
 const LOOM_DELEGATE = "loom";
 
-/** `<cwd>/.devin/config.local.json` 에 mcpServers 를 sync.
+/** `<cwd>/.devin/config.local.json` 에 mcpServers + 격리설정을 sync.
  *  - 사용자의 다른 키·서버는 보존, 이번 run 의 서버만 교체
  *  - transient loom 엔트리는 항상 제거 후 (이번 run 이 delegate 면) 새로 추가
- *  - 쓸 서버가 없고 파일도 없으면 빈 설정을 만들지 않는다
+ *  - read_config_from:false 로 .cursor/.windsurf/.claude 자동 흡수를 차단(헌법2 자동
+ *    주입 금지). 파일로만 끌 수 있어 매 run 명시 → 항상 파일을 쓴다. 사용자가 직접
+ *    둔 read_config_from 이 있으면 존중(덮지 않음).
  *  exported for tests. */
-export function syncDevinMcpConfig(cwd: string, servers: McpServer[]): string | null {
+export function syncDevinMcpConfig(cwd: string, servers: McpServer[]): string {
   const file = path.join(cwd, ".devin", "config.local.json");
   let existing: Record<string, unknown> = {};
-  let existed = false;
   try {
     existing = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
-    existed = true;
   } catch {
     // 없거나 깨졌으면 새로 시작
   }
   const prev = { ...((existing.mcpServers ?? {}) as Record<string, unknown>) };
-  const hadLoom = LOOM_DELEGATE in prev;
   delete prev[LOOM_DELEGATE]; // stale transient 엔트리 제거
   const next = { ...prev, ...Object.fromEntries(servers.map((s) => [s.name, toDevinMcpEntry(s)])) };
 
-  // 파일이 없고 쓸 것도 없으면 빈 .devin/ 를 만들지 않는다.
-  if (!existed && Object.keys(next).length === 0) return null;
-  // 파일은 있지만 바뀐 게 없으면(걷어낼 loom 도 없고 새 서버도 없음) 그대로 둔다.
-  if (existed && !hadLoom && servers.length === 0) return null;
-
-  const merged = { ...existing, mcpServers: next };
+  const merged = {
+    ...existing,
+    mcpServers: next,
+    // 자동 흡수 차단 — 사용자가 명시한 값이 있으면 그대로 둔다.
+    read_config_from: existing.read_config_from ?? { cursor: false, windsurf: false, claude: false },
+  };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(merged, null, 2));
   return file;
