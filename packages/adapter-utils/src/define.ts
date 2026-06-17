@@ -100,6 +100,9 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
     loadoutDir: string | null;
     /** run 작업 디렉토리 — 프로젝트-로컬 설정 파일을 쓰는 어댑터(devin)용. */
     cwd: string;
+    /** 비-스레드 run(기능·워크플로우) — resume 가 없어 세션을 안 남겨도 된다.
+     *  세션 스토어를 loadoutDir 안 임시 경로로 돌리는 어댑터(opencode XDG_DATA_HOME)용. */
+    ephemeral?: boolean;
   }): {
     args: string[];
     env?: Record<string, string>;
@@ -156,6 +159,7 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
               mcpConfigPath: spawnArgs.mcpConfigPath ?? null,
               loadoutDir: spawnArgs.loadoutDir ?? null,
               cwd: spawnArgs.cwd,
+              ephemeral: config.ephemeral === true,
             })
           : { args: baseArgs };
       // 시스템 프롬프트 채널 — 지원 어댑터(claude)만, system 이 있을 때만. 프롬프트

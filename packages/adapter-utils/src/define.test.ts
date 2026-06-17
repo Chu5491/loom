@@ -79,3 +79,32 @@ describe("defineCliAdapter system-prompt arg assembly", () => {
     expect(plain.supportsSystemPrompt).toBe(false);
   });
 });
+
+// config.ephemeral(비-스레드 run)을 applyMcpServers 로 전달 — opencode 세션 격리용.
+describe("defineCliAdapter ephemeral passthrough", () => {
+  async function spawnCapturingEphemeral(config: AdapterConfig) {
+    let received: boolean | undefined;
+    const ad = defineCliAdapter({
+      kind: "opencode",
+      buildCommand: () => ({ command: "/bin/echo", args: ["x"] }),
+      applyMcpServers: (input) => {
+        received = input.ephemeral;
+        return { args: input.args };
+      },
+    });
+    const h = await ad.spawn(
+      { prompt: "p", cwd: process.cwd(), env: {}, loadoutDir: "/tmp/loom-eph-test", onStdout() {}, onStderr() {} },
+      config,
+    );
+    await h.promise;
+    return received;
+  }
+
+  it("passes ephemeral=true when config.ephemeral is set", async () => {
+    expect(await spawnCapturingEphemeral({ ephemeral: true } as AdapterConfig)).toBe(true);
+  });
+
+  it("passes ephemeral=false when config omits it", async () => {
+    expect(await spawnCapturingEphemeral({} as AdapterConfig)).toBe(false);
+  });
+});

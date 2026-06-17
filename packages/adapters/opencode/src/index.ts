@@ -224,25 +224,41 @@ export const opencodeAdapter = defineCliAdapter<OpencodeConfig>({
   //   2) 우리 MCP 서버만 .mcp 필드에 합쳐 새 파일을 <loadoutDir>/xdg/opencode/opencode.json에 씀
   //   3) XDG_CONFIG_HOME=<loadoutDir>/xdg 로 spawn → opencode가 우리 파일을 읽음
   //   4) OPENCODE_DISABLE_PROJECT_CONFIG=1 — cwd의 opencode.json은 무시 (loom이 정본)
-  applyMcpServers: ({ args, servers, loadoutDir }) => {
-    if (!loadoutDir || servers.length === 0) return { args };
+  applyMcpServers: ({ args, servers, loadoutDir, ephemeral }) => {
+    if (!loadoutDir) return { args };
+    const env: Record<string, string> = {};
 
-    const xdgRoot = path.join(loadoutDir, "xdg");
-    const opencodeDir = path.join(xdgRoot, "opencode");
-    fs.mkdirSync(opencodeDir, { recursive: true });
+    // MCP 주입: 서버가 있을 때만 XDG_CONFIG_HOME 을 우리 opencode.json 으로 리다이렉트.
+    if (servers.length > 0) {
+      const xdgRoot = path.join(loadoutDir, "xdg");
+      const opencodeDir = path.join(xdgRoot, "opencode");
+      fs.mkdirSync(opencodeDir, { recursive: true });
+      const merged = mergeOpencodeMcp(readUserOpencodeConfig(), servers);
+      fs.writeFileSync(path.join(opencodeDir, "opencode.json"), JSON.stringify(merged, null, 2));
+      env.XDG_CONFIG_HOME = xdgRoot;
+      env.OPENCODE_DISABLE_PROJECT_CONFIG = "1";
+    }
 
-    const merged = mergeOpencodeMcp(readUserOpencodeConfig(), servers);
-    fs.writeFileSync(
-      path.join(opencodeDir, "opencode.json"),
-      JSON.stringify(merged, null, 2),
-    );
+    // 세션 미보존: 비-스레드 run 은 resume 가 없어 세션을 남길 필요가 없다. opencode 는
+    // 세션 DB(opencode.db)를 XDG_DATA_HOME 아래 두므로, 그걸 loadoutDir 안 임시 경로로
+    // 돌린다 → run 종료 시 loadoutDir 과 함께 삭제돼 사용자 세션 스토어(~/.local/share)에
+    // 안 쌓인다. auth.json/account.json 만 실제 위치에서 심링크해 자격증명은 유지 — 안
+    // 그러면 인증 모델이 깨진다(무료 big-pickle 은 자격증명이 없어 심링크가 no-op).
+    if (ephemeral) {
+      const dataRoot = path.join(loadoutDir, "data");
+      const ocData = path.join(dataRoot, "opencode");
+      fs.mkdirSync(ocData, { recursive: true });
+      const realRoot = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+      for (const f of ["auth.json", "account.json"]) {
+        const src = path.join(realRoot, "opencode", f);
+        if (fs.existsSync(src)) {
+          try { fs.symlinkSync(src, path.join(ocData, f)); }
+          catch { /* 이미 있으면(드묾) 그대로 — 자격증명 보존 우선 */ }
+        }
+      }
+      env.XDG_DATA_HOME = dataRoot;
+    }
 
-    return {
-      args,
-      env: {
-        XDG_CONFIG_HOME: xdgRoot,
-        OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-      },
-    };
+    return Object.keys(env).length ? { args, env } : { args };
   },
 });
