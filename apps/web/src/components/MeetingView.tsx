@@ -5,157 +5,53 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Send, Users, Gavel, ChevronRight } from "lucide-react";
-import type { AdapterKind, OfficeEvent, Project, RunInfo } from "@loom/core";
+import type { Project } from "@loom/core";
 import { api, type Meeting } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
-import { Markdown } from "./Markdown.js";
+import { AgentResultCard } from "./AgentResult.js";
 import { Button } from "./ui.js";
 import { useI18n } from "../context/I18nContext.js";
-import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
-import { extractReport } from "../lib/report.js";
 
-/** 이벤트에서 표시 텍스트 — 최종 result 우선, 없으면 text 이벤트 이어붙임. */
-function streamText(events: OfficeEvent[]): string {
-  const result = [...events].reverse().find(
-    (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",
-  );
-  if (result?.text) return result.text;
-  return events
-    .filter((e): e is Extract<OfficeEvent, { kind: "text" }> => e.kind === "text")
-    .map((e) => e.text)
-    .join("");
-}
-
-function RunCard({
-  run,
-  adapter,
-  tone,
-}: {
-  run: RunInfo;
-  adapter: string;
-  tone: "panel" | "chair";
-}) {
-  const { t } = useI18n();
-  const stream = useRunStream(run.id);
-  const running = stream.status === "running" && run.status === "running";
-  // loom-report 펜스를 떼어 raw JSON 이 카드에 노출되지 않게(본문만 표시).
-  // 본문이 비고 요약만 있으면(에이전트가 리포트만 낸 경우) 요약을 보인다.
-  const { body, report } = extractReport(streamText(stream.events));
-  const text = body || report?.summary || "";
-  const failed = stream.status === "failed" || run.status === "failed";
-
-  return (
-    <div
-      className={cn(
-        "flex h-full flex-col rounded-3xl border p-6 transition-all duration-300",
-        tone === "chair" 
-          ? "border-primary/40 bg-card shadow-xl shadow-primary/5 ring-1 ring-primary/20" 
-          : "border-border/60 bg-card/60 shadow-sm hover:border-primary/30 hover:bg-card hover:shadow-md",
-      )}
-    >
-      <div className="mb-5 flex items-center gap-3">
-        <AgentAvatar adapter={adapter as AdapterKind} size={32} className="rounded-xl shadow-sm" />
-        <span className="text-base font-bold text-foreground">@{run.agent}</span>
-        {tone === "chair" ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-primary">
-            <Gavel className="size-3.5" />
-            {t("meeting.chair")}
-          </span>
-        ) : null}
-        {running ? (
-          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-3 py-1 text-xs font-medium text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            {t("meeting.thinking")}
-          </span>
-        ) : null}
-      </div>
-      <div className="min-h-0 flex-1">
-        {failed ? (
-          <div className="flex h-full items-center justify-center rounded-2xl bg-destructive/10 p-4 text-sm font-medium text-destructive">
-            {t("meeting.failed")}
-          </div>
-        ) : text ? (
-          <div className="max-w-none text-sm leading-[1.7] text-foreground/90">
-            <Markdown>{text}</Markdown>
-          </div>
-        ) : (
-          <div className="flex h-full min-h-[5rem] items-center justify-center rounded-2xl bg-muted/20 text-sm font-medium text-muted-foreground/60">
-            {running ? t("meeting.thinking") : "…"}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
+// 회의 상세 — 안건 → 정보(패널) → 취합(의장). 각 카드는 AgentResultCard 로
+// loom-report 상세(요약·단계·결정·파일·도구·비용)까지 컴팩트하게 한눈에.
 function MeetingDetail({ meeting, agentAdapter }: { meeting: Meeting; agentAdapter: (name: string) => string }) {
   const { t } = useI18n();
   return (
-    <div className="mx-auto flex w-full max-w-5xl animate-in fade-in slide-in-from-bottom-4 flex-col gap-10 pb-16 pt-4">
-      {/* 1. The Whiteboard (안건) */}
-      <div className="relative mx-auto flex w-full max-w-3xl flex-col items-center">
-        <div className="absolute -inset-x-8 -inset-y-6 z-0 rounded-[3rem] bg-gradient-to-b from-primary/10 via-primary/5 to-transparent blur-2xl" />
-        <div className="relative z-10 w-full rounded-[2rem] border border-primary/20 bg-card/90 p-8 shadow-lg shadow-primary/5 backdrop-blur-md">
-          <div className="mb-5 flex items-center justify-center">
-            <span className="inline-flex items-center gap-2 rounded-full bg-primary/15 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-primary">
-              <Send className="size-3.5" />
-              {t("meeting.proposal")}
-            </span>
-          </div>
-          <p className="whitespace-pre-wrap text-center text-lg font-medium leading-relaxed text-foreground/90">
-            {meeting.proposal}
-          </p>
-        </div>
-        
-        {/* 연결 기둥 (안건 -> 패널) */}
-        <div className="relative mt-4 h-10 w-px bg-gradient-to-b from-primary/30 to-border" />
+    <div className="mx-auto flex w-full max-w-4xl animate-in fade-in flex-col gap-5 pb-12 pt-1">
+      {/* 안건 */}
+      <div className="rounded-2xl border border-primary/20 bg-card p-4 shadow-sm">
+        <p className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+          <Send className="size-3.5" />{t("meeting.proposal")}
+        </p>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{meeting.proposal}</p>
       </div>
 
-      {/* 2. The Panel (원탁 테이블) */}
-      <div className="relative flex flex-col items-center">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="h-px w-16 bg-border/80" />
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-muted-foreground">
-            <Users className="size-4" />
-            {t("meeting.opinions")} <span className="rounded-full bg-muted/80 px-2.5 py-0.5 text-xs text-foreground">{meeting.panel.length}</span>
-          </h3>
-          <div className="h-px w-16 bg-border/80" />
-        </div>
-        
-        {/* 패널 그리드 */}
-        <div className="grid w-full gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+      {/* 정보 — 패널 입력(병렬) */}
+      <div>
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-foreground">
+          <Users className="size-4 text-muted-foreground" />{t("meeting.opinions")}
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{meeting.panel.length}</span>
+        </h3>
+        <div className="grid items-start gap-2.5 md:grid-cols-2">
           {meeting.panel.map((run) => (
-            <RunCard key={run.id} run={run} adapter={agentAdapter(run.agent)} tone="panel" />
+            <AgentResultCard key={run.id} run={run} adapterOf={agentAdapter} role="panel" />
           ))}
         </div>
       </div>
 
-      {/* 3. The Chair (의장 결론) */}
-      <div className="mt-4 flex flex-col items-center">
-        {/* 연결 기둥 (패널 -> 의장) */}
-        <div className="mb-8 h-12 w-px bg-gradient-to-b from-border to-primary/50" />
-
-        <div className="w-full max-w-3xl">
-          {meeting.chair ? (
-            <div className="relative">
-              <div className="absolute -inset-4 z-0 rounded-[3rem] bg-primary/10 blur-xl" />
-              <div className="relative z-10">
-                <RunCard run={meeting.chair} adapter={agentAdapter(meeting.chair.agent)} tone="chair" />
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center gap-5 rounded-[2.5rem] border border-dashed border-primary/30 bg-primary/5 px-8 py-16 text-center text-primary/70 animate-pulse shadow-inner">
-              <div className="flex size-16 items-center justify-center rounded-full bg-primary/10 shadow-sm">
-                <Loader2 className="size-8 animate-spin" />
-              </div>
-              <div>
-                <p className="text-lg font-bold text-primary">{t("meeting.awaitingSynthesis")}</p>
-                <p className="mt-2 text-sm font-medium text-primary/60">패널들의 모든 의견이 모이면 의장이 결론을 종합합니다.</p>
-              </div>
-            </div>
-          )}
-        </div>
+      {/* 취합 — 의장 */}
+      <div>
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-foreground">
+          <Gavel className="size-4 text-primary" />{t("meeting.synthesis")}
+        </h3>
+        {meeting.chair ? (
+          <AgentResultCard run={meeting.chair} adapterOf={agentAdapter} role="chair" />
+        ) : (
+          <div className="flex items-center gap-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin text-primary" />{t("meeting.awaitingSynthesis")}
+          </div>
+        )}
       </div>
     </div>
   );

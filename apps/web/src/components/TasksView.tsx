@@ -6,13 +6,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ListTodo, ChevronRight, ChevronLeft, Check, Sparkles, MessageSquare,
-  FilePen, FileText, Wrench, User, ListChecks, AlertTriangle, HelpCircle, Network, ArrowRight, Crown,
+  ListTodo, ChevronRight, ChevronLeft, Check, MessageSquare,
+  FilePen, Wrench, User, AlertTriangle, Network, ArrowRight, Crown,
 } from "lucide-react";
 import type { AdapterKind, OfficeEvent, Project, RunInfo } from "@loom/core";
 import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
-import { Markdown } from "./Markdown.js";
 import { OrgTree } from "./OrgView.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
@@ -178,8 +177,8 @@ function TaskRow({
   );
 }
 
-// 작업 상세 — loom-report 를 최대한 파싱해 수행 내용을 섹션별로 + 위임 흐름 트리.
-// 채팅 없음(req 8) — 분석 전용. 이어서/수정은 대화에서 마스터에게.
+// 작업 상세 — 컴팩트한 지시 바 + 위임 흐름(마스터→팀원). 각 에이전트의 loom-report
+// 상세(요약·단계·결정·파일·도구·비용·받은 지시)는 AgentResultCard 가 노드별로 보여준다.
 function TaskDetail({
   task,
   adapterOf,
@@ -190,94 +189,34 @@ function TaskDetail({
   onBack: () => void;
 }) {
   const { t } = useI18n();
-  const stream = useRunStream(task.latest.id);
-  const { body, report } = extractReport(streamText(stream.events));
-  const running = stream.status === "running" && task.latest.status === "running";
-
-  const files = report?.files?.length ?? 0;
-  const steps = report?.steps?.length ?? 0;
+  const running = task.latest.status === "running";
   const durationMs = task.latest.startedAt && task.latest.endedAt
     ? Math.max(0, new Date(task.latest.endedAt).getTime() - new Date(task.latest.startedAt).getTime())
     : null;
 
-  const sections: { key: string; icon: React.ReactNode; title: string; items: string[]; tone?: string }[] = [];
-  if (report?.steps?.length) sections.push({ key: "steps", icon: <ListChecks className="size-3.5" />, title: t("tasks.d.steps"), items: report.steps });
-  if (report?.decisions?.length) sections.push({ key: "decisions", icon: <Sparkles className="size-3.5" />, title: t("tasks.d.decisions"), items: report.decisions });
-  if (report?.blockers?.length) sections.push({ key: "blockers", icon: <AlertTriangle className="size-3.5" />, title: t("tasks.d.blockers"), items: report.blockers, tone: "warn" });
-
   return (
-    <div className="mx-auto w-full max-w-4xl flex-1 overflow-y-auto pb-12">
-      <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
+    <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto pb-12">
+      <button type="button" onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <ChevronLeft className="size-4" />{t("tasks.d.back")}
       </button>
 
-      {/* 지시 + 메타(위임 흐름·작업량) */}
-      <div className="mb-5 rounded-2xl border border-border bg-muted/20 p-4">
+      {/* 지시(대표) + 참여 체인 + 전체 작업량 — 한 블록에 한눈에 */}
+      <div className="rounded-2xl border border-border bg-muted/20 p-3.5">
         <p className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           <User className="size-3.5" />{t("tasks.d.request")}
         </p>
         <p className="whitespace-pre-wrap text-sm text-foreground">{task.title}</p>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-3">
-          <DelegationChain agents={task.agents} adapterOf={adapterOf} size={24} />
-          <WorkStats delegations={task.delegations} files={files} steps={steps} durationMs={running ? null : durationMs} costUsd={task.latest.costUsd} t={t} />
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-2.5">
+          <DelegationChain agents={task.agents} adapterOf={adapterOf} size={22} />
+          <WorkStats delegations={task.delegations} files={0} steps={0} durationMs={running ? null : durationMs} costUsd={task.latest.costUsd} t={t} />
         </div>
       </div>
 
-      {/* 결과 — loom-report 전체 파싱 */}
-      <h3 className="mb-2 text-sm font-bold text-foreground">{t("tasks.d.result")}</h3>
-      <div className="mb-6 rounded-2xl border border-border bg-card p-4 shadow-sm">
-        {report?.summary ? <p className="text-sm font-medium leading-relaxed text-foreground">{report.summary}</p> : null}
-        {!report && body ? <div className="max-w-none text-sm leading-relaxed text-foreground/90"><Markdown>{body}</Markdown></div> : null}
-        {!report && !body ? <p className="text-sm text-muted-foreground">{running ? `${t("tasks.working")}…` : t("tasks.noOutput")}</p> : null}
+      {/* 연결선 — 대표 지시 → 마스터 */}
+      <div className="ml-5 h-4 w-px bg-gradient-to-b from-border to-primary/40" />
 
-        {sections.map((s) => (
-          <div key={s.key} className="mt-4">
-            <p className={`mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${s.tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
-              {s.icon}{s.title}
-            </p>
-            <ul className="space-y-1">
-              {s.items.map((it, i) => (
-                <li key={i} className="flex gap-2 text-[13px] leading-relaxed text-foreground/90">
-                  <span className="mt-1.5 size-1 shrink-0 rounded-full bg-primary/60" />
-                  <span>{it}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-
-        {report?.files?.length ? (
-          <div className="mt-4">
-            <p className="mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <FilePen className="size-3.5" />{t("tasks.d.files")} ({report.files.length})
-            </p>
-            <ul className="space-y-1">
-              {report.files.map((f, i) => (
-                <li key={i} className="flex items-center gap-2 font-mono text-[12px] text-foreground/80">
-                  <FileText className="size-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{f.path}</span>
-                  {f.action ? <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">{f.action}</span> : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {report?.question ? (
-          <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
-            <p className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
-              <HelpCircle className="size-3.5" />{t("tasks.d.question")}
-            </p>
-            <p className="text-sm text-foreground/90">{report.question}</p>
-          </div>
-        ) : null}
-      </div>
-
-      {/* 흐름 — 당신 → 마스터 → 팀원 위임 트리(각 위임의 프롬프트·답변·비용·도구) */}
-      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-foreground"><Network className="size-4" />{t("tasks.d.flow")}</h3>
-      <div className="mb-6">
-        <OrgTree threadId={task.threadId} request={task.title} adapterOf={adapterOf} />
-      </div>
+      {/* 흐름 — 마스터 → 팀원. 노드별 받은 지시·답변·작업량까지. */}
+      <OrgTree threadId={task.threadId} adapterOf={adapterOf} />
     </div>
   );
 }
