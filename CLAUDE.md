@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> 사용자 관점 문서는 [README.md](./README.md), v2 기준 설계는 [docs/V2-PLAN.md](./docs/V2-PLAN.md), spec 주입 검증은 [docs/SPEC-INJECTION-VERIFIED.md](./docs/SPEC-INJECTION-VERIFIED.md), 스킬·규약 작성 규약은 [docs/SKILL-AUTHORING.md](./docs/SKILL-AUTHORING.md).
+> 사용자 관점 문서는 [README.md](./README.md), v2 기준 설계는 [docs/V2-PLAN.md](./docs/V2-PLAN.md), spec 주입 검증은 [docs/SPEC-INJECTION-VERIFIED.md](./docs/SPEC-INJECTION-VERIFIED.md), 스킬·규약 작성 규약은 [docs/SKILL-AUTHORING.md](./docs/SKILL-AUTHORING.md), CLI별 능력·활동 캡처 매트릭스는 [docs/CLI-CAPABILITIES.md](./docs/CLI-CAPABILITIES.md).
 
 ---
 
