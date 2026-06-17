@@ -1,4 +1,4 @@
-// 작업 보드 — "채팅"이 아니라 "분석". 각 작업이 어떤 위임 흐름을 거쳤고(리드→팀원)
+// 작업 보드 — "채팅"이 아니라 "분석". 각 작업이 어떤 위임 흐름을 거쳤고(마스터→팀원)
 // 각 에이전트가 무슨 일을 했는지(파일·단계·결정) 를 한눈에 보는 곳.
 // 백엔드 재사용: 한 작업 = 한 스레드(세션 연속성). 목록 행은 그 스레드의 최신 run 을
 // useRunStream 으로 비춰 loom-report 요약·작업량을 표시하고, 상세는 전체 파싱 + 위임 트리.
@@ -22,7 +22,7 @@ interface Task {
   title: string; // 최초 업무 텍스트(지시)
   latest: RunInfo; // 현재 상태를 비출 최신 run
   turns: number; // 사용자 발의 run 수(이어서 횟수)
-  agents: string[]; // 위임 순서대로 distinct 에이전트(0번 = 리드)
+  agents: string[]; // 위임 순서대로 distinct 에이전트(0번 = 마스터)
   delegations: number; // 핸드오프(자식 run) 수
 }
 
@@ -45,7 +45,7 @@ function groupTasks(runs: RunInfo[]): Task[] {
     // 카드 요약·상태는 마스터(최상위 run)의 종합 기준 — 자식이 더 늦게 시작해도 마스터가 마지막에 끝난다.
     const latest = top[top.length - 1] ?? sorted[sorted.length - 1]!;
     const lead = top[0]?.agent ?? sorted[0]!.agent;
-    // 위임 순서대로 distinct — 리드를 항상 0번에.
+    // 위임 순서대로 distinct — 마스터를 항상 0번에.
     const seen = new Set<string>();
     const agents: string[] = [];
     for (const r of sorted) if (!seen.has(r.agent)) { seen.add(r.agent); agents.push(r.agent); }
@@ -78,7 +78,7 @@ function fmtDuration(ms: number): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-/** 위임 흐름 — 리드(👑) → 팀원 아바타를 화살표로 잇는다. "어떤 워크플로우로 위임됐나"의 한 줄 요약. */
+/** 위임 흐름 — 마스터(👑) → 팀원 아바타를 화살표로 잇는다. "어떤 워크플로우로 위임됐나"의 한 줄 요약. */
 function DelegationChain({ agents, adapterOf, size = 22 }: { agents: string[]; adapterOf: (n: string) => string; size?: number }) {
   const shown = agents.slice(0, 4);
   const extra = agents.length - shown.length;
@@ -172,7 +172,7 @@ function TaskRow({
         </div>
       </div>
 
-      {/* 위임 흐름 — 리드 → 팀원 */}
+      {/* 위임 흐름 — 마스터 → 팀원 */}
       <div className="hidden shrink-0 flex-col items-end justify-center gap-1 sm:flex">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">{t("tasks.d.flow")}</span>
         <DelegationChain agents={task.agents} adapterOf={adapterOf} />
