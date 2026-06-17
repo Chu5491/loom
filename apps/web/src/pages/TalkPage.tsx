@@ -1106,6 +1106,7 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
               agent={agent}
               startedAt={startedAt}
               projectName={projectName}
+              trace={view.trace}
             />
             {view.loadout ? <LoadoutChips loadout={view.loadout} /> : null}
           </>
@@ -1750,10 +1751,10 @@ function traceIcon(it: TraceItem) {
   return Wrench;
 }
 
-// 작업 중 패널 — "에이전트가 이 프로젝트에서 지금 일하고 있다"를 전달(스트리밍 없이).
-// 펄스 아바타 + 프로젝트 컨텍스트 + 경과시간 + 셔머 진행 바. 결과는 완료 시 한 번에.
-function WorkingPanel({ agent, startedAt, projectName }: {
-  agent?: AgentSpec; startedAt?: string; projectName?: string;
+// 작업 중 패널 — "에이전트가 지금 무슨 일을 하는지"를 라이브로. 펄스 아바타 +
+// 경과시간 + 실시간 행동 타임라인(도구·파일·위임). 결과 텍스트는 스트리밍 안 함(완료 시).
+function WorkingPanel({ agent, startedAt, projectName, trace }: {
+  agent?: AgentSpec; startedAt?: string; projectName?: string; trace: TraceItem[];
 }) {
   const { t } = useI18n();
   const [now, setNow] = useState(() => Date.now());
@@ -1789,11 +1790,29 @@ function WorkingPanel({ agent, startedAt, projectName }: {
         {elapsed ? <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">{elapsed}</span> : null}
       </div>
 
-      {/* 작업 중 — 스트리밍 없이 상태만(결과는 완료 시 한 번에) */}
-      <div className="flex items-center gap-1.5 px-3.5 pt-2 text-[12px]">
-        <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
-        <span className="text-muted-foreground">{t("talk.thinking")}</span>
-      </div>
+      {/* 라이브 작업 — 지금 무슨 도구·파일·위임을 하는지(행동만, 결과 텍스트는 안 흘림) */}
+      {trace.length > 0 ? (
+        <div className="space-y-0.5 px-3.5 pt-2">
+          {trace.slice(-6).map((it, i, arr) => {
+            const Icon = traceIcon(it);
+            const isLast = i === arr.length - 1;
+            const isHandoff = it.kind === "handoff";
+            return (
+              <div key={`${it.kind}-${it.name}-${i}`} className={cn("flex items-center gap-1.5 text-[12px]", isLast ? "text-foreground" : "text-muted-foreground/60")}>
+                <Icon className={cn("size-3.5 shrink-0", isHandoff || isLast ? "text-primary" : "text-muted-foreground/50")} />
+                <span className={cn("shrink-0", isHandoff && "font-medium")}>{isHandoff ? `→ ${it.name}` : it.name}</span>
+                {it.target ? <span className="truncate font-mono text-[11px] opacity-75">{isHandoff ? it.target : it.target.split("/").pop()}</span> : null}
+                {isLast ? <Loader2 className="ml-auto size-3 shrink-0 animate-spin text-primary" /> : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 px-3.5 pt-2 text-[12px]">
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+          <span className="text-muted-foreground">{t("talk.thinking")}</span>
+        </div>
+      )}
 
       {/* 미정형 진행 셔머 — 끝을 알 수 없지만 "돌고 있다"는 강한 신호 */}
       <div className="loom-shimmer-track mx-3.5 mb-3 mt-2 h-1 rounded-full bg-primary/10" />

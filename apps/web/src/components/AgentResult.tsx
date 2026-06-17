@@ -57,6 +57,7 @@ export function AgentResultCard({
   role = "team",
   reason,
   depth = 0,
+  step,
   showPrompt = false,
   childrenOf,
 }: {
@@ -66,6 +67,8 @@ export function AgentResultCard({
   /** 부모가 이 에이전트에게 위임한 사유(흐름 추적). */
   reason?: string;
   depth?: number;
+  /** 위임 순번(같은 부모 안에서 1,2,3…) — 워크플로우 단계로 표시. */
+  step?: number;
   /** 받은 지시(위임 프롬프트 = run.prompt)를 접이식으로 노출. */
   showPrompt?: boolean;
   /** 주면 위임 트리 모드 — 자식 run 을 재귀로 렌더(단일 스트림으로 자식 사유까지 계산). */
@@ -104,16 +107,17 @@ export function AgentResultCard({
   return (
     <div>
       <div className={cn("rounded-xl border p-3 transition-colors", lead ? "border-primary/30 bg-primary/[0.04]" : "border-border bg-card")}>
-        {/* 헤더 — 아바타·이름·역할·상태 + 작업량(우측) 한 줄 */}
+        {/* 헤더 — (단계번호) 아바타·이름·역할·상태 + 작업량(우측) 한 줄 */}
         <div className="flex items-center gap-2">
+          {step != null ? (
+            <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground" title={t("tasks.d.step", { n: String(step) })}>{step}</span>
+          ) : null}
           <AgentAvatar adapter={adapterOf(run.agent) as AdapterKind} size={24} className="shrink-0 rounded-lg" />
           <span className="truncate text-sm font-semibold text-foreground">@{displayName}</span>
           {role === "master" ? (
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"><Crown className="size-2.5" />{t("talk.target.master")}</span>
           ) : role === "chair" ? (
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary"><Gavel className="size-2.5" />{t("meeting.chair")}</span>
-          ) : depth > 0 ? (
-            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{t("org.depth", { n: String(depth) })}</span>
           ) : null}
           {running ? (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"><Loader2 className="size-2.5 animate-spin" />{t("org.working")}</span>
@@ -198,11 +202,11 @@ export function AgentResultCard({
         )}
       </div>
 
-      {/* 위임 트리 — 자식 카드를 연결선과 함께 재귀 */}
+      {/* 위임 워크플로우 — 자식 카드를 단계 번호(①②③) + 흐름선과 함께 재귀 */}
       {kids.length ? (
-        <div className="ml-4 mt-2 space-y-2 border-l-2 border-border/60 pl-3">
-          {kids.map((c) => (
-            <AgentResultCard key={c.id} run={c} adapterOf={adapterOf} role="team" depth={depth + 1} reason={reasonFor(c.agent)} showPrompt childrenOf={childrenOf} />
+        <div className="ml-[14px] mt-2 space-y-2 border-l-2 border-primary/30 pl-3.5">
+          {kids.map((c, i) => (
+            <AgentResultCard key={c.id} run={c} adapterOf={adapterOf} role="team" depth={depth + 1} step={i + 1} reason={reasonFor(c.agent)} showPrompt childrenOf={childrenOf} />
           ))}
         </div>
       ) : null}

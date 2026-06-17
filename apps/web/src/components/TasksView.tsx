@@ -38,8 +38,12 @@ function groupTasks(runs: RunInfo[]): Task[] {
   const tasks: Task[] = [];
   for (const [threadId, group] of byThread) {
     const sorted = [...group].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    const delegations = sorted.filter((r) => r.parentRunId).length;
+    // 작업 = 위임이 일어난 대화만. 마스터가 직접 답한 대화는 작업이 아니라 채팅(인입점).
+    if (delegations === 0) continue;
     const top = sorted.filter((r) => !r.parentRunId); // 사용자 발의 run(핸드오프 자식 제외)
-    const latest = sorted[sorted.length - 1]!;
+    // 카드 요약·상태는 마스터(최상위 run)의 종합 기준 — 자식이 더 늦게 시작해도 마스터가 마지막에 끝난다.
+    const latest = top[top.length - 1] ?? sorted[sorted.length - 1]!;
     const lead = top[0]?.agent ?? sorted[0]!.agent;
     // 위임 순서대로 distinct — 리드를 항상 0번에.
     const seen = new Set<string>();
@@ -52,7 +56,7 @@ function groupTasks(runs: RunInfo[]): Task[] {
       latest,
       turns: top.length,
       agents: ordered,
-      delegations: sorted.filter((r) => r.parentRunId).length,
+      delegations,
     });
   }
   return tasks.sort((a, b) => b.latest.startedAt.localeCompare(a.latest.startedAt));
@@ -139,7 +143,7 @@ function TaskRow({
     <button
       type="button"
       onClick={() => onOpen(task.threadId)}
-      className={`group flex w-full items-stretch gap-4 rounded-2xl border bg-card px-4 py-3.5 text-left shadow-sm transition-all hover:border-primary/40 hover:shadow-md ${running ? "border-primary/40 ring-1 ring-primary/10" : "border-border"}`}
+      className={`group flex w-full items-stretch gap-3.5 rounded-xl border bg-card px-3.5 py-3 text-left shadow-sm transition-all hover:border-primary/40 hover:shadow-md ${running ? "border-primary/40 ring-1 ring-primary/10" : "border-border"}`}
     >
       {/* 상태 표시 — 왼쪽 색 바 + 아이콘 */}
       <div className="flex shrink-0 flex-col items-center justify-center">
@@ -161,7 +165,7 @@ function TaskRow({
         <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
           {failed ? t("tasks.failedHint") : summary ? summary : running ? `${t("tasks.working")}…` : t("tasks.noOutput")}
         </p>
-        <div className="mt-2">
+        <div className="mt-1.5">
           <WorkStats delegations={task.delegations} files={files} steps={steps} durationMs={running ? null : durationMs} costUsd={task.latest.costUsd} t={t} />
         </div>
       </div>
@@ -212,10 +216,14 @@ function TaskDetail({
         </div>
       </div>
 
-      {/* 연결선 — 대표 지시 → 마스터 */}
-      <div className="ml-5 h-4 w-px bg-gradient-to-b from-border to-primary/40" />
+      {/* 워크플로우 라벨 + 연결선 — 대표 지시 → 마스터 → 단계별 위임 */}
+      <div className="mb-1 mt-3 flex items-center gap-1.5">
+        <Network className="size-4 text-primary" />
+        <h3 className="text-sm font-bold text-foreground">{t("tasks.d.flow")}</h3>
+      </div>
+      <div className="ml-5 h-3 w-px bg-gradient-to-b from-border to-primary/40" />
 
-      {/* 흐름 — 마스터 → 팀원. 노드별 받은 지시·답변·작업량까지. */}
+      {/* 흐름 — 마스터(오케스트레이터) → ①②③ 팀원. 노드별 받은 지시·답변·작업량까지. */}
       <OrgTree threadId={task.threadId} adapterOf={adapterOf} />
     </div>
   );
@@ -262,7 +270,7 @@ export function TasksView({ project }: { project: Project }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 sm:p-6 lg:p-7">
       {/* 헤더 — 분석 전용(채팅 없음). 새 작업은 대화에서 마스터에게. */}
       <div className="mx-auto flex w-full max-w-4xl shrink-0 flex-col gap-3">
         <div className="flex items-end justify-between gap-3 px-1">
@@ -281,7 +289,7 @@ export function TasksView({ project }: { project: Project }) {
         <button
           type="button"
           onClick={goTalk}
-          className="group flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/20 px-3.5 py-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="group flex items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-3.5 py-2 text-left text-[12.5px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
         >
           <MessageSquare className="size-4 shrink-0 text-primary" />
           <span className="flex-1">{t("tasks.newInTalk")}</span>
@@ -302,7 +310,7 @@ export function TasksView({ project }: { project: Project }) {
             </div>
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {tasks.map((task) => (
               <TaskRow key={task.threadId} task={task} adapterOf={adapterOf} onOpen={setSelected} />
             ))}
