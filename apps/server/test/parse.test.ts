@@ -31,4 +31,16 @@ describe("parseLine", () => {
     const line = JSON.stringify({ type: "step_finish", part: { cost: 0.0042, tokens: { input: 13723, output: 17 } } });
     expect(parseLine(line)).toEqual([{ kind: "usage", costUsd: 0.0042, inputTokens: 13723, outputTokens: 17 }]);
   });
+
+  it("treats claude MultiEdit as a file edit, not a generic tool", () => {
+    const me = JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "MultiEdit", input: { file_path: "a.ts" } }] } });
+    expect(parseLine(me)).toEqual([{ kind: "file", path: "a.ts", action: "edit" }]);
+  });
+
+  it("captures codex MCP tool calls and web_search from item.completed", () => {
+    const mcp = JSON.stringify({ type: "item.completed", item: { type: "mcp_tool_call", tool: "delegate", server: "loom" } });
+    expect(parseLine(mcp)).toEqual([{ kind: "tool", name: "delegate", target: "loom" }]);
+    const ws = JSON.stringify({ type: "item.completed", item: { type: "web_search", query: "loom orchestration" } });
+    expect(parseLine(ws)).toEqual([{ kind: "tool", name: "web_search", target: "loom orchestration" }]);
+  });
 });

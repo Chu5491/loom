@@ -16,6 +16,9 @@ export interface CodexConfig extends AdapterConfig {
   dangerouslyBypassApprovalsAndSandbox?: boolean;
   /** 엔진 공통 위험 토글(agent.permission=bypass) — codex 고유 키와 동치. */
   dangerouslySkipPermissions?: boolean;
+  /** 비-bypass run 의 codex exec 샌드박스 등급(기본 workspace-write).
+   *  read-only | workspace-write | danger-full-access. */
+  sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
   /** Override the working dir codex sees (--cd). Distinct from spawn cwd. */
   cd?: string;
 }
@@ -28,6 +31,11 @@ export function buildCodexCommand(config: CodexConfig = {}): BuiltCommand {
   const args: string[] = config.search ? ["--search", "exec", "--json"] : ["exec", "--json"];
   if (config.dangerouslyBypassApprovalsAndSandbox || config.dangerouslySkipPermissions) {
     args.push("--dangerously-bypass-approvals-and-sandbox");
+  } else {
+    // 비-bypass: `codex exec` 는 비실행이라 승인을 묻지 않으니(-a 는 root 전용 플래그),
+    // 샌드박스 등급만 명시한다. 기본(read-only)이면 에이전트가 파일을 못 써서 코딩
+    // 작업이 조용히 막힌다 — workspace-write 로 작업 디렉토리 편집을 허용(시스템은 격리).
+    args.push("--sandbox", config.sandboxMode ?? "workspace-write");
   }
   if (config.model) args.push("--model", config.model);
   if (config.reasoningEffort) {

@@ -16,7 +16,14 @@ export interface AntigravityConfig extends AdapterConfig {
   /** Auto-approve all tool permission requests without prompting. */
   dangerouslySkipPermissions?: boolean;
   sandbox?: boolean;
+  /** print 모드 대기 상한(Go duration, 예 "30m"). agy 기본은 5m0s 라, 5분 넘는
+   *  작업(위임/회의 패널)이 agy 자체에서 잘린다 — loom run 한도까지 늘려 준다. */
+  printTimeout?: string;
 }
+
+// agy print 기본 타임아웃은 5m — 코딩 에이전트엔 짧다. loom 의 위임(10m)·회의(20m)
+// 한도를 넘게 넉넉히. 너무 길면 좀비를 방치하니 30m 로 절충(필요시 config 로 상향).
+const DEFAULT_PRINT_TIMEOUT = "30m";
 
 export function buildAntigravityCommand(config: AntigravityConfig = {}): BuiltCommand {
   const command = config.command ?? "agy";
@@ -24,6 +31,8 @@ export function buildAntigravityCommand(config: AntigravityConfig = {}): BuiltCo
   // 모델은 --model 플래그로 — ANTIGRAVITY_MODEL env 는 현행 agy 바이너리가
   // 참조하지 않아(strings 검사 0건) 조용히 기본 모델로 돌아가는 함정이었다.
   if (config.model) args.push("--model", config.model);
+  // print 모드 자체 타임아웃을 늘려 5분 넘는 답변이 잘리지 않게(미설정 시 agy 기본 5m).
+  args.push("--print-timeout", config.printTimeout ?? DEFAULT_PRINT_TIMEOUT);
   if (config.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
   if (config.sandbox) args.push("--sandbox");
   if (config.extraArgs?.length) args.push(...config.extraArgs);

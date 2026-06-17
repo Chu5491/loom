@@ -18,6 +18,9 @@ export interface ClaudeCodeConfig extends AdapterConfig {
   permissionMode?: "acceptEdits" | "plan" | "default";
   /** Reasoning effort: low / medium / high / xhigh / max. Maps to --effort. */
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  /** run 단위 비용 하드캡(USD) → `--max-budget-usd`. 엔진이 남은 월 예산에서 계산해
+   *  넘긴다 — run 이 도중에 월 예산을 초과하는 걸 CLI 레벨에서 막는다. */
+  maxBudgetUsd?: number;
 }
 
 export function buildClaudeCommand(config: ClaudeCodeConfig = {}): BuiltCommand {
@@ -30,6 +33,8 @@ export function buildClaudeCommand(config: ClaudeCodeConfig = {}): BuiltCommand 
   if (verbose) args.push("--verbose");
   if (config.model) args.push("--model", config.model);
   if (config.effort) args.push("--effort", config.effort);
+  // run 단위 예산 하드캡 — 남은 월 예산을 엔진이 넘긴다(--print 전용 플래그, 항상 충족).
+  if (config.maxBudgetUsd != null) args.push("--max-budget-usd", String(config.maxBudgetUsd));
   for (const dir of config.addDirs ?? []) args.push("--add-dir", dir);
   if (config.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
   if (config.permissionMode && config.permissionMode !== "default") {

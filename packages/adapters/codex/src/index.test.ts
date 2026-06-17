@@ -58,10 +58,19 @@ function makeServer(
 }
 
 describe("buildCodexCommand", () => {
-  it("defaults: codex exec --json -", () => {
+  it("defaults: codex exec --json --sandbox workspace-write -", () => {
     const { command, args } = buildCodexCommand();
     expect(command).toBe("codex");
-    expect(args).toEqual(["exec", "--json", "-"]);
+    // 비-bypass 는 exec 가 비실행이라 승인을 안 물으니 샌드박스 등급만 명시 —
+    // 기본 read-only 면 편집이 막혀 코딩이 조용히 실패한다.
+    expect(args).toEqual(["exec", "--json", "--sandbox", "workspace-write", "-"]);
+  });
+
+  it("non-bypass uses --sandbox; bypass uses the bypass flag instead (no --sandbox)", () => {
+    expect(buildCodexCommand({ sandboxMode: "read-only" }).args).toContain("read-only");
+    const bypass = buildCodexCommand({ dangerouslySkipPermissions: true }).args;
+    expect(bypass).toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(bypass).not.toContain("--sandbox");
   });
 
   it("appends --model when configured", () => {

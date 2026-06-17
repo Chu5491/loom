@@ -288,12 +288,17 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   if (!adapter) return { ok: false, status: 400, error: `adapter_not_registered: ${agent.adapter}` };
 
   // 월 예산 가드 — 초과 시 새 run 거부(이미 도는 run 은 끝까지). office/budget.json.
+  // 시작 전 차단만으로는 한 run 이 도중에 예산을 넘겨버릴 수 있다 → 남은 예산을
+  // budgetRemaining 으로 모아, 지원하는 어댑터(claude --max-budget-usd)에 run 단위
+  // 하드캡으로 넘긴다(가장 빡빡한 cap 기준).
   const budget = readBudget();
+  let budgetRemaining: number | undefined;
   if (budget.monthlyUsd != null) {
     const spent = monthCostUsd();
     if (spent >= budget.monthlyUsd) {
       return { ok: false, status: 400, error: `budget_exceeded: $${spent.toFixed(2)} / $${budget.monthlyUsd} this month` };
     }
+    budgetRemaining = budget.monthlyUsd - spent;
   }
   const agentCap = budget.perAgent[agent.name];
   if (agentCap != null) {
@@ -301,6 +306,8 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     if (spent >= agentCap) {
       return { ok: false, status: 400, error: `agent_budget_exceeded: @${agent.name} $${spent.toFixed(2)} / $${agentCap} this month` };
     }
+    const agentRemaining = agentCap - spent;
+    budgetRemaining = budgetRemaining == null ? agentRemaining : Math.min(budgetRemaining, agentRemaining);
   }
 
   // 프로젝트 지정 시 그 디렉토리가 cwd. 검증 실패면 거절(엉뚱한 곳에서 돌지 않게).
@@ -436,6 +443,8 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     ...(agent.permission === "acceptEdits" ? { permissionMode: "acceptEdits" } : {}),
     // 추론 강도: 지원하는 어댑터(codex 등)가 config.reasoning 으로 읽음.
     ...(agent.reasoning ? { reasoning: agent.reasoning } : {}),
+    // 남은 월 예산을 run 하드캡으로 — claude(--max-budget-usd)가 읽어 도중 초과를 막는다.
+    ...(budgetRemaining != null ? { maxBudgetUsd: budgetRemaining } : {}),
     ...(cfg.env ? { env: resolveRefs(cfg.env as Record<string, string>) } : {}),
   };
 

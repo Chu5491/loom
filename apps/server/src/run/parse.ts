@@ -11,7 +11,10 @@
 
 import type { OfficeEvent } from "@loom/core";
 
-const FILE_TOOLS = new Set(["edit", "write", "Edit", "Write", "replace", "write_file", "apply_patch"]);
+const FILE_TOOLS = new Set([
+  "edit", "write", "Edit", "Write", "replace", "write_file", "apply_patch",
+  "MultiEdit", "multi_edit", "NotebookEdit", "notebook_edit", "create_file",
+]);
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v ? v : undefined;
@@ -103,6 +106,14 @@ export function parseLine(line: string): OfficeEvent[] {
     }
     if ((item?.type === "file_change" || item?.type === "patch") && str(item.path)) {
       return [{ kind: "file", path: str(item.path)!, action: "edit" }];
+    }
+    // MCP 도구 호출(위임 등) + 웹 검색 — 활동에서 빠지지 않게.
+    if (item?.type === "mcp_tool_call") {
+      const name = str(item.tool) ?? str(item.name) ?? str(item.server) ?? "mcp";
+      return [{ kind: "tool", name, target: str(item.server) }];
+    }
+    if (item?.type === "web_search" && (str(item.query) || str(item.text))) {
+      return [{ kind: "tool", name: "web_search", target: (str(item.query) ?? str(item.text))!.slice(0, 80) }];
     }
   }
 

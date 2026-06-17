@@ -59,15 +59,21 @@ describe("captureAntigravitySession", () => {
 });
 
 describe("buildAntigravityCommand", () => {
-  it("defaults: agy with no flags", () => {
+  it("defaults: agy with just --print-timeout (avoid 5m cutoff)", () => {
     const { command, args } = buildAntigravityCommand();
     expect(command).toBe("agy");
-    expect(args).toEqual([]);
+    expect(args).toEqual(["--print-timeout", "30m"]);
+  });
+
+  it("uses a custom printTimeout when given", () => {
+    expect(buildAntigravityCommand({ printTimeout: "10m" }).args).toEqual(["--print-timeout", "10m"]);
   });
 
   it("appends --dangerously-skip-permissions when set", () => {
     expect(buildAntigravityCommand().args).not.toContain("--dangerously-skip-permissions");
     expect(buildAntigravityCommand({ dangerouslySkipPermissions: true }).args).toEqual([
+      "--print-timeout",
+      "30m",
       "--dangerously-skip-permissions",
     ]);
   });
@@ -84,7 +90,7 @@ describe("buildAntigravityCommand", () => {
 
   it("appends extraArgs at the end", () => {
     const { args } = buildAntigravityCommand({ extraArgs: ["--log-file", "/tmp/agy.log"] });
-    expect(args).toEqual(["--log-file", "/tmp/agy.log"]);
+    expect(args).toEqual(["--print-timeout", "30m", "--log-file", "/tmp/agy.log"]);
   });
 
   it("respects command override", () => {
