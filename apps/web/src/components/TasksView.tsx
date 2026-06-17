@@ -100,10 +100,10 @@ function DelegationChain({ agents, adapterOf, size = 22 }: { agents: string[]; a
 
 /** 작업량 통계 칩 묶음 — 위임·파일·단계·시간·비용. 분석용 메타. */
 function WorkStats({
-  delegations, files, steps, durationMs, costUsd, t,
+  delegations, files, steps, durationMs, costUsd, estimated, t,
 }: {
   delegations: number; files: number; steps: number; durationMs: number | null; costUsd?: number | null;
-  t: (k: string) => string;
+  estimated?: boolean; t: (k: string) => string;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] font-medium text-muted-foreground">
@@ -111,7 +111,7 @@ function WorkStats({
       {files > 0 ? <span className="inline-flex items-center gap-1" title={t("tasks.files")}><FilePen className="size-3.5" />{files}</span> : null}
       {steps > 0 ? <span className="inline-flex items-center gap-1" title={t("tasks.steps")}><Wrench className="size-3.5" />{steps}</span> : null}
       {durationMs != null ? <span className="tabular-nums">{fmtDuration(durationMs)}</span> : null}
-      {costUsd != null && costUsd > 0 ? <span className="tabular-nums">${costUsd.toFixed(4)}</span> : null}
+      {costUsd != null && costUsd > 0 ? <span className="tabular-nums" title={estimated ? t("cost.estimated") : undefined}>{estimated ? "~" : ""}${costUsd.toFixed(4)}</span> : null}
     </div>
   );
 }
@@ -166,7 +166,7 @@ function TaskRow({
           {failed ? t("tasks.failedHint") : summary ? summary : running ? `${t("tasks.working")}…` : t("tasks.noOutput")}
         </p>
         <div className="mt-1.5">
-          <WorkStats delegations={task.delegations} files={files} steps={steps} durationMs={running ? null : durationMs} costUsd={task.latest.costUsd} t={t} />
+          <WorkStats delegations={task.delegations} files={files} steps={steps} durationMs={running ? null : durationMs} costUsd={task.latest.costUsd} estimated={task.latest.costEstimated} t={t} />
         </div>
       </div>
 
@@ -212,7 +212,7 @@ function TaskDetail({
         <p className="whitespace-pre-wrap text-sm text-foreground">{task.title}</p>
         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-2.5">
           <DelegationChain agents={task.agents} adapterOf={adapterOf} size={22} />
-          <WorkStats delegations={task.delegations} files={0} steps={0} durationMs={running ? null : durationMs} costUsd={task.latest.costUsd} t={t} />
+          <WorkStats delegations={task.delegations} files={0} steps={0} durationMs={running ? null : durationMs} costUsd={task.latest.costUsd} estimated={task.latest.costEstimated} t={t} />
         </div>
       </div>
 

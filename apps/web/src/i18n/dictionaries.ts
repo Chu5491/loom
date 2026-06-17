@@ -84,6 +84,7 @@ const en = {
   "talk.team.manual": "manual",
   "talk.fireWorkflow": "Run {name}",
   "talk.team.cost": "Total cost",
+  "cost.estimated": "Estimated from tokens — the CLI didn't report an exact cost",
   "talk.team.handing": "handing off",
   "talk.sidebar.threads": "Conversations",
 
@@ -621,6 +622,7 @@ const ko: Dictionary = {
   "talk.team.manual": "수동",
   "talk.fireWorkflow": "{name} 실행",
   "talk.team.cost": "총 비용",
+  "cost.estimated": "토큰으로 추정 — CLI가 정확한 비용을 안 줌",
   "talk.team.handing": "넘기는 중",
   "talk.sidebar.threads": "대화",
 

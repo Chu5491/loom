@@ -228,8 +228,11 @@ export interface RunInfo {
   projectId: string | null;
   /** 어느 대화 스레드에 속하나. 스레드 안에서 세션이 이어진다. */
   threadId: string | null;
-  /** 이 run 의 비용(USD). CLI 가 보고할 때만(claude 등), 아니면 null. */
+  /** 이 run 의 비용(USD). null=미상(antigravity 등 CLI 미보고). */
   costUsd: number | null;
+  /** 비용이 토큰×단가 추정인가(codex·devin) — true 면 UI 가 "~" 근사 표시.
+   *  false/없음 = CLI 실값(claude·opencode). */
+  costEstimated?: boolean;
   /** 워크플로우 스텝으로 돈 run 이면 워크플로우 이름/노드 id — 진행 보드용. */
   workflow?: string | null;
   node?: string | null;

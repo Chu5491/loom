@@ -133,7 +133,7 @@ export function AgentResultCard({
             {toolCount > 0 ? <span className="inline-flex items-center gap-0.5" title={t("org.tools")}><Wrench className="size-3" />{toolCount}</span> : null}
             {fileCount > 0 ? <span className="inline-flex items-center gap-0.5" title={t("org.files")}><FilePen className="size-3" />{fileCount}</span> : null}
             {durationMs != null ? <span className="tabular-nums">{fmtDur(durationMs)}</span> : null}
-            {(run.costUsd ?? 0) > 0 ? <span className="tabular-nums">${run.costUsd!.toFixed(4)}</span> : null}
+            {(run.costUsd ?? 0) > 0 ? <span className="tabular-nums" title={run.costEstimated ? t("cost.estimated") : undefined}>{run.costEstimated ? "~" : ""}${run.costUsd!.toFixed(4)}</span> : null}
           </span>
         </div>
 

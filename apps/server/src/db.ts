@@ -104,6 +104,9 @@ export function getDb(): DB {
   if (!cols.some((c) => c.name === "rating")) {
     db.exec(`ALTER TABLE runs ADD COLUMN rating INTEGER`); // 1=👍 -1=👎 NULL=미평가
   }
+  if (!cols.some((c) => c.name === "cost_estimated")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN cost_estimated INTEGER`); // 1=토큰×단가 추정, NULL/0=CLI 실값
+  }
   const schedCols = db.prepare<[], { name: string }>(`PRAGMA table_info(schedules)`).all();
   if (schedCols.length > 0 && !schedCols.some((c) => c.name === "workflow")) {
     db.exec(`ALTER TABLE schedules ADD COLUMN workflow TEXT`);
@@ -156,6 +159,7 @@ interface RunRow {
   project_id: string | null;
   thread_id: string | null;
   cost_usd: number | null;
+  cost_estimated: number | null;
   workflow: string | null;
   node: string | null;
   rating: number | null;
@@ -173,6 +177,7 @@ function toInfo(r: RunRow): RunInfo {
     projectId: r.project_id,
     threadId: r.thread_id,
     costUsd: r.cost_usd,
+    costEstimated: r.cost_estimated === 1,
     workflow: r.workflow,
     node: r.node,
     rating: r.rating === 1 ? 1 : r.rating === -1 ? -1 : null,
@@ -227,14 +232,14 @@ export function appendEvent(runId: string, seq: number, event: OfficeEvent): voi
 
 export function finishRun(
   info: RunInfo,
-  meta: { costUsd?: number; sessionId?: string },
+  meta: { costUsd?: number; sessionId?: string; costEstimated?: boolean },
 ): void {
   getDb()
     .prepare(
-      `UPDATE runs SET status = ?, ended_at = ?, exit_code = ?, cost_usd = ?, session_id = ?
+      `UPDATE runs SET status = ?, ended_at = ?, exit_code = ?, cost_usd = ?, cost_estimated = ?, session_id = ?
        WHERE id = ?`,
     )
-    .run(info.status, info.endedAt, info.exitCode, meta.costUsd ?? null, meta.sessionId ?? null, info.id);
+    .run(info.status, info.endedAt, info.exitCode, meta.costUsd ?? null, meta.costEstimated ? 1 : null, meta.sessionId ?? null, info.id);
 }
 
 /** 서버 부팅 시 — 프로세스가 죽어 영원히 "running" 으로 남은 고아 run 정리.

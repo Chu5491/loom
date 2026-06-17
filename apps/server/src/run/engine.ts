@@ -109,7 +109,20 @@ interface RunState {
   loadoutDir?: string;
   /** 영속 실패 로그 1회 가드 — ENOSPC 류는 줄마다 반복돼 로그를 범람시킨다. */
   persistWarned?: boolean;
+  /** stderr 끝부분(상한) — 실패 시 사유로 표면화(불투명한 "run failed" 방지). */
+  stderrTail?: string;
+  /** raw 로그 누적 바이트 — 상한 초과 시 절단(폭주 CLI 의 디스크 범람 방어). */
+  rawBytes?: number;
 }
+
+// run 안전 가드(전 CLI 공통):
+//  - 월-클록 타임아웃: 멈춘 run 을 자동 종료(0=비활성). antigravity 외 CLI 엔 자체
+//    타임아웃이 없어 hang 시 좀비로 남던 갭.
+//  - raw 로그 상한: 폭주 CLI 가 디스크를 채우는 것 방어.
+//  - stderr tail 상한: 실패 사유로 보여줄 만큼만.
+const RUN_TIMEOUT_MS = Number(process.env.LOOM_RUN_TIMEOUT_MS ?? 30 * 60_000);
+const MAX_RAW_BYTES = Number(process.env.LOOM_MAX_RAW_BYTES ?? 50 * 1024 * 1024);
+const STDERR_TAIL_MAX = 2000;
 
 const runs = new Map<string, RunState>();
 
@@ -499,8 +512,16 @@ function emit(state: RunState, events: OfficeEvent[]): void {
  *  교차 기록), 쓰기 실패(디스크 풀 등)는 raw 가 진실이므로 run 자체를 중단한다. */
 function writeRaw(state: RunState, chunk: string): boolean {
   if (state.info.status !== "running") return false;
+  // raw 로그 상한 — 폭주 CLI 가 디스크를 채우지 않게. 상한 넘으면 로그만 멈추고
+  // run 은 계속(파싱·결과는 stdout 콜백이 이미 처리). 넘는 순간 1회 표시.
+  const prev = state.rawBytes ?? 0;
+  if (prev >= MAX_RAW_BYTES) return true;
+  state.rawBytes = prev + Buffer.byteLength(chunk);
   try {
     fs.writeSync(state.rawFd, chunk);
+    if (state.rawBytes >= MAX_RAW_BYTES) {
+      fs.writeSync(state.rawFd, `\n…[loom: raw output capped at ${Math.round(MAX_RAW_BYTES / 1024 / 1024)}MB]\n`);
+    }
     return true;
   } catch (err) {
     if (!state.persistWarned) {
@@ -573,14 +594,32 @@ async function run(
         // 위임 opt-in 의 일부 — delegate 도구는 권한 프롬프트 없이 호출돼야 한다.
         allowedTools: mcp.some((m) => m.name === "loom") ? ["mcp__loom__delegate"] : undefined,
         onStdout: (c) => consume(state, c),
-        onStderr: (c) => void writeRaw(state, c),
+        // stderr 는 raw 로그에 + 끝부분을 따로 보관(실패 시 사유로 표면화).
+        onStderr: (c) => { state.stderrTail = ((state.stderrTail ?? "") + c).slice(-STDERR_TAIL_MAX); writeRaw(state, c); },
       },
       adapterConfig,
     );
     state.kill = handle.kill;
     // 그룹 pid 기록 — 하드 크래시(서버 SIGKILL) 후 부팅 시 이 자식을 회수한다.
     recordRunPid(state.info.id, handle.pid);
-    const { exitCode } = await handle.promise;
+    // 전역 월-클록 타임아웃 — 멈춘 run 을 자동 종료(전 CLI 공통 안전망; 0=비활성).
+    // antigravity 외 CLI 엔 자체 타임아웃이 없어 hang 시 좀비로 남던 갭을 메운다.
+    let timedOut = false;
+    const killTimer =
+      RUN_TIMEOUT_MS > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            log.warn({ timeoutMs: RUN_TIMEOUT_MS }, "run timed out — killing");
+            state.kill();
+            state.abort.abort();
+          }, RUN_TIMEOUT_MS)
+        : null;
+    let exitCode: number | null = null;
+    try {
+      ({ exitCode } = await handle.promise);
+    } finally {
+      if (killTimer) clearTimeout(killTimer);
+    }
 
     if (state.buf.trim()) {
       captureSession(state, state.buf);
@@ -633,8 +672,18 @@ async function run(
       }
     }
 
-    concludeRun(state, state.abort.signal.aborted ? "cancelled" : exitCode === 0 ? "succeeded" : "failed", exitCode);
-    log.info({ exitCode }, "run done");
+    // 타임아웃은 abort 를 거치지만 사용자 취소가 아니라 실패로 본다.
+    const status = timedOut ? "failed" : state.abort.signal.aborted ? "cancelled" : exitCode === 0 ? "succeeded" : "failed";
+    // 실패인데 명시적 에러 이벤트가 없으면 stderr 끝부분(또는 타임아웃)을 사유로 —
+    // 불투명한 "run failed" 대신 진짜 원인을 보여준다(전 CLI 공통).
+    if (status === "failed" && !state.events.some((e) => e.kind === "error")) {
+      const reason = timedOut
+        ? `timed out after ${Math.round(RUN_TIMEOUT_MS / 60_000)}m`
+        : state.stderrTail?.trim() || (exitCode != null ? `exited with code ${exitCode}` : "run failed");
+      emit(state, [{ kind: "error", message: reason.slice(0, STDERR_TAIL_MAX) }]);
+    }
+    concludeRun(state, status, exitCode);
+    log.info({ exitCode, timedOut }, "run done");
   } catch (err) {
     emit(state, [{ kind: "error", message: (err as Error).message }]);
     concludeRun(state, "failed", null);
@@ -849,8 +898,11 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
   if (!state.costReported && (state.inputTokens || state.outputTokens)) {
     state.costUsd = estimateCost(state.model, state.inputTokens, state.outputTokens) ?? state.costUsd;
   }
+  // 추정 = CLI 가 실값을 안 줬는데 우리가 토큰으로 채운 경우(codex·devin). UI 가 "~" 표시.
+  const costEstimated = !state.costReported && state.costUsd != null;
   state.info.costUsd = state.costUsd ?? null;
-  finishRun(state.info, { costUsd: state.costUsd, sessionId: state.sessionId });
+  state.info.costEstimated = costEstimated;
+  finishRun(state.info, { costUsd: state.costUsd, sessionId: state.sessionId, costEstimated });
   try {
     fs.closeSync(state.rawFd);
   } catch {
