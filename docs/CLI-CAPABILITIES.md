@@ -96,5 +96,18 @@
 - **남은 공백 = antigravity 의 비용/토큰 + MCP** — 둘 다 Gemini CLI 가 정보를 주지
   않거나 구조가 막혀 loom 코드로는 못 채운다. UI 에 "이 CLI 는 비용 미보고" 명시가
   정직한 처리.
-- **다음 단계 후보(가치순):** claude `--max-budget-usd`(예산 하드캡) · claude
-  `--json-schema`(loom-report 견고화) · codex `review`(리뷰 특화) · devin `--agent-config`.
+### 구현된 고도화(2026-06-17)
+- **antigravity `--print-timeout 30m`** — agy print 모드 5분 자체 종료로 긴 답변이
+  잘리던 버그 수정.
+- **codex 비-bypass `--sandbox workspace-write`** — 기본 read-only 로 편집이 막혀
+  코딩이 조용히 실패하던 것 해소(exec 는 비실행이라 승인 안 물음).
+- **parse.ts 확장** — claude MultiEdit/NotebookEdit→파일, codex mcp_tool_call/
+  web_search→도구.
+- **claude `--max-budget-usd`** — 남은 월 예산(전체·perAgent 중 빡빡한 쪽)을 run
+  하드캡으로 → 시작 전 차단만으론 못 막던 "run 도중 초과"를 CLI 레벨 차단.
+
+### 남은 후보(가치순)
+- codex `--output-schema` / claude `--json-schema` — 출력 스키마 강제(단, "산문+리포트"
+  모델과 충돌해 현 펜스 추출 유지가 안전 — 적용 시 출력 구조 재설계 필요).
+- codex `review`(리뷰 특화 서브커맨드) · `apply`(게이트 후 diff 적용).
+- devin `--agent-config`(선언적 에이전트) · opencode `serve`/`attach`(세션 풀링).
