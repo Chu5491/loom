@@ -106,11 +106,22 @@
 - **claude `--max-budget-usd`** — 남은 월 예산(전체·perAgent 중 빡빡한 쪽)을 run
   하드캡으로 → 시작 전 차단만으론 못 막던 "run 도중 초과"를 CLI 레벨 차단.
 
+### 구현된 고도화 (2차, 2026-06-17)
+- **위임 단일화** — specialist(Planner·Reviewer·Frontend·backend)의 `delegate` 제거,
+  **마스터만 위임**. 작업 트리가 얕은 별 구조로 단순화(추적·시각화·비용 안정).
+- **④ claude `--setting-sources project,local`** — 사용자 전역 `~/.claude` 개인설정을
+  배제하고 loom 명시 spec 만(헌법2 정합 + 캐시↑). 라이브 검증 통과($0.056).
+- **⑤ codex `--ephemeral`** — 스레드(resume) 아닌 run(기능·워크플로우)은 세션 미보존.
+- **②는 이미 구현돼 있었음** — antigravity `--add-dir loadoutDir` 가 이미 스킬 로드아웃을
+  노출 중(어댑터 `applyMcpServers`). 추가 작업 불필요(검증).
+
 ### 남은 후보(가치순)
-- codex `--output-schema` / claude `--json-schema` — 출력 스키마 강제(단, "산문+리포트"
-  모델과 충돌해 현 펜스 추출 유지가 안전 — 적용 시 출력 구조 재설계 필요).
-- codex `review`(리뷰 특화 서브커맨드) · `apply`(게이트 후 diff 적용).
-- devin `--agent-config`(선언적 에이전트) · opencode `serve`/`attach`(세션 풀링).
+- **③ devin `--agent-config`** — 스키마 검증 완료(strict 파서): `system_instructions`,
+  `allowed_tools`, `permissions`, `mcp_servers`, `extensions`. 핵심 가치는
+  `system_instructions`(페르소나를 시스템 레벨로)인데, 제대로 하려면 **시스템/유저
+  프롬프트 분리 리팩터**(compose.ts + 어댑터 계약) 필요 — 깔끔한 후속으로 분리.
+- codex `--output-schema` / claude `--json-schema` — 출력 스키마 강제(산문+리포트 충돌).
+- codex `review`/`apply` · opencode `serve`/`attach`(세션 풀링).
 
 ---
 
@@ -200,7 +211,7 @@ loom 호출: `agy [--model] --print-timeout 30m [--dangerously-skip-permissions]
 | `--print-timeout <dur>` | print 대기 상한(기본 5m) | ✅ 30m(잘림 방지) |
 | `--model` | 모델 | ✅ |
 | `--dangerously-skip-permissions` / `--sandbox` | 권한/샌드박스 | ✅ |
-| `--add-dir <dir>` | 워크스페이스에 디렉토리 추가 | ◯◯ **loadout(스킬) 노출** — MCP 불가의 우회 |
+| `--add-dir <dir>` | 워크스페이스에 디렉토리 추가 | ✅ **loadout(스킬) 노출** — MCP 불가의 우회(이미 적용) |
 | `-c/--continue` / `--conversation <id>` | 세션 이어가기/ID 재개 | ◯◯ 디스크 캡처 대신 ID resume 검토 |
 | `-i/--prompt-interactive` / `--log-file` | 대화형/로그 | — / ◯ |
 | `models` / `plugin` / `install` / `update` | 관리 | ✅ models |
@@ -232,9 +243,8 @@ loom 호출: `devin [--model] --export .loom-devin-export.json [--permission-mod
 1. **claude `--fallback-model`** — 과부하/불가 시 자동으로 대체 모델 재시도(`--print` 전용).
    이번에 devin "high demand" 일시오류를 겪었는데, claude 는 CLI 차원 폴백이 있다 →
    에이전트에 fallback 모델 지정 옵션. **resilience 향상, 저위험.**
-2. **antigravity `--add-dir`** — MCP 주입은 불가지만 `--add-dir` 로 **loadout(스킬) 디렉토리
-   읽기 노출**이 가능(claude 와 동일 패턴). 지금 antigravity 는 스킬 로드아웃이 비는데
-   이걸로 메울 수 있다.
+2. ~~**antigravity `--add-dir`**~~ — **이미 적용돼 있음**(어댑터 `applyMcpServers` 가
+   `--add-dir loadoutDir` 로 스킬 로드아웃을 노출). 검증 완료, 추가 작업 불필요.
 3. **devin `--agent-config`** — 시스템 지시·도구 가시성·권한을 run별 선언으로. office
    에이전트(prompt/permission/skills)를 devin 네이티브 설정으로 더 충실히 매핑.
 4. **claude `--setting-sources` / `--bare`** — 사용자 `~/.claude` 설정을 배제하고 run 을

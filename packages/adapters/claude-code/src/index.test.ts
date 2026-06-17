@@ -26,7 +26,7 @@ describe("parseAnthropicModels (Anthropic /v1/models → options)", () => {
 });
 
 describe("buildClaudeCommand", () => {
-  it("uses defaults: claude --print - --output-format stream-json --verbose", () => {
+  it("uses defaults: --print stream-json --verbose --setting-sources project,local", () => {
     const { command, args } = buildClaudeCommand();
     expect(command).toBe("claude");
     expect(args).toEqual([
@@ -35,7 +35,15 @@ describe("buildClaudeCommand", () => {
       "--output-format",
       "stream-json",
       "--verbose",
+      "--setting-sources",
+      "project,local",
     ]);
+  });
+
+  it("excludes user settings by default, honours a custom settingSources", () => {
+    expect(buildClaudeCommand().args).toContain("project,local"); // user 제외
+    const i = buildClaudeCommand({ settingSources: "project" }).args.indexOf("--setting-sources");
+    expect(buildClaudeCommand({ settingSources: "project" }).args[i + 1]).toBe("project");
   });
 
   it("respects command override", () => {

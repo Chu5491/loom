@@ -21,6 +21,10 @@ export interface ClaudeCodeConfig extends AdapterConfig {
   /** run 단위 비용 하드캡(USD) → `--max-budget-usd`. 엔진이 남은 월 예산에서 계산해
    *  넘긴다 — run 이 도중에 월 예산을 초과하는 걸 CLI 레벨에서 막는다. */
   maxBudgetUsd?: number;
+  /** 불러올 설정 출처(`--setting-sources`). 기본 "project,local" — 사용자 전역
+   *  ~/.claude(개인 설정·CLAUDE.md·auto-memory·hook)를 배제해 run 을 loom 의 명시
+   *  spec 만으로 격리(헌법2 자동주입 금지 정합 + 프롬프트 캐시 재사용↑). */
+  settingSources?: string;
 }
 
 export function buildClaudeCommand(config: ClaudeCodeConfig = {}): BuiltCommand {
@@ -31,6 +35,9 @@ export function buildClaudeCommand(config: ClaudeCodeConfig = {}): BuiltCommand 
 
   const args: string[] = ["--print", "-", "--output-format", outputFormat];
   if (verbose) args.push("--verbose");
+  // run 격리 — 사용자 전역 ~/.claude 개인설정을 배제하고 loom 의 명시 spec 만(기본
+  // project,local = user 제외). 빈 문자열이면 아무 설정도 안 불러온다.
+  args.push("--setting-sources", config.settingSources ?? "project,local");
   if (config.model) args.push("--model", config.model);
   if (config.effort) args.push("--effort", config.effort);
   // run 단위 예산 하드캡 — 남은 월 예산을 엔진이 넘긴다(--print 전용 플래그, 항상 충족).

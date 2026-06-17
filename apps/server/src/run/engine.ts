@@ -458,6 +458,9 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     ...(agent.reasoning ? { reasoning: agent.reasoning } : {}),
     // 남은 월 예산을 run 하드캡으로 — claude(--max-budget-usd)가 읽어 도중 초과를 막는다.
     ...(budgetRemaining != null ? { maxBudgetUsd: budgetRemaining } : {}),
+    // 스레드(대화)가 아니면 다음 턴 resume 가 없다 → 세션을 안 남긴다(codex --ephemeral).
+    // 기능·워크플로우 run 의 세션 누적 방지(지원 어댑터만 읽음).
+    ...(input.threadId ? {} : { ephemeral: true }),
     ...(cfg.env ? { env: resolveRefs(cfg.env as Record<string, string>) } : {}),
   };
 

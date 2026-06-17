@@ -19,6 +19,9 @@ export interface CodexConfig extends AdapterConfig {
   /** 비-bypass run 의 codex exec 샌드박스 등급(기본 workspace-write).
    *  read-only | workspace-write | danger-full-access. */
   sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
+  /** 세션 파일을 안 남긴다(`--ephemeral`). resume 안 쓰는 run(기능·워크플로우)용 —
+   *  codex 세션 누적 방지. 대화 스레드 run 은 resume 하므로 끄고 둔다. */
+  ephemeral?: boolean;
   /** Override the working dir codex sees (--cd). Distinct from spawn cwd. */
   cd?: string;
 }
@@ -38,6 +41,7 @@ export function buildCodexCommand(config: CodexConfig = {}): BuiltCommand {
     args.push("--sandbox", config.sandboxMode ?? "workspace-write");
   }
   if (config.model) args.push("--model", config.model);
+  if (config.ephemeral) args.push("--ephemeral"); // 세션 미보존(비-resume run)
   if (config.reasoningEffort) {
     args.push("-c", `model_reasoning_effort=${JSON.stringify(config.reasoningEffort)}`);
   }

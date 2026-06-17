@@ -111,6 +111,11 @@ describe("buildCodexCommand", () => {
     expect(args[args.indexOf("--cd") + 1]).toBe("/repo");
   });
 
+  it("adds --ephemeral only when set (non-resume runs)", () => {
+    expect(buildCodexCommand().args).not.toContain("--ephemeral");
+    expect(buildCodexCommand({ ephemeral: true }).args).toContain("--ephemeral");
+  });
+
   it("trailing `-` always remains last so stdin is honored", () => {
     const cases = [
       buildCodexCommand({ model: "x" }).args,
