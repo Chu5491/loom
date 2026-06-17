@@ -22,21 +22,31 @@ export interface ComposeInput {
   projectAnalysisPath?: string | null;
 }
 
-export function composePrompt(input: ComposeInput): string {
-  const sections: string[] = [];
+/** 분리된 프롬프트 — system(안정 prefix: rules+페르소나, 캐시·시스템채널용)과
+ *  user(매 run 변동: loadout 경로·프로젝트 기억·사용자 입력). joinPrompt 로 합치면
+ *  기존 단일 프롬프트와 100% 동일(순서 보존) — 시스템 채널 없는 CLI 는 무변화. */
+export interface ComposedPrompt {
+  system: string;
+  user: string;
+}
 
-  // resume 턴엔 rules·페르소나를 건너뛴다 — 대화 첫 턴에 이미 들어가 있다.
+export function composePrompt(input: ComposeInput): ComposedPrompt {
+  const systemSections: string[] = [];
+  const userSections: string[] = [];
+
+  // 시스템(안정 prefix) = rules + 페르소나. resume 턴엔 생략 — 세션에 이미 들어가 있다.
   if (!input.resuming) {
     for (const r of input.rules) {
       const body = r.trim();
-      if (body) sections.push(`=== Rules ===\n${body}\n=== End Rules ===`);
+      if (body) systemSections.push(`=== Rules ===\n${body}\n=== End Rules ===`);
     }
     const a = input.agentPrompt?.trim();
-    if (a) sections.push(`=== Agent Instructions ===\n${a}\n=== End Instructions ===`);
+    if (a) systemSections.push(`=== Agent Instructions ===\n${a}\n=== End Instructions ===`);
   }
 
+  // 유저(매 run 변동) = loadout(경로) + 프로젝트 기억 + 사용자 입력.
   if (input.loadout && (input.loadout.skills.length || input.loadout.mcpServerNames.length || input.loadout.delegate)) {
-    sections.push(renderLoadout(input.loadout));
+    userSections.push(renderLoadout(input.loadout));
   }
 
   if (input.projectNotesPath || input.projectAnalysisPath) {
@@ -54,11 +64,17 @@ export function composePrompt(input: ComposeInput): string {
       lines.push("After meaningful work, append concise durable notes (decisions, gotchas, conventions) to the team notes — keep entries short.");
     }
     lines.push("=== End Project Memory ===");
-    sections.push(lines.join("\n"));
+    userSections.push(lines.join("\n"));
   }
 
-  sections.push(input.userPrompt);
-  return sections.join("\n\n");
+  userSections.push(input.userPrompt);
+  return { system: systemSections.join("\n\n"), user: userSections.join("\n\n") };
+}
+
+/** system + user 를 한 프롬프트로 — 시스템 채널 없는 CLI(codex·opencode·antigravity)와
+ *  프리뷰용. 기존 composePrompt 출력과 동일한 순서. */
+export function joinPrompt(c: ComposedPrompt): string {
+  return c.system ? `${c.system}\n\n${c.user}` : c.user;
 }
 
 function renderLoadout(l: AgentLoadout): string {

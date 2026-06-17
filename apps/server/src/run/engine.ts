@@ -18,7 +18,7 @@ import {
   readSkills,
   readWorkflows,
 } from "../office.js";
-import { composePrompt } from "./compose.js";
+import { composePrompt, joinPrompt } from "./compose.js";
 import { gitFilesTouchedSince } from "./git-changes.js";
 import { analysisDocPath, notesPath } from "./project-memory.js";
 import { materializeLoadout } from "./loadout.js";
@@ -286,7 +286,8 @@ export function previewRunPrompt(
   if (!agent) return { ok: false, status: 404, error: "agent_not_found" };
   const { rules, skills, mcp } = selectSpecs(agent, extraSkills);
   const loadout = materializeLoadout(agent, skills, mcp, null, "preview");
-  const prompt = composePrompt({ userPrompt, rules, agentPrompt: agent.prompt, loadout });
+  // 프리뷰는 실제로 들어가는 전체(시스템+유저)를 합쳐 보여준다 — 투명성.
+  const prompt = joinPrompt(composePrompt({ userPrompt, rules, agentPrompt: agent.prompt, loadout }));
   return { ok: true, prompt };
 }
 
@@ -386,7 +387,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   // 자동 생성 안 함). 분석 뷰는 다른 CLI 도구가 만든 이해를 이어 읽는 통로.
   const notes = project ? notesPath(project.path) : null;
   const analysisDoc = project ? analysisDocPath(project.path) : null;
-  const prompt = composePrompt({
+  const composed = composePrompt({
     userPrompt: input.prompt,
     rules,
     // 기능 실행(git 커밋·분석)은 에이전트 개성 대신 기능 프롬프트 — 출력 일관성.
@@ -397,6 +398,12 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     // 이어가는 턴이면 rules·페르소나 재주입 생략 — 매 턴 자기소개 반복 방지.
     resuming: !!resumeSessionId,
   });
+  // 시스템 채널 지원 어댑터(claude)면 rules+페르소나를 system 으로 분리 — 안정 prefix 라
+  // prompt 캐시 친화 + 시스템 메시지로 격리. 미지원 CLI 는 joinPrompt 로 합쳐(byte 동일)
+  // 보내 무변화. resume 턴은 system 이 비어 자동으로 합침 경로.
+  const useSystem = adapter.supportsSystemPrompt && !!composed.system;
+  const prompt = useSystem ? composed.user : joinPrompt(composed);
+  const systemPrompt = useSystem ? composed.system : undefined;
   const info: RunInfo = {
     id,
     agent: agent.name,
@@ -414,7 +421,8 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   };
   fs.mkdirSync(paths.logs, { recursive: true });
   // 투명성 — 실제로 CLI 에 들어간 합성 프롬프트를 영속(사용자 텍스트는 DB 에 따로).
-  fs.writeFileSync(path.join(paths.logs, `${id}.prompt.txt`), prompt);
+  // 시스템 채널로 분리돼도 전체(시스템+유저)를 합쳐 남긴다 — 무엇이 들어갔는지가 진실.
+  fs.writeFileSync(path.join(paths.logs, `${id}.prompt.txt`), joinPrompt(composed));
   const rawFd = fs.openSync(path.join(paths.logs, `${id}.log`), "a");
   const abort = new AbortController();
 
@@ -466,7 +474,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
 
   // 위임 자식은 슬롯 우회 — 부모가 슬롯을 쥔 채 결과를 기다리므로(데드락 방지).
   const isDelegation = !!input.parentRunId && runs.get(input.parentRunId)?.info.status === "running";
-  void run(state, adapter, adapterConfig, prompt, mcp, loadout, cwd, resumeSessionId, isDelegation);
+  void run(state, adapter, adapterConfig, prompt, systemPrompt, mcp, loadout, cwd, resumeSessionId, isDelegation);
   return { ok: true, run: info };
 }
 
@@ -562,6 +570,8 @@ async function run(
   adapter: NonNullable<ReturnType<typeof getAdapter>>,
   adapterConfig: AdapterConfig,
   prompt: string,
+  // 시스템 프롬프트 — 지원 어댑터(claude)만 채워 온다. 미지원이면 undefined(이미 prompt 합산).
+  systemPrompt: string | undefined,
   mcp: McpServer[],
   loadout: { dir: string; mcpConfigPath: string | null },
   cwd: string,
@@ -587,6 +597,7 @@ async function run(
     const handle = await adapter.spawn(
       {
         prompt,
+        systemPrompt,
         cwd,
         env: {},
         signal: state.abort.signal,

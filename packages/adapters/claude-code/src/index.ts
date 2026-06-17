@@ -273,6 +273,10 @@ export const claudeCodeAdapter = defineCliAdapter<ClaudeCodeConfig>({
   kind: "claude-code",
   buildCommand: buildClaudeCommand,
   prompt: { via: "stdin" },
+  // rules+페르소나는 시스템 프롬프트로 — claude 기본 시스템에 덧붙고(--append),
+  // 안정 prefix 라 프롬프트 캐시에 더 잘 탄다. loadout·기억·사용자 입력은 stdin.
+  supportsSystemPrompt: true,
+  applySystemPrompt: (args, system) => [...args, "--append-system-prompt", system],
   resolveEnv: (cfg) => cfg.env ?? {},
   applyResume: (args, sessionId) => ["--resume", sessionId, ...args],
   // headless 도구별 자동 승인 — loom delegate 등 명시적 opt-in 도구만 온다.

@@ -21,6 +21,12 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
   kind: AdapterKind;
   /** false = run별 MCP 주입 불가(antigravity). 기본 true. */
   supportsMcpServers?: boolean;
+  /** true = 시스템 프롬프트 채널 지원. applySystemPrompt 로 system 플래그를 끼운다.
+   *  기본 false(prompt 에 합쳐 옴). */
+  supportsSystemPrompt?: boolean;
+  /** 시스템 프롬프트를 args 에 끼운다(claude `--append-system-prompt <sys>`).
+   *  systemPrompt 가 비면 호출되지 않는다(resume·미지원). */
+  applySystemPrompt?(args: string[], systemPrompt: string): string[];
   buildCommand(config: TConfig): BuiltCommand;
   /** Where the user prompt is injected. Default: stdin. */
   prompt?: PromptMode;
@@ -108,6 +114,7 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
   return {
     kind: def.kind,
     supportsMcpServers: def.supportsMcpServers ?? true,
+    supportsSystemPrompt: def.supportsSystemPrompt ?? false,
     buildCommand(config: AdapterConfig): BuiltCommand {
       return def.buildCommand(config as TConfig);
     },
@@ -151,7 +158,13 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
               cwd: spawnArgs.cwd,
             })
           : { args: baseArgs };
-      const { args, stdin } = applyPrompt(mcpApplied.args, spawnArgs.prompt, promptMode);
+      // 시스템 프롬프트 채널 — 지원 어댑터(claude)만, system 이 있을 때만. 프롬프트
+      // 적용(마지막) 전에 끼운다(trailing-arg 프롬프트 어댑터 뒤에 못 넣으므로).
+      const withSystem =
+        spawnArgs.systemPrompt && def.applySystemPrompt
+          ? def.applySystemPrompt(mcpApplied.args, spawnArgs.systemPrompt)
+          : mcpApplied.args;
+      const { args, stdin } = applyPrompt(withSystem, spawnArgs.prompt, promptMode);
       return spawnProcess({
         command: built.command,
         args,

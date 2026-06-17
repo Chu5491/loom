@@ -2,6 +2,10 @@ import type { AdapterConfig, AdapterKind, McpServer } from "./types.js";
 
 export interface SpawnArgs {
   prompt: string;
+  /** 시스템 프롬프트(rules+페르소나) — 시스템 채널을 지원하는 CLI(claude
+   *  --append-system-prompt)만 별도로 받는다. 미지원 CLI 는 엔진이 prompt 에 합쳐
+   *  보내므로 비어 온다. */
+  systemPrompt?: string;
   cwd: string;
   env: Record<string, string>;
   attachedSpecs?: string[];
@@ -48,6 +52,9 @@ export interface CliAdapter {
   /** false = 이 CLI 는 run별 MCP 서버 주입이 구조적으로 불가(antigravity).
    *  위임(delegate)은 MCP 도구 대신 loadout 의 셸 브리지로 제공된다. */
   supportsMcpServers: boolean;
+  /** 시스템 프롬프트 채널 지원 — true 면 엔진이 system 을 SpawnArgs.systemPrompt 로
+   *  따로 넘기고(claude --append-system-prompt), false 면 prompt 에 합쳐 보낸다. */
+  supportsSystemPrompt: boolean;
   buildCommand(config: AdapterConfig): BuiltCommand;
   spawn(args: SpawnArgs, config: AdapterConfig): Promise<RunHandle>;
   /** Pluck a session id out of a stdout chunk. Run-service feeds every
