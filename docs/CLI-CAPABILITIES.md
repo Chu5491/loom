@@ -111,3 +111,134 @@
   모델과 충돌해 현 펜스 추출 유지가 안전 — 적용 시 출력 구조 재설계 필요).
 - codex `review`(리뷰 특화 서브커맨드) · `apply`(게이트 후 diff 적용).
 - devin `--agent-config`(선언적 에이전트) · opencode `serve`/`attach`(세션 풀링).
+
+---
+
+# 부록: CLI별 전체 기능 카탈로그 (help + 문서 전수)
+
+각 CLI 의 `--help` + 공식 문서를 빠짐없이 훑어, 헤드리스 래핑 관점에서 **loom 이 쓰는
+것 / 안 쓰는 것 / 활용 기회**를 정리한다. (✅=현재 사용, ◯=활용 후보, —=무관/불가)
+
+## claude-code (`claude`)
+loom 호출: `claude --print - --output-format stream-json --verbose [--model] [--effort]
+[--add-dir…] [--permission-mode] [--max-budget-usd] [--mcp-config --strict-mcp-config]
+[--allowedTools mcp__loom__delegate] [--session-id <uuid>] [--resume <id>]`
+
+| 플래그/명령 | 기능 | loom |
+|---|---|---|
+| `-p/--print` | 비실행 1회 출력 | ✅ |
+| `--output-format text\|json\|stream-json` | 출력 포맷 | ✅ stream-json |
+| `--input-format stream-json` | 실시간 입력 스트림(턴 중 입력) | — 헤드리스 1턴 |
+| `--include-partial-messages` | 토큰 단위 델타 | ◯ 더 매끄러운 라이브(현 라인단위로 충분) |
+| `--json-schema <schema>` | 최종 출력 JSON 스키마 검증 | ◯ 단 산문+리포트와 충돌 |
+| `--max-budget-usd <amt>` | run 비용 하드캡 | ✅(남은 월예산 전달) |
+| `--model` / `--fallback-model <list>` | 모델 / **과부하 시 자동 폴백** | ✅ / ◯◯ **resilience**(과부하 대응) |
+| `--effort low…max` | 추론 강도 | ✅ |
+| `--permission-mode default\|acceptEdits\|bypassPermissions\|plan\|dontAsk` | 권한 모드 | ✅(accept/bypass) |
+| `--allowedTools` / `--disallowedTools` / `--tools` | 도구 허용/차단/제한 | ✅ allowed(delegate) · ◯ disallowed(안전), tools(최소화) |
+| `--add-dir <dirs>` | 도구 접근 허용 디렉토리 | ✅ loadout |
+| `--mcp-config` / `--strict-mcp-config` | MCP 주입 | ✅ |
+| `--session-id <uuid>` / `-r/--resume` / `-c/--continue` / `--fork-session` | 세션 | ✅ caller UUID + resume |
+| `--no-session-persistence` | 세션 디스크 저장 안 함 | ◯ 일회성 run |
+| `--system-prompt` / `--append-system-prompt` | 시스템 프롬프트 교체/추가 | ◯ 현재 user 입력에 합성 → append 가 캐시 친화적 |
+| `--agents <json>` | 인라인 서브에이전트 정의 | ◯ 위임 대안 |
+| `--setting-sources user,project,local` / `--settings` | 설정 출처 제한 | ◯◯ **CLI root 격리**(헌법3: user 설정 배제) |
+| `--bare` / `--safe-mode` | 최소 모드(hook·자동메모리·CLAUDE.md 끔) | ◯ 재현성·캐시 |
+| `--betas` / `--file` / `--replay-user-messages` / `--include-hook-events` | 베타·파일첨부·에코·hook | — |
+| `agents·auth·mcp·plugin·project·ultrareview·doctor` (명령) | 관리/리뷰 | — (ultrareview=클라우드 리뷰) |
+
+## codex (`codex`)
+loom 호출: `codex [--search] exec --json [--dangerously-bypass… | --sandbox workspace-write]
+[--model] [-c model_reasoning_effort=…] [-c mcp_servers.*] [--cd] -`
+
+| 플래그/명령 | 기능 | loom |
+|---|---|---|
+| `exec` (alias `e`) | 비실행 실행 | ✅ |
+| `--json` | JSONL 이벤트 | ✅ |
+| `--output-last-message <file>` | 최종 답변만 파일로 | ◯ 깔끔한 결과 추출 |
+| `--output-schema <file>` | 최종 응답 JSON 스키마 | ◯ 구조화(산문 충돌 주의) |
+| `--sandbox read-only\|workspace-write\|danger-full-access` | 샌드박스 | ✅(비-bypass=workspace-write) |
+| `--ask-for-approval untrusted\|on-request\|never` | 승인(root 전용) | — exec 는 비실행이라 불요 |
+| `--dangerously-bypass-approvals-and-sandbox`(`--yolo`) | 전부 우회 | ✅(bypass) |
+| `--ephemeral` | 세션 파일 미보존 | ◯ 일회성 |
+| `--model -m` / `-c model_reasoning_effort` | 모델/추론 | ✅ |
+| `-c key=val` | TOML 오버라이드 | ✅ MCP·reasoning |
+| `--cd -C` / `--add-dir` | 작업/추가 디렉토리 | ✅ cd · ◯ add-dir(loadout) |
+| `--search` | 웹 검색 | ◯(config 노출) |
+| `-i/--image` | 이미지 첨부 | ◯ 비전 |
+| `exec resume [id] --last` / `fork` / `archive` | 세션 | ✅ resume |
+| `review` / `apply` | 코드리뷰 / diff 적용 | ◯◯ Reviewer 특화·게이트 적용 |
+| `cloud exec/list` | 클라우드 태스크 | — |
+| `mcp` / `mcp-server` / `app-server` / `doctor` / `features` | 관리 | — |
+
+## opencode (`opencode`)
+loom 호출: `opencode run --format json [--continue] [--session <id>] [--model provider/model]
+[--agent <name>]` + MCP 는 XDG_CONFIG_HOME 리다이렉트
+
+| 플래그/명령 | 기능 | loom |
+|---|---|---|
+| `run [message]` | 비실행 실행 | ✅ |
+| `--format json` | JSON 이벤트(cost·tokens·tool 포함) | ✅ |
+| `--model -m provider/model` / `--agent` | 모델/에이전트 | ✅ |
+| `--session -s` / `-c/--continue` / `--fork` | 세션 | ✅ session·continue · ◯ fork |
+| `--prompt` | 프롬프트(현재 trailing arg) | ✅(arg) |
+| `--pure` | 외부 플러그인 없이 | ◯ 재현성·격리 |
+| `--print-logs` / `--log-level` | 로그 | ◯ 디버깅 |
+| `stats` | 토큰·비용 통계 | — 스트림에 이미 있음 |
+| `export [id]` / `import` | 세션 JSON | ◯ |
+| `models` | 모델 목록 | ✅(listModels) |
+| `serve` / `attach` / `web` | 헤드리스 서버/접속 | ◯◯ 세션 풀링(장기) |
+| `agent` / `session` / `plugin` / `mcp` / `github` / `pr` | 관리 | — |
+
+## antigravity (`agy`)
+loom 호출: `agy [--model] --print-timeout 30m [--dangerously-skip-permissions]
+[--sandbox] --print "<prompt>"`
+
+| 플래그/명령 | 기능 | loom |
+|---|---|---|
+| `-p/--print` / `--prompt` | 비실행 1회 | ✅ |
+| `--print-timeout <dur>` | print 대기 상한(기본 5m) | ✅ 30m(잘림 방지) |
+| `--model` | 모델 | ✅ |
+| `--dangerously-skip-permissions` / `--sandbox` | 권한/샌드박스 | ✅ |
+| `--add-dir <dir>` | 워크스페이스에 디렉토리 추가 | ◯◯ **loadout(스킬) 노출** — MCP 불가의 우회 |
+| `-c/--continue` / `--conversation <id>` | 세션 이어가기/ID 재개 | ◯◯ 디스크 캡처 대신 ID resume 검토 |
+| `-i/--prompt-interactive` / `--log-file` | 대화형/로그 | — / ◯ |
+| `models` / `plugin` / `install` / `update` | 관리 | ✅ models |
+| (비용·토큰·usage) | **미노출** | — CLI 한계(불가) |
+
+## devin (`devin`)
+loom 호출: `devin [--model] --export .loom-devin-export.json [--permission-mode]
+-p "<prompt>" [--resume <id>]` + MCP 는 `<cwd>/.devin/config.local.json`
+
+| 플래그/명령 | 기능 | loom |
+|---|---|---|
+| `-p/--print` | 비실행 1회(평문) | ✅ |
+| `--export [path]` | 턴마다 ATIF 대화 파일(토큰·도구·메트릭) | ✅ 비용·도구 복원 |
+| `--prompt-file <file>` | 프롬프트를 파일로 | ◯ arg 인용 회피 |
+| `--model` | 모델 | ✅ |
+| `--permission-mode auto\|dangerous` | 권한 | ✅ |
+| `--sandbox` | OS 샌드박스(seatbelt/bwrap) | ◯ |
+| `-c/--continue` / `-r/--resume [id]` | 세션 | ✅ resume(+`list` 캡처) |
+| `--agent-config <file>` | **선언적 에이전트**(시스템지시·도구가시성·권한) | ◯◯ office 에이전트→devin 매핑 |
+| `--respect-workspace-trust` | 워크스페이스 신뢰 | ◯(비실행 기본 false) |
+| `rules` / `skills` | devin 네이티브 규약·스킬 | ◯ |
+| `mcp` / `cloud` / `list` / `acp` / `shell` | 관리 | ✅ list(세션) · mcp(설정파일) |
+| (cost) | stdout 미노출 → export 토큰 추정 | ✅ |
+
+---
+
+## 새로 발굴한 활용 기회 (가치순)
+
+1. **claude `--fallback-model`** — 과부하/불가 시 자동으로 대체 모델 재시도(`--print` 전용).
+   이번에 devin "high demand" 일시오류를 겪었는데, claude 는 CLI 차원 폴백이 있다 →
+   에이전트에 fallback 모델 지정 옵션. **resilience 향상, 저위험.**
+2. **antigravity `--add-dir`** — MCP 주입은 불가지만 `--add-dir` 로 **loadout(스킬) 디렉토리
+   읽기 노출**이 가능(claude 와 동일 패턴). 지금 antigravity 는 스킬 로드아웃이 비는데
+   이걸로 메울 수 있다.
+3. **devin `--agent-config`** — 시스템 지시·도구 가시성·권한을 run별 선언으로. office
+   에이전트(prompt/permission/skills)를 devin 네이티브 설정으로 더 충실히 매핑.
+4. **claude `--setting-sources` / `--bare`** — 사용자 `~/.claude` 설정을 배제하고 run 을
+   격리(헌법3 CLI root 불가침과 정합) + 프롬프트 캐시 재사용 향상.
+5. **codex `--output-last-message` / `--ephemeral`** — 깔끔한 최종 답변 추출 + 세션 미보존.
+6. **antigravity `--conversation <id>` / opencode `--fork`** — 세션 재개·분기 정교화.
+7. **codex `review`·`apply`** — Reviewer 전용 모드 + 휴먼 게이트 후 diff 적용.
