@@ -131,6 +131,8 @@ function TaskRow({
   const running = stream.status === "running" && task.latest.status === "running";
   const failed = stream.status === "failed" || task.latest.status === "failed";
   const { body, report } = extractReport(streamText(stream.events));
+  // 실패 사유 — 엔진이 stderr/타임아웃을 error 이벤트로(generic 대신).
+  const errorMsg = [...stream.events].reverse().find((e): e is Extract<OfficeEvent, { kind: "error" }> => e.kind === "error")?.message;
 
   const files = report?.files?.length ?? 0;
   const steps = report?.steps?.length ?? 0;
@@ -163,7 +165,7 @@ function TaskRow({
           {task.turns > 1 ? <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">+{task.turns - 1} {t("tasks.turns")}</span> : null}
         </div>
         <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
-          {failed ? t("tasks.failedHint") : summary ? summary : running ? `${t("tasks.working")}…` : t("tasks.noOutput")}
+          {failed ? (errorMsg || t("tasks.failedHint")) : summary ? summary : running ? `${t("tasks.working")}…` : t("tasks.noOutput")}
         </p>
         <div className="mt-1.5">
           <WorkStats delegations={task.delegations} files={files} steps={steps} durationMs={running ? null : durationMs} costUsd={task.latest.costUsd} estimated={task.latest.costEstimated} t={t} />

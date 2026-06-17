@@ -89,6 +89,11 @@ export function AgentResultCard({
     [stream.events],
   );
   const fileCount = report?.files?.length || evFileCount;
+  // 실패 사유 — 엔진이 stderr/타임아웃을 error 이벤트로 채운다(generic "failed" 대신).
+  const errorMsg = useMemo(
+    () => [...stream.events].reverse().find((e): e is Extract<OfficeEvent, { kind: "error" }> => e.kind === "error")?.message,
+    [stream.events],
+  );
   const durationMs = run.startedAt && run.endedAt ? Math.max(0, new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime()) : null;
   // 이 에이전트가 자식에게 위임한 사유 — handoff 이벤트로 자식 카드에 흐름을 잇는다.
   const reasonFor = useMemo(() => {
@@ -146,7 +151,7 @@ export function AgentResultCard({
 
         {/* 내용 */}
         {failed ? (
-          <p className="mt-2 text-[12px] text-destructive">{t("meeting.failed")}</p>
+          <p className="mt-2 whitespace-pre-wrap text-[12px] text-destructive">{errorMsg || t("meeting.failed")}</p>
         ) : (
           <>
             {summary ? <p className="mt-2 text-[13px] font-medium leading-snug text-foreground">{summary}</p> : null}

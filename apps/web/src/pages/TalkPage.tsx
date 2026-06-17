@@ -985,8 +985,8 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
     const durationMs = run?.startedAt && run?.endedAt
       ? Math.max(0, new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime())
       : undefined;
-    return { tools, files, loadout: view.loadout, costUsd: view.result?.costUsd, durationMs };
-  }, [view.trace, view.loadout, view.result, run?.startedAt, run?.endedAt]);
+    return { tools, files, loadout: view.loadout, costUsd: view.result?.costUsd, costEstimated: run?.costEstimated, durationMs };
+  }, [view.trace, view.loadout, view.result, run?.startedAt, run?.endedAt, run?.costEstimated]);
 
   const hasActivity = activity.tools.length > 0 || activity.files.length > 0
     || (!!activity.loadout && (activity.loadout.skills.length > 0 || activity.loadout.mcp.length > 0));
@@ -1141,7 +1141,7 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
         {!isStartError && !running ? (
           <div className="mt-1 flex items-center gap-2">
             {!showCard && view.result?.costUsd != null ? (
-              <span className="text-[11px] text-muted-foreground">${view.result.costUsd.toFixed(4)}</span>
+              <span className="text-[11px] text-muted-foreground" title={run?.costEstimated ? t("cost.estimated") : undefined}>{run?.costEstimated ? "~" : ""}${view.result.costUsd.toFixed(4)}</span>
             ) : null}
             <RatingButtons runId={runId} initial={run?.rating ?? null} />
             {/* 완료 → 작업 상세로(전체 파싱 결과 + 위임 흐름). 마스터가 받아 위임한 흐름은
@@ -1310,7 +1310,7 @@ function RunDetailModal({ run, agent, onClose }: { run: RunInfo; agent?: AgentSp
           {run.workflow ? (
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">{run.workflow} · {run.node}</span>
           ) : null}
-          {run.costUsd != null ? <span className="font-mono text-[11px] text-muted-foreground">${run.costUsd.toFixed(4)}</span> : null}
+          {run.costUsd != null ? <span className="font-mono text-[11px] text-muted-foreground" title={run.costEstimated ? t("cost.estimated") : undefined}>{run.costEstimated ? "~" : ""}${run.costUsd.toFixed(4)}</span> : null}
           <span className="ml-auto font-mono text-[10px] text-muted-foreground">{run.id.slice(0, 8)}</span>
           <button type="button" aria-label="close" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
@@ -1548,6 +1548,7 @@ interface ActivityData {
   files: { path: string; action?: string }[];
   loadout?: { skills: string[]; mcp: string[]; delegate: boolean };
   costUsd?: number;
+  costEstimated?: boolean;
   durationMs?: number;
 }
 
@@ -1556,7 +1557,7 @@ interface ActivityData {
 function ActivityCard({ report, activity }: { report?: WorkReport; activity: ActivityData }) {
   const { t } = useI18n();
   const has = (a?: unknown[]) => Array.isArray(a) && a.length > 0;
-  const { tools, files, loadout, costUsd, durationMs } = activity;
+  const { tools, files, loadout, costUsd, costEstimated, durationMs } = activity;
   // report.files(에이전트 주장)보다 시스템이 잡은 file 이벤트를 우선(사실).
   const fileList = files.length ? files : (report?.files ?? []);
   const totalToolCalls = tools.reduce((n, x) => n + x.count, 0);
@@ -1571,7 +1572,7 @@ function ActivityCard({ report, activity }: { report?: WorkReport; activity: Act
   if (totalToolCalls > 0) stats.push({ icon: <Wrench className="size-3" />, label: t("talk.act.tools", { n: String(totalToolCalls) }) });
   if (fileList.length > 0) stats.push({ icon: <FilePen className="size-3" />, label: t("talk.act.files", { n: String(fileList.length) }) });
   if (durationMs != null) stats.push({ icon: <Terminal className="size-3" />, label: fmtDuration(durationMs) });
-  if (costUsd != null && costUsd > 0) stats.push({ icon: <Sparkles className="size-3" />, label: `$${costUsd.toFixed(4)}` });
+  if (costUsd != null && costUsd > 0) stats.push({ icon: <Sparkles className="size-3" />, label: `${costEstimated ? "~" : ""}$${costUsd.toFixed(4)}` });
 
   return (
     <div className="mb-2 overflow-hidden rounded-2xl rounded-bl-md border border-primary/25 bg-card shadow-[var(--shadow-glow-sm)]">
