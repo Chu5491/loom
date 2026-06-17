@@ -72,7 +72,7 @@ office/                      ← git 커밋되는 정의 (이름 = 식별자, id
   rules/<name>.md            항상 붙는 규약
   skills/<name>.md           단일 스킬 — 또는 skills/<name>/SKILL.md + 딸린 파일(폴더 스킬)
   mcp/servers.json           MCP 서버 (secret 은 "${ENV}" 참조)
-  agents/<name>.json         에이전트 = CLI + 모델 + 끌고 갈 rules/skills/mcp + roles (+delegate)
+  agents/<name>.json         에이전트 = CLI + 모델 + 끌고 갈 rules/skills/mcp (+delegate, +master)
   workflows/<name>.json      워크플로우 = 노드(에이전트+프롬프트) 그래프 + 트리거(옛 하네스 흡수)
   prompts/<feature>.md       기능 프롬프트(standup 등) — 서버 하드코딩 대신 git 으로 손질
   budget.json                월 예산 상한(USD, 전체 + perAgent) — 없으면 무제한

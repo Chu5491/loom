@@ -25,10 +25,6 @@ export interface SkillSpec {
   files?: string[];
 }
 
-/** 전담 역할 — 기능별 기본 에이전트 지정. git=커밋 메시지, analyst=프로젝트 분석,
- *  author=스킬/에이전트 생성(authoring) run 을 맡는 에이전트. */
-export type AgentRole = "git" | "analyst" | "author";
-
 /** 에이전트 = CLI + 모델 + 어떤 rules/skills/mcp 를 끌어올지. name = @mention 핸들. */
 export interface AgentSpec {
   name: string;
@@ -48,9 +44,6 @@ export interface AgentSpec {
   /** 마스터 — 채팅의 기본·유일 인입점. 사용자 요청을 파악해 직접 답하거나 팀원에게
    *  위임(워크플로우)한다. 단 하나만 master:true(첫 번째를 마스터로 취급). */
   master?: boolean;
-  /** 전담 역할 — UI 의 해당 기능이 이 에이전트를 기본 선택한다.
-   *  git=커밋 메시지 생성, analyst=프로젝트 분석 리포트. */
-  roles?: AgentRole[];
   /** 시스템/지시 프롬프트 — 매 run 의 user 입력 앞에 붙는다. */
   prompt?: string;
   /** 포함할 rule 이름들. */

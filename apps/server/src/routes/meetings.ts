@@ -52,7 +52,6 @@ meetingsRoute.get("/", (c) => {
 const startSchema = z.object({
   proposal: z.string().trim().min(1).max(20_000),
   participants: z.array(z.string()).min(1),
-  chair: z.string().min(1),
   projectId: z.string().nullish(),
 });
 
@@ -62,7 +61,6 @@ meetingsRoute.post("/", async (c) => {
   const started = await startMeeting({
     proposal: data.proposal,
     participants: data.participants,
-    chair: data.chair,
     projectId: data.projectId ?? null,
   });
   if (!started.ok) return c.json({ error: started.error }, started.status as 400 | 500);

@@ -325,7 +325,7 @@ export const api = {
 
   listMeetings: (projectId: string | null) =>
     request<{ meetings: Meeting[] }>(`/api/meetings?projectId=${projectId ?? "none"}`),
-  startMeeting: (body: { proposal: string; participants: string[]; chair: string; projectId: string | null }) =>
+  startMeeting: (body: { proposal: string; participants: string[]; projectId: string | null }) =>
     request<{ meetingId: string; panelRunIds: string[] }>("/api/meetings", {
       method: "POST",
       body: JSON.stringify(body),

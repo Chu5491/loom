@@ -67,7 +67,6 @@ export const agentSchema = z.object({
   permission: z.enum(["default", "acceptEdits", "bypass"]).optional(),
   delegate: z.boolean().optional(),
   master: z.boolean().optional(),
-  roles: z.array(z.enum(["git", "analyst", "author"])).optional(),
   prompt: z.string().optional(),
   rules: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
@@ -343,10 +342,10 @@ export function writeFeaturePrompt(name: FeaturePromptName, body: string): RuleS
   return { name, body };
 }
 
-// ── 기능(Functions) — 고정 역할(깃·분석·스탠드업·스킬/에이전트 생성). 에이전트가
-//    아니라 '지침 프롬프트 + 어댑터 + 모델'. office/prompts/<name>.md 의 frontmatter 에
-//    모델 저장. meeting 만 제외(모델 = 회의에서 고른 의장 — 고정 모델로 못 묶음).
-export const FUNCTION_NAMES = ["git-commit", "analysis", "standup", "skill-author", "agent-author"] as const;
+// ── 기능(Functions) — 고정 역할(깃·분석·스탠드업·회의의장·스킬/에이전트 생성).
+//    에이전트가 아니라 '지침 프롬프트 + 어댑터 + 모델'. office/prompts/<name>.md 의
+//    frontmatter 에 모델 저장. 모든 feature 프롬프트가 곧 기능이다.
+export const FUNCTION_NAMES = ["git-commit", "analysis", "standup", "meeting", "skill-author", "agent-author"] as const;
 export type FunctionName = (typeof FUNCTION_NAMES)[number];
 
 // 기능 기본 모델 — frontmatter 미지정 시. 인증된 CLI 기준 합리적 기본값.
@@ -354,6 +353,7 @@ const DEFAULT_FUNCTION_MODELS: Record<FunctionName, { adapter: AdapterKind; mode
   "git-commit": { adapter: "codex", model: "gpt-5.5" },
   analysis: { adapter: "codex", model: "gpt-5.5" },
   standup: { adapter: "claude-code", model: "claude-opus-4-8" },
+  meeting: { adapter: "claude-code", model: "claude-opus-4-8" },
   "skill-author": { adapter: "claude-code", model: "claude-opus-4-8" },
   "agent-author": { adapter: "claude-code", model: "claude-opus-4-8" },
 };

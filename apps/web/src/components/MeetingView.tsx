@@ -73,15 +73,13 @@ export function MeetingView({ project }: { project: Project }) {
 
   const [proposal, setProposal] = useState("");
   const [participants, setParticipants] = useState<Set<string>>(new Set());
-  const [chair, setChair] = useState<string>("");
   const [selected, setSelected] = useState<string | null>(null);
   const [composing, setComposing] = useState(true);
 
-  // 에이전트가 로드되면 기본값 — 참여=전체, 의장=첫 에이전트.
+  // 에이전트가 로드되면 기본 참여 = 전체. 의장은 선택하지 않는다(meeting 기능이 종합).
   useEffect(() => {
     if (agents.length === 0 || participants.size > 0) return;
     setParticipants(new Set(agents.map((a) => a.name)));
-    setChair((c) => c || agents[0]!.name);
   }, [agents, participants.size]);
 
   const toggle = (name: string) =>
@@ -97,7 +95,6 @@ export function MeetingView({ project }: { project: Project }) {
       api.startMeeting({
         proposal: proposal.trim(),
         participants: [...participants],
-        chair,
         projectId: project.id,
       }),
     onSuccess: (r) => {
@@ -110,7 +107,7 @@ export function MeetingView({ project }: { project: Project }) {
 
   const list = meetings.data?.meetings ?? [];
   const current = list.find((m) => m.id === selected) ?? (composing ? null : list[0] ?? null);
-  const canStart = proposal.trim().length > 0 && participants.size > 0 && !!chair && !start.isPending;
+  const canStart = proposal.trim().length > 0 && participants.size > 0 && !start.isPending;
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 gap-4 p-4 sm:p-6">
@@ -230,31 +227,13 @@ export function MeetingView({ project }: { project: Project }) {
                 </div>
               </div>
 
-              <div className="mb-8 h-px w-full bg-border/50" />
+              <div className="mb-6 h-px w-full bg-border/50" />
 
-              {/* 의장 선택 & 회의 시작 버튼 */}
-              <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-                <div className="flex-1">
-                   <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-foreground">
-                      <Gavel className="size-4 text-muted-foreground" />
-                      {t("meeting.chairLabel")}
-                   </h3>
-                   <div className="relative w-full max-w-[280px]">
-                     <select
-                      value={chair}
-                      onChange={(e) => setChair(e.target.value)}
-                      className="w-full cursor-pointer appearance-none rounded-2xl border border-border/50 bg-card pl-5 pr-10 py-3.5 text-sm font-bold text-foreground outline-none transition-all hover:border-primary/50 focus:border-primary/50 focus:ring-4 focus:ring-primary/10"
-                     >
-                      {agents.map((a) => (
-                        <option key={a.name} value={a.name}>
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronRight className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 rotate-90 text-muted-foreground/50" />
-                   </div>
-                </div>
-
+              {/* 회의 시작 — 의장은 안 고른다(오피스의 회의 기능이 종합). */}
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                  <Gavel className="size-3.5 shrink-0 text-primary" />{t("meeting.chairAuto")}
+                </p>
                 <div className="flex w-full shrink-0 flex-col sm:w-[220px]">
                   {start.isError ? (
                     <div className="mb-3 rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
@@ -262,9 +241,9 @@ export function MeetingView({ project }: { project: Project }) {
                     </div>
                   ) : null}
 
-                  <Button 
-                    onClick={() => start.mutate()} 
-                    disabled={!canStart} 
+                  <Button
+                    onClick={() => start.mutate()}
+                    disabled={!canStart}
                     className="group relative h-14 w-full overflow-hidden rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:ring-4 hover:ring-primary/20"
                   >
                     <div className="relative z-10 flex items-center justify-center gap-2">

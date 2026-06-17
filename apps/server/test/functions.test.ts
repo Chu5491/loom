@@ -41,16 +41,18 @@ describe("readFunction", () => {
     expect(body).not.toContain("adapter:"); // frontmatter 제거됨
   });
 
-  it("standup is a function; meeting stays prompt-only (model picked at meeting)", () => {
+  it("every feature prompt is a function — standup and meeting included", () => {
     expect(office.isFunctionName("analysis")).toBe(true);
     expect(office.isFunctionName("standup")).toBe(true);
-    expect(office.isFunctionName("meeting")).toBe(false);
+    expect(office.isFunctionName("meeting")).toBe(true);
   });
 
-  it("standup falls back to a default model like other functions", () => {
-    const fn = office.readFunction("standup");
-    expect(fn.name).toBe("standup");
-    expect(fn.adapter).toBe("claude-code");
-    expect(fn.prompt.length).toBeGreaterThan(0);
+  it("standup and meeting fall back to a default model like other functions", () => {
+    for (const name of ["standup", "meeting"] as const) {
+      const fn = office.readFunction(name);
+      expect(fn.name).toBe(name);
+      expect(fn.adapter).toBe("claude-code");
+      expect(fn.prompt.length).toBeGreaterThan(0);
+    }
   });
 });

@@ -98,6 +98,8 @@ export function AgentResultCard({
   const summary = report?.summary || (body ? body.split("\n").find((l) => l.trim()) ?? "" : "");
   const proseDistinct = !!body && !!report; // 리포트와 별개의 산문이 있으면 토글로
   const lead = role === "master" || role === "chair";
+  // 기능 run(fn:meeting 등)은 'fn:' 접두사를 떼 깔끔하게 — 역할 배지가 정체를 말한다.
+  const displayName = run.agent.replace(/^fn:/, "");
 
   return (
     <div>
@@ -105,7 +107,7 @@ export function AgentResultCard({
         {/* 헤더 — 아바타·이름·역할·상태 + 작업량(우측) 한 줄 */}
         <div className="flex items-center gap-2">
           <AgentAvatar adapter={adapterOf(run.agent) as AdapterKind} size={24} className="shrink-0 rounded-lg" />
-          <span className="truncate text-sm font-semibold text-foreground">@{run.agent}</span>
+          <span className="truncate text-sm font-semibold text-foreground">@{displayName}</span>
           {role === "master" ? (
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"><Crown className="size-2.5" />{t("talk.target.master")}</span>
           ) : role === "chair" ? (

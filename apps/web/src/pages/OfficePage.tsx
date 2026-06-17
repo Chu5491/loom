@@ -290,11 +290,7 @@ function OfficeTree({
   const skills = office.skills.filter((s) => match(s.name, s.description, s.body));
   const mcps = office.mcp.filter((m) => match(m.name, m.description, m.kind, m.command, m.url));
   const workflows = office.workflows.filter((w) => match(w.name, w.description));
-  // 기능(Functions)으로 분리된 프롬프트는 빼고, 남은 프롬프트(meeting 의장 지침)는
-  // 같은 'Functions' 그룹 안에 prompt-only 항목으로 접어 넣는다 — 섹션은 하나.
-  const fnNames = new Set(office.functions.map((f) => f.name));
-  const leftoverPrompts = office.prompts.filter((p) => !fnNames.has(p.name));
-  const prompts = leftoverPrompts.filter((p) => match(p.name, p.body));
+  // 모든 feature 프롬프트가 곧 기능(모델+프롬프트) — 'Functions' 한 섹션으로 끝.
   const functions = office.functions.filter((f) => match(f.name, f.prompt, f.adapter, f.model));
 
   // 가져오기 (rules/skills 아카이브). 서버 검증 실패(zip-slip·용량·SKILL.md 누락)가
@@ -355,7 +351,6 @@ function OfficeTree({
               tail={<AgentStatMini stat={stat} />}
               badges={[
                 ...(a.delegate ? [{ tone: "info" as const, text: t("office.agent.card.delegate") }] : []),
-                ...(a.roles ?? []).map((r) => ({ tone: "success" as const, text: r })),
                 ...(!a.model ? [{ tone: "warn" as const, text: t("office.agent.noModel") }] : []),
               ]}
             />
@@ -457,8 +452,8 @@ function OfficeTree({
       <TreeGroup
         icon={<Wrench className="size-3.5" />}
         label={t("office.section.functions")}
-        total={office.functions.length + leftoverPrompts.length}
-        matched={functions.length + prompts.length}
+        total={office.functions.length}
+        matched={functions.length}
         expanded={expanded.function}
         onToggle={() => toggleGroup("function")}
       >
@@ -470,17 +465,6 @@ function OfficeTree({
             avatar={<TreeIcon><Wrench className="size-3.5" /></TreeIcon>}
             label={t(`office.fp.${f.name}`)}
             sub={`${f.adapter}${f.model ? ` · ${f.model}` : ""}`}
-          />
-        ))}
-        {/* 의장 지침 등 — 고정 모델이 없는(런타임에 모델이 정해지는) prompt-only 기능. */}
-        {prompts.map((p) => (
-          <TreeItem
-            key={p.name}
-            active={selection.kind === "prompt" && selection.name === p.name}
-            onClick={() => onSelect({ kind: "prompt", name: p.name })}
-            avatar={<TreeIcon><SlidersHorizontal className="size-3.5" /></TreeIcon>}
-            label={t(`office.fp.${p.name}`)}
-            sub={t("office.fp.promptOnly")}
           />
         ))}
       </TreeGroup>
@@ -1008,11 +992,6 @@ function AgentDetail({
             <Badge tone="warn">{t("office.agent.noModel")}</Badge>
           )}
           {a.delegate ? <Badge tone="info">{t("office.agent.card.delegate")}</Badge> : null}
-          {(a.roles ?? []).map((r) => (
-            <Badge key={r} tone="success">
-              {r}
-            </Badge>
-          ))}
         </>
       }
       actions={
@@ -1125,35 +1104,6 @@ function AgentDetail({
           <span className="block text-[11px] text-muted-foreground">{t("office.agent.delegate.hint")}</span>
         </span>
       </label>
-
-      {/* 전담 역할 */}
-      <div className="mt-4">
-        <FieldLabel>{t("office.agent.roles")}</FieldLabel>
-        <div className="flex flex-wrap gap-1.5">
-          {(["git", "analyst", "author"] as const).map((role) => {
-            const on = a.roles?.includes(role) ?? false;
-            return (
-              <button
-                key={role}
-                type="button"
-                onClick={() =>
-                  setA((p) => {
-                    const next = on ? (p.roles ?? []).filter((r) => r !== role) : [...(p.roles ?? []), role];
-                    return { ...p, roles: next.length ? next : undefined };
-                  })
-                }
-                className={cn(
-                  "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
-                  on ? "border-primary/50 bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:bg-muted/60",
-                )}
-              >
-                {t(`office.agent.role.${role}`)}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-1.5 text-[11px] text-muted-foreground">{t("office.agent.roles.hint")}</p>
-      </div>
 
       <div className="mt-6">
         <FieldLabel>{t("office.agent.prompt")}</FieldLabel>

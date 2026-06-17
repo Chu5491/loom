@@ -254,7 +254,7 @@ function sections(lang: "ko" | "en"): Section[] {
                           ["**rules**", "Team rules always attached", "`office/rules/<name>.md`"],
                           ["**skills**", "Abilities expanded on demand — only an index is injected; the agent Reads the body when needed", "`office/skills/<name>.md`"],
                           ["**MCP**", "Tool servers. Secrets via `${ENV}`", "`office/mcp/servers.json`"],
-                          ["**agents**", "CLI + model + the rules/skills/MCP it carries + roles (+delegate)", "`office/agents/<name>.json`"],
+                          ["**agents**", "CLI + model + the rules/skills/MCP it carries (+delegate, +master)", "`office/agents/<name>.json`"],
                           ["**workflows**", "A node (agent+prompt) graph + triggers", "`office/workflows/<name>.json`"],
                           ["**budget**", "Monthly cap (USD, total + per-agent)", "`office/budget.json`"],
                       ]}},

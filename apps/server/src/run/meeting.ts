@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import type { OfficeEvent } from "@loom/core";
 import { getRunEventsDb } from "../db.js";
 import { logger } from "../logger.js";
-import { readAgents, readFeaturePrompt } from "../office.js";
+import { readAgents, readFunction } from "../office.js";
 import { getRun, startRun, waitForRun } from "./engine.js";
 import { fenceHandoff } from "./workflow.js";
 
@@ -22,7 +22,6 @@ const PANEL_TIMEOUT_MS = 20 * 60_000;
 export interface MeetingInput {
   proposal: string;
   participants: string[]; // 패널 에이전트 이름들
-  chair: string; // 의장(종합) 에이전트 이름
   projectId?: string | null;
 }
 
@@ -54,7 +53,6 @@ export async function startMeeting(
   const known = new Set(readAgents().map((a) => a.name));
   const participants = [...new Set(input.participants)].filter((n) => known.has(n));
   if (participants.length === 0) return { ok: false, status: 400, error: "no_valid_participants" };
-  if (!known.has(input.chair)) return { ok: false, status: 400, error: "chair_not_found" };
 
   const meetingId = `meeting:${randomUUID()}`;
   const started = await Promise.all(
@@ -83,10 +81,12 @@ async function runSynthesis(input: MeetingInput, meetingId: string, panelRunIds:
       return { agent: getRun(id)?.agent ?? "?", text: lastResultText(id) ?? "(no output)" };
     }),
   );
+  // 의장 = 기능(office). 사용자가 고르는 게 아니라 meeting 기능의 어댑터·모델로 종합.
+  const fn = readFunction("meeting");
   const result = await startRun({
-    agent: input.chair,
+    fn: { name: fn.name, adapter: fn.adapter, model: fn.model },
     prompt: composeMeetingSynthesis(input.proposal, opinions),
-    promptOverride: readFeaturePrompt("meeting"),
+    promptOverride: fn.prompt,
     projectId: input.projectId,
     workflow: meetingId,
     node: "chair",
