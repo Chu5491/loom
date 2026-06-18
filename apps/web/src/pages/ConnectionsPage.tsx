@@ -3,7 +3,7 @@
 // 모든 데이터는 /api/adapters 4종에서. 영속 상태 없음 — 보이는 게 전부다.
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Zap } from "lucide-react";
 import type { AdapterKind, AdapterManifest, TestAdapterResult } from "@loom/core";
 import { api } from "../api/client.js";
@@ -12,6 +12,7 @@ import { AgentAvatar } from "../components/AgentAvatar.js";
 import { Badge, Button, PageShell } from "../components/ui.js";
 import { Skeleton } from "../components/ui/skeleton.js";
 import { useI18n } from "../context/I18nContext.js";
+import { useConfirm } from "../context/DialogContext.js";
 import { cn } from "../lib/utils.js";
 
 export function ConnectionsPage() {
@@ -78,9 +79,37 @@ function fmtBytes(n: number): string {
 // loom 이 지울 수 없어 "용량만" 보여주고 정리는 사용자 몫(경로 안내).
 function CliSessionFootprint() {
   const { t } = useI18n();
+  const confirm = useConfirm();
+  const qc = useQueryClient();
   const q = useQuery({ queryKey: ["cli-sessions"], queryFn: api.cliSessions });
+  const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
+  const [projectId, setProjectId] = useState("");
+  const preview = useQuery({
+    queryKey: ["cli-sessions-preview", projectId],
+    queryFn: () => api.cliSessionsPreview({ projectId }),
+    enabled: !!projectId,
+  });
+  const cleanup = useMutation({
+    mutationFn: () => api.cliSessionsCleanup({ projectId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["cli-sessions"] });
+      void preview.refetch();
+    },
+  });
   const stores = (q.data?.stores ?? []).filter((s) => s.exists);
   if (q.isLoading || stores.length === 0) return null;
+
+  const pv = preview.data;
+  const count = pv?.sessions.length ?? 0;
+  const onCleanup = async () => {
+    if (!projectId || count === 0) return;
+    const ok = await confirm({
+      body: t("conn.sessions.cleanupConfirm", { count: String(count), size: fmtBytes(pv!.totalBytes) }),
+      tone: "danger",
+      confirmLabel: t("common.delete"),
+    });
+    if (ok) cleanup.mutate();
+  };
 
   return (
     <section className="mt-8">
@@ -104,6 +133,41 @@ function CliSessionFootprint() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* loom 이 만든 세션만 정리 — 대화 기록(loom.db)은 남는다 */}
+      <div className="mt-3 rounded-lg border border-border/60 bg-card p-3">
+        <p className="text-xs font-medium text-foreground">{t("conn.sessions.cleanupTitle")}</p>
+        <p className="mt-0.5 mb-2 text-[11px] text-muted-foreground">{t("conn.sessions.cleanupHint")}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+          >
+            <option value="">{t("conn.sessions.pickProject")}</option>
+            {(projects.data?.projects ?? []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          {projectId && preview.isFetching ? (
+            <span className="text-xs text-muted-foreground">{t("common.checking")}</span>
+          ) : projectId && pv ? (
+            <span className="text-xs text-muted-foreground">
+              {count > 0
+                ? t("conn.sessions.willDelete", { count: String(count), size: fmtBytes(pv.totalBytes) })
+                : t("conn.sessions.cleanupNone")}
+            </span>
+          ) : null}
+          <Button
+            size="sm"
+            variant="danger"
+            disabled={count === 0 || cleanup.isPending}
+            onClick={() => void onCleanup()}
+          >
+            {t("conn.sessions.cleanupBtn")}
+          </Button>
+        </div>
       </div>
     </section>
   );

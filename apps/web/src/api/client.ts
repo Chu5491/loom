@@ -93,6 +93,23 @@ export const api = {
       "/api/cli-sessions",
     ),
 
+  // 정리 미리보기(dry-run) — 이 프로젝트/스레드에서 loom 이 만든 세션 파일·용량.
+  cliSessionsPreview: (scope: { projectId?: string; threadId?: string }) => {
+    const qs = new URLSearchParams();
+    if (scope.projectId) qs.set("projectId", scope.projectId);
+    if (scope.threadId) qs.set("threadId", scope.threadId);
+    return request<{ sessions: { adapter: string; sessionId: string; files: string[]; bytes: number }[]; totalBytes: number }>(
+      `/api/cli-sessions/preview?${qs.toString()}`,
+    );
+  },
+
+  // loom 이 만든 세션 파일만 정리 — 대화 기록(loom.db)은 남는다.
+  cliSessionsCleanup: (scope: { projectId?: string; threadId?: string }) =>
+    request<{ deletedFiles: number; freedBytes: number; sessions: number }>("/api/cli-sessions/cleanup", {
+      method: "POST",
+      body: JSON.stringify(scope),
+    }),
+
   probeAdapter: (kind: string, opts: { command?: string; refresh?: boolean } = {}) => {
     const qs = new URLSearchParams();
     if (opts.command) qs.set("command", opts.command);
