@@ -5,8 +5,6 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import { Button as ShadcnButton, type ButtonProps as ShadcnButtonProps } from "./ui/button.js";
-import { Input as ShadcnInput } from "./ui/input.js";
-import { Textarea as ShadcnTextarea } from "./ui/textarea.js";
 import { Label as ShadcnLabel } from "./ui/label.js";
 import { Card as ShadcnCard } from "./ui/card.js";
 import { Badge as ShadcnBadge } from "./ui/badge.js";
@@ -43,10 +41,6 @@ export const Button = React.forwardRef<
   />
 ));
 Button.displayName = "Button";
-
-// ─── Form primitives (pass-through) ────────────────────────────────────────
-export const Input = ShadcnInput;
-export const Textarea = ShadcnTextarea;
 
 // ─── Label (loom uses tiny uppercase labels above inputs) ─────────────────
 export function Label({

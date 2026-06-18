@@ -13,12 +13,13 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "knip": "knip --include files,dependencies,binaries",
     "build:desktop": "pnpm --filter @loom/web build && pnpm --filter @loom/desktop bundle",
     "dist:desktop": "pnpm build:desktop && pnpm --filter @loom/desktop run rebuild:native && pnpm --filter @loom/desktop run pack && pnpm --filter @loom/desktop run restore:node"
   },
   "devDependencies": {
+    "knip": "^6.17.1",
     "puppeteer-core": "^24.42.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
   "packageManager": "pnpm@10.21.0",

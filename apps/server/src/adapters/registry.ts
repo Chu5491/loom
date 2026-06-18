@@ -89,12 +89,6 @@ export function listAdapterKinds(): AdapterKind[] {
   return [...entries.keys()];
 }
 
-export function clearAdapters(): void {
-  entries.clear();
-  probeCache.clear();
-  modelsCache.clear();
-}
-
 // ---------------------------------------------------------------------------
 // Caching layer. Spawning child processes (probe) and hitting external APIs
 // (listModels) are both expensive enough that we don't want to run them per

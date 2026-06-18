@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": ["office/**"],
+  "ignoreBinaries": ["prebuild-install", "node-gyp"],
+  "workspaces": {
+    ".": { "entry": ["scripts/*.mjs"] },
+    "apps/server": { "ignoreDependencies": ["pino-pretty"] },
+    "apps/desktop": {
+      "entry": ["src/main.ts", "src/preload.ts", "src/server-entry.ts"],
+      "ignoreDependencies": ["pino", "pino-pretty"]
+    }
+  }
+}
