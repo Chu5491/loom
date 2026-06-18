@@ -450,7 +450,7 @@ function sections(lang: "ko" | "en"): Section[] {
                           ["devin", "⚠️ 평문", "✅ 프로젝트-로컬 파일", "✅"],
                       ]}},
                       {note: "평문 CLI 는 도구 호출을 라이브로 못 보여주지만, 만진 파일은 git 으로 잡고 작업 리포트 카드도 동일하게 나옵니다."},
-                      {note: "각 CLI 는 세션 기록을 **자기 영역**(예: `~/.claude`, `~/.codex`)에 쌓고 시간이 지날수록 커집니다. loom 은 CLI root 불가침이라 이를 지우지 않습니다 — **연결** 탭에서 CLI별 용량을 확인하고 필요할 때 직접 정리하세요."},
+                      {note: "각 CLI 는 세션 기록을 **자기 영역**(예: `~/.claude`, `~/.codex`)에 쌓고 시간이 지날수록 커집니다. loom 은 자신이 만든 세션을 추적하므로 **대화를 삭제하면** 그 대화의 CLI 세션 파일도 함께 정리합니다(**연결** 탭에서 CLI별 용량 확인)."},
                   ]
                 : [
                       {p: "Each CLI uses its own auth (BYOK); loom absorbs the differences via adapters and surfaces capability gaps honestly."},

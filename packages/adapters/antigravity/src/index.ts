@@ -180,6 +180,11 @@ export const antigravityAdapter = defineCliAdapter<AntigravityConfig>({
   // 평문 출력이라 stdout 추출은 항상 빈손 — 세션은 디스크에서 되찾는다.
   extractSessionId: extractAntigravitySessionId,
   captureSessionFromDisk: (ctx) => captureAntigravitySession(ctx),
+  // 세션 정리 — agy 대화 = ~/.gemini/antigravity-cli/conversations/<id>.db. 파일명이 곧 id.
+  sessionFiles: (sessionId) => {
+    const p = homePath(...AGY_CONVERSATIONS, `${sessionId}.db`);
+    return fs.existsSync(p) ? [p] : [];
+  },
   extractTouchedPaths: extractAntigravityTouchedPaths,
   extractTouchedEdits: extractAntigravityTouchedEdits,
   extractToolUses: extractAntigravityToolUses,

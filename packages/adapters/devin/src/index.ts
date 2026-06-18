@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { defineCliAdapter, spawnCapture, stripAnsi } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, McpServer } from "@loom/core";
@@ -192,6 +193,19 @@ export const devinAdapter = defineCliAdapter<DevinConfig>({
   applyResume: (args, sessionId) => [...args, "--resume", sessionId],
   captureSessionFromDisk: captureDevinSession,
   captureActivityFromDisk: captureDevinActivity,
+  // 세션 정리 — devin 본체는 sessions.db(행)라 '파일만' 정리하면 transcripts/locks 사본만
+  //   사라진다(db 행 삭제는 정책상 제외). XDG_DATA/devin/cli 아래 id 가 박힌 파일·락.
+  sessionFiles: (sessionId) => {
+    const root = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "devin", "cli");
+    const out: string[] = [];
+    const transcript = path.join(root, "transcripts", `${sessionId}.json`);
+    if (fs.existsSync(transcript)) out.push(transcript);
+    const locks = path.join(root, "session_locks");
+    try {
+      for (const n of fs.readdirSync(locks)) if (n.includes(sessionId)) out.push(path.join(locks, n));
+    } catch { /* 락 디렉토리 없음 — 무시 */ }
+    return out;
+  },
   applyMcpServers: ({ args, servers, cwd }) => {
     // servers 가 비어도 호출 — 직전 run 이 남긴 transient loom 엔트리를 정리해야
     // 한다(아래). loadoutDir 이 항상 전달되므로 define 이 매 run 훅을 부른다.

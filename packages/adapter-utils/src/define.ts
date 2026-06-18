@@ -65,6 +65,10 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
     outputTokens?: number;
     tools?: { name: string; target?: string }[];
   } | null>;
+  /** Optional: 이 세션이 자기 CLI store 에 남긴 파일 경로들 — 사용자가 대화를 삭제할
+   *  때 loom 이 어느 파일을 지울지 어댑터가 안다(저장 레이아웃이 CLI마다 다름).
+   *  존재하는 경로만 반환. 정리 미지원이면 생략. */
+  sessionFiles?(sessionId: string, cwd: string): string[];
   /** Optional: scan a stdout chunk for tool-use events and return the
    *  file paths the agent is currently editing. */
   extractTouchedPaths?(chunk: string): string[];
@@ -128,6 +132,7 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
     captureActivityFromDisk: def.captureActivityFromDisk
       ? (ctx, config) => def.captureActivityFromDisk!(ctx, config as TConfig)
       : undefined,
+    sessionFiles: def.sessionFiles,
     extractTouchedPaths: def.extractTouchedPaths,
     extractTouchedEdits: def.extractTouchedEdits,
     extractToolUses: def.extractToolUses,

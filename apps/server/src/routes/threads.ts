@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { deleteThreadDb, getThreadDb, insertThread, listRunsDb, listThreadsDb, renameThreadDb } from "../db.js";
 import { deleteRunFiles } from "../run/engine.js";
+import { collectSessionArtifacts, deleteSessionArtifacts } from "./cli-sessions.js";
 import { isResponse, parseBody } from "./helpers.js";
 
 export const threadsRoute = new Hono();
@@ -51,6 +52,9 @@ threadsRoute.delete("/:id", (c) => {
   }
   // DB 행 삭제 전에 각 run 의 로그·프롬프트 파일도 거둔다(고아 파일 방지).
   for (const r of threadRuns) deleteRunFiles(r.id);
+  // 대화의 CLI 세션 파일도 함께 정리한다 — loom 이 만든 세션을 사용자가 지우는 것이므로
+  //   헌법 3조 위배가 아니다(전역설정 주입/오염 금지이지, 요청한 세션 정리 금지가 아님).
+  deleteSessionArtifacts(collectSessionArtifacts({ threadId: id }));
   deleteThreadDb(id);
   return c.json({ ok: true });
 });

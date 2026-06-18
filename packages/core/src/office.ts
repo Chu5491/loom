@@ -228,6 +228,12 @@ export interface RunInfo {
   projectId: string | null;
   /** 어느 대화 스레드에 속하나. 스레드 안에서 세션이 이어진다. */
   threadId: string | null;
+  /** run 시점의 CLI 종류(adapter kind). 세션 파일 경로 유도·정리에 쓰인다 —
+   *  agent 정의가 나중에 바뀌어도 이 run 이 실제 쓴 CLI 를 보존한다. */
+  adapter: AdapterKind | null;
+  /** CLI 가 발급/이어가는 세션 id. running 시작 시엔 없고 finishRun 이 채운다 —
+   *  스레드 연속(resume)·세션 정리(어느 파일을 지울지)에 쓰인다. */
+  sessionId?: string | null;
   /** 이 run 의 비용(USD). null=미상(antigravity 등 CLI 미보고). */
   costUsd: number | null;
   /** 비용이 토큰×단가 추정인가(codex·devin) — true 면 UI 가 "~" 근사 표시.

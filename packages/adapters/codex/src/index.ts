@@ -1,4 +1,4 @@
-import { defineCliAdapter } from "@loom/adapter-utils";
+import { defineCliAdapter, homePath, findSessionPaths } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, McpServer, ToolUse, TouchedEdit } from "@loom/core";
 
 export { codexManifest } from "./manifest.js";
@@ -206,6 +206,8 @@ export const codexAdapter = defineCliAdapter<CodexConfig>({
   resolveEnv: (cfg) => cfg.env ?? {},
   applyResume: resumeCodexArgs,
   extractSessionId: extractCodexSessionId,
+  // 세션 정리 — codex 는 ~/.codex/sessions/Y/M/D/rollout-…-<id>.jsonl. 날짜 폴더를 모르니 id 로 찾는다.
+  sessionFiles: (sessionId) => findSessionPaths(homePath(".codex", "sessions"), sessionId),
   extractTouchedPaths: extractCodexTouchedPaths,
   extractTouchedEdits: extractCodexTouchedEdits,
   extractToolUses: extractCodexToolUses,

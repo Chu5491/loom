@@ -7,7 +7,16 @@ import {
   extractClaudeTouchedEdits,
   extractClaudeTouchedPaths,
   parseAnthropicModels,
+  claudeProjectSlug,
 } from "./index.js";
+
+describe("claudeProjectSlug (cwd → ~/.claude/projects 폴더명)", () => {
+  it("replaces every non-alphanumeric run with dashes (matches real on-disk layout)", () => {
+    expect(claudeProjectSlug("/Users/hyj/Desktop/03. Project/16. MyHarness")).toBe(
+      "-Users-hyj-Desktop-03--Project-16--MyHarness",
+    );
+  });
+});
 
 describe("parseAnthropicModels (Anthropic /v1/models → options)", () => {
   it("keeps claude models, maps display_name, sorts newest first, tags family", () => {

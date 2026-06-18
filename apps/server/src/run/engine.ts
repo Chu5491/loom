@@ -417,6 +417,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     parentRunId: input.parentRunId ?? null,
     projectId: input.projectId ?? null,
     threadId: input.threadId ?? null,
+    adapter: agent.adapter,
     costUsd: null,
     workflow: input.workflow ?? null,
     node: input.node ?? null,

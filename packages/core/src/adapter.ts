@@ -91,6 +91,12 @@ export interface CliAdapter {
     outputTokens?: number;
     tools?: { name: string; target?: string }[];
   } | null>;
+  /** loom 이 만든 이 세션이 자기 CLI store 에 남긴 파일 경로들(정리용). 사용자가
+   *  대화를 삭제할 때 어느 파일을 지울지 어댑터가 안다 — 저장 레이아웃이 CLI마다
+   *  달라(파일 1개·여러 곳·하이브리드) 어댑터가 흡수한다. 존재하는 경로만 반환하고,
+   *  정리 미지원 CLI 는 undefined. 헌법 3조는 CLI 전역설정 *주입/오염* 금지이지,
+   *  사용자가 요청한 자기 세션 정리 금지가 아니다 — 산출만 하고 실제 삭제는 서버가 한다. */
+  sessionFiles?(sessionId: string, cwd: string): string[];
   /** Pluck file paths out of tool-use events as the CLI streams them.
    *  Run-service surfaces these to the UI so the file tree can flag
    *  "an agent is editing this *right now*" — without it, files only

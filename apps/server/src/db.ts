@@ -107,6 +107,9 @@ export function getDb(): DB {
   if (!cols.some((c) => c.name === "cost_estimated")) {
     db.exec(`ALTER TABLE runs ADD COLUMN cost_estimated INTEGER`); // 1=토큰×단가 추정, NULL/0=CLI 실값
   }
+  if (!cols.some((c) => c.name === "adapter")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN adapter TEXT`); // run 시점 CLI 종류(kind) — 세션 파일 경로 유도·정리용
+  }
   const schedCols = db.prepare<[], { name: string }>(`PRAGMA table_info(schedules)`).all();
   if (schedCols.length > 0 && !schedCols.some((c) => c.name === "workflow")) {
     db.exec(`ALTER TABLE schedules ADD COLUMN workflow TEXT`);
@@ -163,6 +166,8 @@ interface RunRow {
   workflow: string | null;
   node: string | null;
   rating: number | null;
+  adapter: string | null;
+  session_id: string | null;
 }
 function toInfo(r: RunRow): RunInfo {
   return {
@@ -176,6 +181,8 @@ function toInfo(r: RunRow): RunInfo {
     parentRunId: r.parent_run_id,
     projectId: r.project_id,
     threadId: r.thread_id,
+    adapter: (r.adapter ?? null) as RunInfo["adapter"],
+    sessionId: r.session_id,
     costUsd: r.cost_usd,
     costEstimated: r.cost_estimated === 1,
     workflow: r.workflow,
@@ -218,10 +225,10 @@ export function agentStatsDb(days = 30): AgentStat[] {
 export function insertRun(info: RunInfo): void {
   getDb()
     .prepare(
-      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id, project_id, thread_id, workflow, node)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id, project_id, thread_id, workflow, node, adapter)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId, info.projectId, info.threadId, info.workflow ?? null, info.node ?? null);
+    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId, info.projectId, info.threadId, info.workflow ?? null, info.node ?? null, info.adapter ?? null);
 }
 
 export function appendEvent(runId: string, seq: number, event: OfficeEvent): void {

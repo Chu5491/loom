@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { defineCliAdapter } from "@loom/adapter-utils";
+import { defineCliAdapter, findSessionPaths } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, McpServer, ToolUse, TouchedEdit } from "@loom/core";
 
 export { opencodeManifest } from "./manifest.js";
@@ -219,6 +219,13 @@ export const opencodeAdapter = defineCliAdapter<OpencodeConfig>({
   // in front of the existing args so the runtime session beats any
   // static `config.sessionId` the user may have set.
   applyResume: (args, sessionId) => ["run", "--session", sessionId, ...args.slice(1)],
+  // 세션 정리 — opencode 는 XDG_DATA/opencode/storage 아래 ses_… 가 박힌 파일·디렉토리
+  //   (session/<proj-hash>/<id>.json · message/<id>/ · todo·session_diff 등 여러 곳)에 저장.
+  //   proj-hash 규칙이 불명확해 id 로 통째 찾는다.
+  sessionFiles: (sessionId) => {
+    const dataRoot = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+    return findSessionPaths(path.join(dataRoot, "opencode", "storage"), sessionId);
+  },
   // opencode는 런타임 CLI 플래그로 MCP 서버를 등록할 수 없음. 대신:
   //   1) 사용자의 기존 opencode.json을 읽어 모델/auth 등 다른 설정은 보존
   //   2) 우리 MCP 서버만 .mcp 필드에 합쳐 새 파일을 <loadoutDir>/xdg/opencode/opencode.json에 씀

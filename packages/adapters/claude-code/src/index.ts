@@ -1,5 +1,11 @@
-import { defineCliAdapter } from "@loom/adapter-utils";
+import fs from "node:fs";
+import { defineCliAdapter, homePath } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, DelegationEvent, ToolUse, TouchedEdit } from "@loom/core";
+
+/** claude 세션 파일이 사는 projects 하위 폴더명 — cwd 의 비영숫자를 '-' 로 치환(실측 규칙). */
+export function claudeProjectSlug(cwd: string): string {
+  return cwd.replace(/[^a-zA-Z0-9]/g, "-");
+}
 
 export { claudeCodeManifest } from "./manifest.js";
 export { claudeCodeProbe } from "./probe.js";
@@ -283,6 +289,11 @@ export const claudeCodeAdapter = defineCliAdapter<ClaudeCodeConfig>({
   // variadic 플래그가 뒤따르는 인자/stdin 을 삼키지 않게 `--flag=a,b` 단일 인자로.
   applyAllowedTools: (args, tools) => [...args, `--allowedTools=${tools.join(",")}`],
   extractSessionId: extractClaudeSessionId,
+  // 세션 정리 — claude 는 cwd 별 폴더에 <session>.jsonl 한 개. (파일 1개)
+  sessionFiles: (sessionId, cwd) => {
+    const p = homePath(".claude", "projects", claudeProjectSlug(cwd), `${sessionId}.jsonl`);
+    return fs.existsSync(p) ? [p] : [];
+  },
   extractTouchedPaths: extractClaudeTouchedPaths,
   extractTouchedEdits: extractClaudeTouchedEdits,
   extractToolUses: extractClaudeToolUses,
