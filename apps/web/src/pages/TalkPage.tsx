@@ -25,6 +25,7 @@ import { TasksView } from "../components/TasksView.js";
 import { WorkflowLiveGraph } from "../components/WorkflowLiveGraph.js";
 import { Button } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
+import { useConfirm, useAlert } from "../context/DialogContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
 import { cn } from "../lib/utils.js";
 import { getParam, setParams } from "../lib/url.js";
@@ -39,6 +40,8 @@ type WsView = "talk" | "tasks" | "meeting" | "files" | "git" | "analysis" | "sch
 
 export function TalkPage({ project }: { project: Project }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
+  const alert = useAlert();
   const qc = useQueryClient();
   const projectId = project.id;
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
@@ -435,13 +438,13 @@ export function TalkPage({ project }: { project: Project }) {
         onRenaming={setRenaming}
         onPick={(id) => setThreadId(id)}
         onRename={(id, name) => void api.renameThread(id, name).then(() => threads.refetch())}
-        onDelete={(id) => {
-          if (!confirm(t("talk.thread.deleteConfirm"))) return;
+        onDelete={async (id) => {
+          if (!(await confirm({ body: t("talk.thread.deleteConfirm"), tone: "danger", confirmLabel: t("common.delete") }))) return;
           void api.deleteThread(id)
             .then(() => { setThreadId(null); void threads.refetch(); })
             .catch((e: unknown) => {
               // 실행 중 run 보호(서버 409) — 무음이면 삭제 버튼이 죽은 것처럼 보인다.
-              alert(String(e).includes("still_running") ? t("talk.thread.deleteRunning") : String(e));
+              void alert(String(e).includes("still_running") ? t("talk.thread.deleteRunning") : String(e));
             });
         }}
       />
@@ -961,6 +964,8 @@ function UserBubble({ text }: { text: string }) {
 // ── 에이전트 버블 — runId 의 SSE 를 구독해 이벤트를 렌더 ─────────────────────────
 function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLast, onDone, onActivity, projectName }: { agent?: AgentSpec; fromAgent?: string; runId: string; run?: RunInfo; startedAt?: string; workflows: WorkflowSpec[]; isLast?: boolean; onDone?: () => void; onActivity?: (runId: string, agent: string, item: TraceItem | null, running: boolean) => void; projectName?: string }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
+  const alert = useAlert();
   const isStartError = runId.startsWith("err:");
   const stream = useRunStream(isStartError ? null : runId);
   const [handedOff, setHandedOff] = useState<string[]>([]);
@@ -1073,7 +1078,7 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
                     type="button"
                     title={t("talk.rerun")}
                     aria-label={t("talk.rerun")}
-                    onClick={() => void api.rerunRun(runId).then(() => onDone?.()).catch((e: unknown) => alert(String(e)))}
+                    onClick={() => void api.rerunRun(runId).then(() => onDone?.()).catch((e: unknown) => void alert(String(e)))}
                     className="text-muted-foreground/50 opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
                   >
                     <RotateCcw className="size-3.5" />
@@ -1082,7 +1087,7 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
                 <button
                   type="button"
                   aria-label={t("talk.deleteRun")}
-                  onClick={() => confirm(t("talk.deleteConfirm")) && void api.deleteRun(runId).then(() => onDone?.()).catch(() => {})}
+                  onClick={async () => { if (await confirm({ body: t("talk.deleteConfirm"), tone: "danger", confirmLabel: t("common.delete") })) void api.deleteRun(runId).then(() => onDone?.()).catch(() => {}); }}
                   className="text-muted-foreground/50 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
                 >
                   <Trash2 className="size-3.5" />
@@ -1958,6 +1963,7 @@ function Composer({
   onSend: (text: string, skills: string[], files: string[]) => void;
 }) {
   const { t } = useI18n();
+  const alert = useAlert();
   const [text, setText] = useState("");
   const [attached, setAttached] = useState<string[]>([]);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -1978,7 +1984,7 @@ function Composer({
         const { path } = await api.uploadAttachment(f);
         setAttachedFiles((prev) => (prev.includes(path) ? prev : [...prev, path]));
       } catch (e) {
-        alert(`${f.name}: ${e instanceof Error ? e.message : String(e)}`);
+        void alert(`${f.name}: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         setUploading((n) => n - 1);
       }

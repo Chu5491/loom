@@ -10,6 +10,7 @@ import { api } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
 import { Button } from "./ui.js";
 import { useI18n } from "../context/I18nContext.js";
+import { useConfirm } from "../context/DialogContext.js";
 import { cn } from "../lib/utils.js";
 
 const VIEW_W = 820;
@@ -110,6 +111,7 @@ export function WorkflowEditor({
   registerDirty?: (fn: () => boolean) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const officeQ = qc.getQueryData<{ office: { workflows: WorkflowSpec[] } }>(["office"]);
   const workflows = officeQ?.office.workflows ?? [];
@@ -148,17 +150,17 @@ export function WorkflowEditor({
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
-  function open(wf: WorkflowSpec) {
+  async function open(wf: WorkflowSpec) {
     // 편집 중 다른 워크플로우 칩 클릭 — 확인 없이 미저장 편집을 버리지 않는다.
-    if (dirty && !confirm(t("office.unsavedConfirm"))) return;
+    if (dirty && !(await confirm(t("office.unsavedConfirm")))) return;
     setEditing(structuredClone(wf));
     setDirty(false);
     setErr(null);
   }
-  function create(template?: WfTemplate) {
+  async function create(template?: WfTemplate) {
     const name = newName.trim();
     if (!name) return;
-    if (dirty && !confirm(t("office.unsavedConfirm"))) return;
+    if (dirty && !(await confirm(t("office.unsavedConfirm")))) return;
     const first = agents[0]?.name ?? "";
     setEditing(
       template
@@ -178,7 +180,7 @@ export function WorkflowEditor({
           <button
             key={w.name}
             type="button"
-            onClick={() => open(w)}
+            onClick={() => void open(w)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               editing?.name === w.name ? "border-primary/50 bg-primary/15" : "border-border text-muted-foreground hover:bg-muted/60",
@@ -212,7 +214,7 @@ export function WorkflowEditor({
               onChange={(e) => setNewName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing) return;
-                if (e.key === "Enter") create();
+                if (e.key === "Enter") void create();
                 if (e.key === "Escape") setCreating(false);
               }}
               className="h-8 w-48 rounded-md border border-primary/50 bg-background px-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring"
@@ -225,7 +227,7 @@ export function WorkflowEditor({
             <button
               type="button"
               disabled={!newName.trim()}
-              onClick={() => create()}
+              onClick={() => void create()}
               className="flex flex-col items-start gap-1 rounded-xl border border-dashed border-border p-3 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)] disabled:opacity-40"
             >
               <span className="flex items-center gap-1.5 text-xs font-semibold"><Plus className="size-3.5 text-primary" />{t("wf.tpl.blank")}</span>
@@ -236,7 +238,7 @@ export function WorkflowEditor({
                 key={tpl.key}
                 type="button"
                 disabled={!newName.trim()}
-                onClick={() => create(tpl)}
+                onClick={() => void create(tpl)}
                 className="group flex flex-col items-start gap-1 rounded-xl border border-border p-3 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-glow-sm)] disabled:opacity-40"
               >
                 <span className="flex items-center gap-1.5 text-xs font-semibold">
@@ -257,10 +259,10 @@ export function WorkflowEditor({
           agents={agents}
           onChange={(next) => { setEditing(next); setDirty(true); }}
           onSave={() => save.mutate(editing)}
-          onDelete={() => {
+          onDelete={async () => {
             // 다른 office 항목들과 동일 정책 — 영구 삭제는 반드시 confirm 을 거친다.
             if (!workflows.some((w) => w.name === editing.name)) { setEditing(null); return; }
-            if (confirm(t("office.deleteConfirm", { name: editing.name }))) del.mutate(editing.name);
+            if (await confirm({ body: t("office.deleteConfirm", { name: editing.name }), tone: "danger", confirmLabel: t("common.delete") })) del.mutate(editing.name);
           }}
           saving={save.isPending}
           dirty={dirty}

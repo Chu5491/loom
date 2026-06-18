@@ -11,7 +11,9 @@ export function ConfirmDialog({
   title,
   body,
   confirmLabel,
+  cancelLabel,
   tone = "default",
+  hideCancel = false,
   onConfirm,
   onCancel,
 }: {
@@ -19,7 +21,10 @@ export function ConfirmDialog({
   title: string;
   body: string;
   confirmLabel: string;
+  cancelLabel?: string;
   tone?: "default" | "danger";
+  /** 취소 버튼을 숨긴다 — 알림(alert)처럼 확인만 필요할 때. */
+  hideCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -61,9 +66,11 @@ export function ConfirmDialog({
         </div>
         <p className="mt-3 text-sm text-muted-foreground">{body}</p>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onCancel}>
-            {t("common.cancel")}
-          </Button>
+          {!hideCancel ? (
+            <Button variant="secondary" size="sm" onClick={onCancel}>
+              {cancelLabel ?? t("common.cancel")}
+            </Button>
+          ) : null}
           <Button variant={tone === "danger" ? "danger" : "primary"} size="sm" autoFocus onClick={onConfirm}>
             {confirmLabel}
           </Button>

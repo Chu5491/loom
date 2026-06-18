@@ -36,6 +36,7 @@ import { Markdown } from "../components/Markdown.js";
 import { WorkflowEditor } from "../components/WorkflowEditor.js";
 import { Badge, Button, PageShell, Panel } from "../components/ui.js";
 import { useI18n } from "../context/I18nContext.js";
+import { useConfirm, useAlert } from "../context/DialogContext.js";
 import { cn } from "../lib/utils.js";
 
 const ADAPTERS: AdapterKind[] = ["claude-code", "antigravity", "codex", "opencode", "devin"];
@@ -68,6 +69,7 @@ type Selection =
 
 export function OfficePage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const office = useQuery({ queryKey: ["office"], queryFn: api.getOffice });
   const data = office.data?.office;
   const [selection, setSelection] = useState<Selection>({ kind: "overview" });
@@ -78,8 +80,8 @@ export function OfficePage() {
     dirtyCheck.current = fn;
   }, []);
   const guardedSelect = useCallback(
-    (s: Selection) => {
-      if (dirtyCheck.current() && !confirm(t("office.unsavedConfirm"))) return;
+    async (s: Selection) => {
+      if (dirtyCheck.current() && !(await confirm(t("office.unsavedConfirm")))) return;
       dirtyCheck.current = () => false;
       setSelection(s);
     },
@@ -262,6 +264,7 @@ function OfficeTree({
   toggleGroup: (k: Kind) => void;
 }) {
   const { t } = useI18n();
+  const alert = useAlert();
   const invalidate = useInvalidate();
 
   // 크로스 레퍼런스 — 어떤 에이전트가 rule/skill/mcp 를 쓰는지(이름→에이전트 목록).
@@ -295,7 +298,7 @@ function OfficeTree({
 
   // 가져오기 (rules/skills 아카이브). 서버 검증 실패(zip-slip·용량·SKILL.md 누락)가
   // 무음이면 "아무 일도 안 일어난" 것처럼 보인다 — alert 로 표면화.
-  const onImportError = (e: unknown) => alert(e instanceof Error ? e.message : String(e));
+  const onImportError = (e: unknown) => void alert(e instanceof Error ? e.message : String(e));
   const impRules = useMutation({ mutationFn: (f: File) => api.importRulesArchive(f), onSuccess: invalidate, onError: onImportError });
   const impSkills = useMutation({ mutationFn: (f: File) => api.importSkillArchive(f), onSuccess: invalidate, onError: onImportError });
 
@@ -929,6 +932,7 @@ function AgentDetail({
   registerDirty?: (fn: () => boolean) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const invalidate = useInvalidate();
   const [a, setA] = useState<AgentSpec>(agent);
   const [err, setErr] = useState<string | null>(null);
@@ -998,7 +1002,7 @@ function AgentDetail({
         !isNew ? (
           <button
             type="button"
-            onClick={() => confirm(t("office.deleteConfirm", { name: a.name })) && del.mutate(a.name)}
+            onClick={async () => { if (await confirm({ body: t("office.deleteConfirm", { name: a.name }), tone: "danger", confirmLabel: t("common.delete") })) del.mutate(a.name); }}
             className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
             aria-label={t("office.delete")}
           >
@@ -1174,6 +1178,7 @@ function RuleDetail({
   registerDirty?: (fn: () => boolean) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const invalidate = useInvalidate();
   const [name, setName] = useState(rule.name);
   const [body, setBody] = useState(rule.body);
@@ -1210,7 +1215,7 @@ function RuleDetail({
         !isNew ? (
           <button
             type="button"
-            onClick={() => confirm(t("office.deleteConfirm", { name: rule.name })) && del.mutate(rule.name)}
+            onClick={async () => { if (await confirm({ body: t("office.deleteConfirm", { name: rule.name }), tone: "danger", confirmLabel: t("common.delete") })) del.mutate(rule.name); }}
             className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
             aria-label={t("office.delete")}
           >
@@ -1354,6 +1359,7 @@ function SkillDetail({
   registerDirty?: (fn: () => boolean) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const invalidate = useInvalidate();
   const [name, setName] = useState(skill.name);
   const [desc, setDesc] = useState(skill.description);
@@ -1398,7 +1404,7 @@ function SkillDetail({
         !isNew ? (
           <button
             type="button"
-            onClick={() => confirm(t("office.deleteConfirm", { name: skill.name })) && del.mutate(skill.name)}
+            onClick={async () => { if (await confirm({ body: t("office.deleteConfirm", { name: skill.name }), tone: "danger", confirmLabel: t("common.delete") })) del.mutate(skill.name); }}
             className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
             aria-label={t("office.delete")}
           >
@@ -1517,6 +1523,7 @@ function McpDetail({
   registerDirty?: (fn: () => boolean) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const invalidate = useInvalidate();
   const [s, setS] = useState<McpServer>(server);
   // args/env/headers 는 편집용 raw 문자열을 따로 든다 — 매 키입력마다 parse→재직렬화
@@ -1574,8 +1581,8 @@ function McpDetail({
     save.mutate([...others, parsed]);
   };
 
-  const remove = () => {
-    if (!confirm(t("office.deleteConfirm", { name: server.name }))) return;
+  const remove = async () => {
+    if (!(await confirm({ body: t("office.deleteConfirm", { name: server.name }), tone: "danger", confirmLabel: t("common.delete") }))) return;
     del.mutate(office.mcp.filter((x) => x.name !== server.name));
   };
 
@@ -2072,6 +2079,7 @@ interface SkillFileOps {
 
 function SkillFiles({ ops }: { ops: SkillFileOps }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<string | null>(null);
   const [pathInput, setPathInput] = useState("");
   const [content, setContent] = useState("");
@@ -2150,7 +2158,7 @@ function SkillFiles({ ops }: { ops: SkillFileOps }) {
             {editing !== "__new" ? (
               <button
                 type="button"
-                onClick={() => confirm(t("office.deleteConfirm", { name: editing })) && void run(() => ops.remove(editing))}
+                onClick={async () => { if (await confirm({ body: t("office.deleteConfirm", { name: editing }), tone: "danger", confirmLabel: t("common.delete") })) void run(() => ops.remove(editing)); }}
                 className="text-xs text-muted-foreground transition-colors hover:text-destructive"
               >
                 {t("office.skill.file.delete")}
