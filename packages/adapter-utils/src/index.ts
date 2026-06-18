@@ -15,3 +15,4 @@ export {
 export { spawnCapture, stripAnsi, type SpawnCaptureResult } from "./exec.js";
 export { appendPathDirs, withAugmentedPath } from "./env.js";
 export { findSessionPaths } from "./sessions.js";
+export { parseJsonLines } from "./stream.js";

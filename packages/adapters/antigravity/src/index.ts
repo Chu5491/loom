@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { defineCliAdapter, homePath } from "@loom/adapter-utils";
+import { defineCliAdapter, homePath, parseJsonLines } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, ToolUse, TouchedEdit } from "@loom/core";
 
 export { antigravityManifest } from "./manifest.js";
@@ -58,17 +58,7 @@ interface StreamEvent {
   parameters?: Record<string, unknown>;
 }
 
-function* parseLines(chunk: string): Generator<StreamEvent> {
-  for (const raw of chunk.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line[0] !== "{") continue;
-    try {
-      yield JSON.parse(line) as StreamEvent;
-    } catch {
-      // partial / malformed line
-    }
-  }
-}
+const parseLines = (chunk: string): Generator<StreamEvent> => parseJsonLines<StreamEvent>(chunk);
 
 export function extractAntigravitySessionId(chunk: string): string | null {
   for (const ev of parseLines(chunk)) {

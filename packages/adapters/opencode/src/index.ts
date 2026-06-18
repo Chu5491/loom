@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { defineCliAdapter, findSessionPaths } from "@loom/adapter-utils";
+import { defineCliAdapter, findSessionPaths, parseJsonLines } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, McpServer, ToolUse, TouchedEdit } from "@loom/core";
 
 export { opencodeManifest } from "./manifest.js";
@@ -124,17 +124,7 @@ interface OpencodeEvent {
   };
 }
 
-function* parseOpencodeLines(chunk: string): Generator<OpencodeEvent> {
-  for (const raw of chunk.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line[0] !== "{") continue;
-    try {
-      yield JSON.parse(line) as OpencodeEvent;
-    } catch {
-      // partial / malformed line
-    }
-  }
-}
+const parseOpencodeLines = (chunk: string): Generator<OpencodeEvent> => parseJsonLines<OpencodeEvent>(chunk);
 
 export function extractOpencodeSessionId(chunk: string): string | null {
   for (const ev of parseOpencodeLines(chunk)) {

@@ -1,4 +1,4 @@
-import { defineCliAdapter, homePath, findSessionPaths } from "@loom/adapter-utils";
+import { defineCliAdapter, homePath, findSessionPaths, parseJsonLines } from "@loom/adapter-utils";
 import type { AdapterConfig, BuiltCommand, McpServer, ToolUse, TouchedEdit } from "@loom/core";
 
 export { codexManifest } from "./manifest.js";
@@ -125,17 +125,7 @@ interface CodexEvent {
   };
 }
 
-function* parseCodexLines(chunk: string): Generator<CodexEvent> {
-  for (const raw of chunk.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line[0] !== "{") continue;
-    try {
-      yield JSON.parse(line) as CodexEvent;
-    } catch {
-      // partial / malformed line
-    }
-  }
-}
+const parseCodexLines = (chunk: string): Generator<CodexEvent> => parseJsonLines<CodexEvent>(chunk);
 
 export function extractCodexSessionId(chunk: string): string | null {
   for (const ev of parseCodexLines(chunk)) {
