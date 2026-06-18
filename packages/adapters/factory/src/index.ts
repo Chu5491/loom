@@ -80,6 +80,10 @@ export const factoryAdapter = defineCliAdapter<DroidConfig>({
   // 세션 정리 — droid 세션 = ~/.factory/sessions 아래(인증 후 생성, 레이아웃 미검증) — id 로 찾는다.
   sessionFiles: (sessionId) => findSessionPaths(homePath(".factory", "sessions"), sessionId),
   // 도구/파일 단위 추출기(extractToolUses/Touched*)는 미정의 — droid json 은 토큰(usage)은
-  //   주지만 도구/파일 이벤트는 없다(stream-jsonrpc 필요). MCP 는 `droid mcp`·.factory/
-  //   mcp.json 경로가 있으나 스키마 미검증이라 1차 보류 — 인증 후 실측하고 추가.
+  //   주지만 도구/파일 이벤트는 없다. droid 에서 그걸 받는 유일한 채널은 stream-jsonrpc 인데,
+  //   이는 *양방향* JSON-RPC(stdin: droid.initialize_session→add_user_message, stdout:
+  //   session_notification + request_permission/ask_user 역요청)라 loom 의 단방향 spawn
+  //   (prompt 1회→stdout 파싱) 모델과 구조가 다르다. 도입하려면 어댑터가 RPC 클라이언트를
+  //   구현해야 함 → 1차 보류. 인증 후 단방향 stream-json 스키마가 확인되면 그쪽으로 확장.
+  //   MCP 도 `droid mcp`·.factory/mcp.json 경로가 있으나 스키마 미검증이라 함께 보류.
 });

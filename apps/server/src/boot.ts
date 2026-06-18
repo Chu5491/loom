@@ -9,9 +9,9 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { config, paths } from "./config.js";
-import { failOrphanRuns } from "./db.js";
+import { backfillRunAdapters, failOrphanRuns } from "./db.js";
 import { logger } from "./logger.js";
-import { ensureOffice } from "./office.js";
+import { ensureOffice, readAgents } from "./office.js";
 import { adaptersRoute } from "./routes/adapters.js";
 import { cliSessionsRoute } from "./routes/cli-sessions.js";
 import { healthRoute } from "./routes/health.js";
@@ -91,6 +91,10 @@ export async function bootServer(): Promise<BootedServer> {
   // DB 에 없는 run 의 로그 파일 prune — 삭제가 파일을 안 지우던 시절 누적분 정리.
   const prunedLogs = pruneOrphanLogs();
   if (prunedLogs > 0) logger.info({ prunedLogs }, "pruned orphan run log files");
+  // 구 run(adapter 컬럼 도입 전)에 adapter 를 agent→cli 로 역추론해 채운다 — 기존 대화의
+  // CLI 세션도 정리 대상에 포함되게.
+  const filledAdapters = backfillRunAdapters(Object.fromEntries(readAgents().map((a) => [a.name, a.adapter])));
+  if (filledAdapters > 0) logger.info({ filledAdapters }, "backfilled adapter on legacy runs");
   reschedule(); // 저장된 활성 스케줄을 cron 으로 무장 (서버 프로세스 수명 동안)
   restoreWorkflowState(); // 재시작 전에 멈춰 있던 게이트·join 도착분 복원
   armRetention(); // 오래된 run·로그 자동 정리(즉시 1회 + 하루 간격) — 디스크 무한 누적 방지

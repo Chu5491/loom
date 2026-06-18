@@ -13,7 +13,9 @@ const MAX_ENTRIES = 50_000; // 병적으로 큰 트리 방어
  * 디렉토리가 매치되면 통째로 반환하고 그 안으론 더 내려가지 않는다(중복 방지).
  */
 export function findSessionPaths(root: string, sessionId: string): string[] {
-  if (!sessionId || !fs.existsSync(root)) return [];
+  // 너무 짧은 id 는 부분일치(includes)가 광범위해져 엉뚱한 파일을 잡을 수 있다.
+  // CLI 발급 세션 id 는 항상 충분히 길다(UUID·ses_…·단어 slug) — 6자 미만은 거부.
+  if (!sessionId || sessionId.length < 6 || !fs.existsSync(root)) return [];
   const found: string[] = [];
   let seen = 0;
   const walk = (dir: string): void => {

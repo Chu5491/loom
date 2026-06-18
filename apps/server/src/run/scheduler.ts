@@ -13,6 +13,9 @@ import { startWorkflow } from "./workflow.js";
 const jobs = new Map<string, Cron>();
 // 직전 발화의 run id — 아직 돌고 있으면 이번 tick 은 건너뛴다(중복 실행 방지).
 const lastFired = new Map<string, string>();
+// 발화 진입~run.id 기록 사이의 중복 tick 방어. lastFired 는 run 시작 후 비동기로 set 되어
+// race window 가 있다 — firing 은 진행 중 발화를 동기적으로 즉시 막는다(.finally 에서 해제).
+const firing = new Set<string>();
 
 /** cron 식 검증 — 라우트가 저장 전에 부른다. 잘못된 식이면 에러 메시지 반환. */
 export function validateCron(expr: string): string | null {
@@ -36,12 +39,17 @@ export function nextRunAt(expr: string): string | null {
 }
 
 function fire(s: Schedule): void {
+  if (firing.has(s.id)) {
+    logger.warn({ schedule: s.id, name: s.name }, "previous tick still firing — skipping");
+    return;
+  }
   const prev = lastFired.get(s.id);
   if (prev && getRun(prev)?.status === "running") {
     logger.warn({ schedule: s.id, name: s.name, runId: prev }, "previous scheduled run still running — skipping tick");
     return;
   }
   touchScheduleLastRun(s.id, new Date().toISOString());
+  firing.add(s.id);
   // fire-and-forget — 실패해도 스케줄러는 계속 돈다.
   // workflow 지정 시 prompt 는 {{input}} 값이 되어 그래프가 이어받는다.
   if (s.feature === "standup") {
@@ -57,7 +65,8 @@ function fire(s: Schedule): void {
         if (!r.ok) logger.warn({ schedule: s.id, name: s.name, error: r.error }, "scheduled standup failed");
         else logger.info({ schedule: s.id, name: s.name, runId: r.standup.runId }, "scheduled standup generated");
       })
-      .catch((err) => logger.error({ err, schedule: s.id }, "scheduled standup threw"));
+      .catch((err) => logger.error({ err, schedule: s.id }, "scheduled standup threw"))
+      .finally(() => firing.delete(s.id));
     return;
   }
   const start = () => {
@@ -77,7 +86,8 @@ function fire(s: Schedule): void {
         logger.info({ schedule: s.id, name: s.name, runId: r.run.id }, "scheduled run fired");
       }
     })
-    .catch((err) => logger.error({ err, schedule: s.id }, "scheduled run threw"));
+    .catch((err) => logger.error({ err, schedule: s.id }, "scheduled run threw"))
+    .finally(() => firing.delete(s.id));
 }
 
 /** 활성 스케줄 전부를 (재)등록 — 시작 시 1회 + CRUD 마다. */

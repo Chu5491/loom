@@ -249,6 +249,21 @@ export function finishRun(
     .run(info.status, info.endedAt, info.exitCode, meta.costUsd ?? null, meta.costEstimated ? 1 : null, meta.sessionId ?? null, info.id);
 }
 
+/** 구 run(adapter 컬럼 도입 전)의 adapter 를 agent→cli 역추론으로 채운다 — 세션 정리가
+ *  기존 대화의 CLI 세션도 찾을 수 있게. office 에서 사라진 agent 는 못 채운다(NULL 유지).
+ *  반환: 채운 행 수. */
+export function backfillRunAdapters(agentToAdapter: Record<string, string>): number {
+  const db = getDb();
+  const rows = db.prepare<[], { agent: string }>(`SELECT DISTINCT agent FROM runs WHERE adapter IS NULL`).all();
+  const upd = db.prepare(`UPDATE runs SET adapter = ? WHERE agent = ? AND adapter IS NULL`);
+  let filled = 0;
+  for (const { agent } of rows) {
+    const kind = agentToAdapter[agent];
+    if (kind) filled += upd.run(kind, agent).changes;
+  }
+  return filled;
+}
+
 /** 서버 부팅 시 — 프로세스가 죽어 영원히 "running" 으로 남은 고아 run 정리.
  *  spawn 된 CLI 는 서버와 함께 죽으므로 실패로 마감하는 것이 사실에 부합. */
 export function failOrphanRuns(): number {

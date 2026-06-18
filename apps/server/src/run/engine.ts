@@ -920,6 +920,13 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
   state.info.costUsd = state.costUsd ?? null;
   state.info.costEstimated = costEstimated;
   finishRun(state.info, { costUsd: state.costUsd, sessionId: state.sessionId, costEstimated });
+  // 사후 예산 감시 — 비-claude 는 run 도중 cap(--max-budget-usd)이 없어 초과를 미리 못 막는다.
+  // 완료 후 월 예산을 넘었으면 경고를 남겨 다음 run 차단을 예고한다(시작 가드는 engine 상단).
+  const cap = readBudget().monthlyUsd;
+  if (cap != null) {
+    const spent = monthCostUsd();
+    if (spent >= cap) logger.warn({ agent: state.info.agent, spent, cap }, "monthly budget exceeded — further runs will be blocked");
+  }
   try {
     fs.closeSync(state.rawFd);
   } catch {
