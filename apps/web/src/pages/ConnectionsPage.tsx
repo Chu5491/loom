@@ -304,7 +304,7 @@ function AdapterCard({ manifest }: { manifest: AdapterManifest }) {
         {/* 터미널풍 결과 블록 — CLI 와의 대화라는 정체성을 그대로 */}
         {testResult ? (
           <div className="mt-2.5 rounded-lg border border-border/60 bg-background/80 px-3 py-2 font-mono text-[11px] leading-relaxed">
-            <span className="text-muted-foreground">$ {manifest.kind} {selectedModel ? `--model ${selectedModel}` : ""}</span>
+            <span className="text-muted-foreground">$ {manifest.defaultCommand} {selectedModel ? `--model ${selectedModel}` : ""}</span>
             <p className={cn("mt-0.5 break-all", testResult.ok ? "text-success" : "text-destructive")}>
               {testResult.ok
                 ? `✓ ${t("conn.test.ok", { sec: (testResult.durationMs / 1000).toFixed(1) })} — “${testResult.output.slice(0, 80)}”`

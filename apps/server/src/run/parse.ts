@@ -59,7 +59,16 @@ export function parseLine(line: string): OfficeEvent[] {
   if (type === "error" || j.is_error) return [{ kind: "error", message: errText(j) }];
 
   if (type === "result" && typeof j.result === "string") {
-    return [{ kind: "result", text: j.result, costUsd: num(j.total_cost_usd), sessionId: str(j.session_id) }];
+    const out: OfficeEvent[] = [
+      { kind: "result", text: j.result, costUsd: num(j.total_cost_usd), sessionId: str(j.session_id) },
+    ];
+    // 일부 CLI(factory/droid·claude)는 최종 result 에 usage 토큰을 함께 준다. cost 직접값이
+    // 없는 droid 는 이 토큰으로 엔진이 단가 추정, claude 는 total_cost_usd 가 우선이라 표시용.
+    const u = j.usage as { input_tokens?: unknown; output_tokens?: unknown } | undefined;
+    if (u && (num(u.input_tokens) || num(u.output_tokens))) {
+      out.push({ kind: "usage", inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens) });
+    }
+    return out;
   }
 
   // opencode 텍스트

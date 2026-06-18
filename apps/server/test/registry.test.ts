@@ -1,4 +1,4 @@
-// v2-core 스모크 — 레지스트리가 5개 어댑터를 전부 알고, 매니페스트가 UI가
+// v2-core 스모크 — 레지스트리가 빌트인 어댑터를 전부 알고, 매니페스트가 UI가
 // 기대하는 최소 형태(kind/displayName/fields)를 갖는지. DB 없음.
 
 import { describe, it, expect } from "vitest";
@@ -9,10 +9,10 @@ import {
   listManifests,
 } from "../src/adapters/registry.js";
 
-const EXPECTED = ["claude-code", "antigravity", "codex", "opencode", "devin"];
+const EXPECTED = ["claude-code", "antigravity", "codex", "opencode", "devin", "factory"];
 
 describe("adapter registry (v2-core)", () => {
-  it("registers all five built-in adapters", () => {
+  it("registers all built-in adapters", () => {
     expect(listAdapterKinds().sort()).toEqual([...EXPECTED].sort());
   });
 

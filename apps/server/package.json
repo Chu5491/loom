@@ -20,6 +20,7 @@
     "@loom/adapter-claude-code": "workspace:*",
     "@loom/adapter-codex": "workspace:*",
     "@loom/adapter-devin": "workspace:*",
+    "@loom/adapter-factory": "workspace:*",
     "@loom/adapter-opencode": "workspace:*",
     "@loom/adapter-utils": "workspace:*",
     "@loom/core": "workspace:*",

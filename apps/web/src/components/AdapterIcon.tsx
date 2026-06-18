@@ -1,3 +1,4 @@
+import { useState } from "react";
 import ClaudeCodeColor from "@lobehub/icons/es/ClaudeCode/components/Color";
 import CodexColor from "@lobehub/icons/es/Codex/components/Color";
 // OpenCode ships only a Mono (single-color) variant in lobehub.
@@ -30,6 +31,7 @@ const KIND_TO_LOBE: Record<string, LobeIcon> = {
 // served from apps/web/public — see file header for why antigravity is special.
 const KIND_TO_IMG: Record<string, string> = {
   antigravity: "/antigravity.png",
+  factory: "/factory.png",
 };
 
 export function AdapterIcon({
@@ -41,9 +43,10 @@ export function AdapterIcon({
   size?: number;
   className?: string;
 }) {
+  const [imgFailed, setImgFailed] = useState(false);
   const dim = `${size}px`;
   const img = KIND_TO_IMG[manifest.kind];
-  if (img) {
+  if (img && !imgFailed) {
     return (
       <span
         role="img"
@@ -51,7 +54,8 @@ export function AdapterIcon({
         className={"inline-flex shrink-0 items-center justify-center " + (className ?? "")}
         style={{ width: dim, height: dim }}
       >
-        <img src={img} alt={manifest.displayName} width={size} height={size} style={{ width: dim, height: dim, objectFit: "contain", display: "block" }} />
+        {/* PNG 로드 실패(파일 미저장 등) 시 아래 manifest.iconSvg 폴백으로 — 깨진 이미지 방지. */}
+        <img src={img} alt={manifest.displayName} width={size} height={size} onError={() => setImgFailed(true)} style={{ width: dim, height: dim, objectFit: "contain", display: "block" }} />
       </span>
     );
   }

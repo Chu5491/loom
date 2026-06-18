@@ -32,6 +32,13 @@ describe("parseLine", () => {
     expect(parseLine(line)).toEqual([{ kind: "usage", costUsd: 0.0042, inputTokens: 13723, outputTokens: 17 }]);
   });
 
+  it("captures factory/droid usage tokens from the final result object", () => {
+    const line = JSON.stringify({ type: "result", result: "ok", session_id: "s1", usage: { input_tokens: 100, output_tokens: 20 } });
+    const out = parseLine(line);
+    expect(out[0]).toMatchObject({ kind: "result", text: "ok", sessionId: "s1" });
+    expect(out[1]).toEqual({ kind: "usage", inputTokens: 100, outputTokens: 20 });
+  });
+
   it("treats claude MultiEdit as a file edit, not a generic tool", () => {
     const me = JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "MultiEdit", input: { file_path: "a.ts" } }] } });
     expect(parseLine(me)).toEqual([{ kind: "file", path: "a.ts", action: "edit" }]);

@@ -6,7 +6,8 @@ export type AdapterKind =
   | "antigravity"
   | "codex"
   | "opencode"
-  | "devin";
+  | "devin"
+  | "factory";
 
 /** 에이전트의 adapter 설정 — CLI 명령/모델/env + 어댑터별 자유 필드. */
 export interface AdapterConfig {

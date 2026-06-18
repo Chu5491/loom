@@ -39,6 +39,12 @@ import {
   devinManifest,
   devinProbe,
 } from "@loom/adapter-devin";
+import {
+  factoryAdapter,
+  factoryListModels,
+  factoryManifest,
+  factoryProbe,
+} from "@loom/adapter-factory";
 
 interface RegistryEntry {
   adapter: CliAdapter;
@@ -353,6 +359,14 @@ const builtIns: Array<[CliAdapter, AdapterRegistration]> = [
       manifest: devinManifest,
       probe: devinProbe,
       listModels: devinListModels,
+    },
+  ],
+  [
+    factoryAdapter,
+    {
+      manifest: factoryManifest,
+      probe: factoryProbe,
+      listModels: factoryListModels,
     },
   ],
 ];
