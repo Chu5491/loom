@@ -197,21 +197,22 @@ runsRoute.get("/:id/events", (c) => {
 
     c.req.raw.signal.addEventListener("abort", () => {
       aborted = true;
-      sub.off();
       wake?.();
     }, { once: true });
 
-    while (!aborted) {
-      while (queue.length) {
-        const msg = queue.shift()!;
-        await stream.writeSSE({ event: msg.kind, data: JSON.stringify(msg) });
-        if (msg.kind === "done") {
-          sub.off();
-          return;
+    // 클라 끊김 등으로 writeSSE 가 throw 하거나 done 으로 빠져나가도 구독을 반드시
+    // 해제한다 — throw 경로에서 sub.off() 를 건너뛰면 리스너가 누수된다.
+    try {
+      while (!aborted) {
+        while (queue.length) {
+          const msg = queue.shift()!;
+          await stream.writeSSE({ event: msg.kind, data: JSON.stringify(msg) });
+          if (msg.kind === "done") return;
         }
+        await new Promise<void>((r) => (wake = r));
       }
-      await new Promise<void>((r) => (wake = r));
+    } finally {
+      sub.off();
     }
-    sub.off();
   });
 });
