@@ -221,7 +221,7 @@ const LOOM_DELEGATE = "loom";
 /** `<cwd>/.devin/config.local.json` 에 mcpServers + 격리설정을 sync.
  *  - 사용자의 다른 키·서버는 보존, 이번 run 의 서버만 교체
  *  - transient loom 엔트리는 항상 제거 후 (이번 run 이 delegate 면) 새로 추가
- *  - read_config_from:false 로 .cursor/.windsurf/.claude 자동 흡수를 차단(헌법2 자동
+ *  - read_config_from:false 로 cursor/windsurf/claude/opencode/vscode/zed 자동 흡수를 차단(헌법2 자동
  *    주입 금지). 파일로만 끌 수 있어 매 run 명시 → 항상 파일을 쓴다. 사용자가 직접
  *    둔 read_config_from 이 있으면 존중(덮지 않음).
  *  exported for tests. */
@@ -241,7 +241,7 @@ export function syncDevinMcpConfig(cwd: string, servers: McpServer[]): string {
     ...existing,
     mcpServers: next,
     // 자동 흡수 차단 — 사용자가 명시한 값이 있으면 그대로 둔다.
-    read_config_from: existing.read_config_from ?? { cursor: false, windsurf: false, claude: false },
+    read_config_from: existing.read_config_from ?? { cursor: false, windsurf: false, claude: false, opencode: false, vscode: false, zed: false },
   };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(merged, null, 2));

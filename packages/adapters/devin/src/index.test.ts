@@ -121,7 +121,7 @@ describe("devin MCP injection (.devin/config.local.json)", () => {
     expect(file).toBe(path.join(tmp, ".devin", "config.local.json"));
     const out = JSON.parse(fs.readFileSync(file, "utf8"));
     expect(out.mcpServers).toEqual({});
-    expect(out.read_config_from).toEqual({ cursor: false, windsurf: false, claude: false });
+    expect(out.read_config_from).toEqual({ cursor: false, windsurf: false, claude: false, opencode: false, vscode: false, zed: false });
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
