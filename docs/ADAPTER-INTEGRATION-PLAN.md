@@ -100,14 +100,17 @@
 |------|------|------|--------|------|
 | ✅ | 프리셋 18→**31종** + `custom:` (완료) | `preset-models.ts` | 🟢 | 모델 다양성 1위 |
 | ✅ | MCP 주입 — 프로젝트-로컬 `<cwd>/.factory/mcp.json`(devin 패턴, `toDroidMcpEntry`). 어댑터는 server import 불가 → claude 인코더 대신 동일스키마 자체 인코더. 빈 파일 skip(오염↓), stale loom 엔트리 제거 | `factory/src/index.ts`(`syncFactoryMcpConfig`/`applyMcpServers`) | ✅ | **완료**(코드+테스트 6종). `droid mcp list`→[project] 로 읽기 검증됨(유료 키 불요, 프로세스 cwd 기준). exec 중 도구 호출만 유료 게이트 |
-| **2** | **`-o stream-json` + droid 스트림 이벤트 파싱**(현 `json` 최종객체만) | `index.ts`(buildCommand), `parse.ts`(droid 분기) | 🟡 | 단방향 JSONL → 기존 spawn 모델로 충분(RPC 불필요). **줄별 스키마 라이브 캡처 후** |
+| **2** | **`-o stream-json` + droid 스트림 이벤트 파싱**(현 `json` 최종객체만) | `index.ts`(buildCommand), `parse.ts`(droid 분기) | 🟡 | stream-json 유효 확인됨(단방향 JSONL, 부분 스키마 실측 아래). **전환은 성공 run 으로 assistant·result+usage 형태 확인 후** — result.text 경로 미확인이라 지금 전환 시 답변 유실 위험 |
 | **2** | `captureActivityFromDisk` 토큰/비용 백필(세션 디스크 or `droid search --json`) | `index.ts` | 🟢 | devin `--export` 패턴 미러 |
 | **2** | 세션 저장 레이아웃 확정 → `sessionFiles` 정정 | `index.ts:81` | 🟢 | 현재 `~/.factory/sessions` 추정 |
 | **2** | `--enabled/disabled-tools`, `--use-spec`, `--tag` | `index.ts`, manifest | 🟢 | tag=`droid search` 상관 |
 | **3** | `--mission`(자체 멀티에이전트) 단일-에이전트 토글 | `index.ts`, manifest | 🟡 | loom 워크플로우와 이중오케스트레이션 주의 → 토글로만 |
 | **3** | 양방향 `stream-jsonrpc` 드라이버(§S7) | `factory/src`, §S7 | 🔴 | `stream-json`이 도구/파일 부족할 때만. 80/20은 `stream-json` |
 
-**확인 필요(라이브, factory 무료판 불가일 수 있음):** `stream-json` 줄별 스키마, `json` 결과의 `usage`/cost 유무, `--settings`가 `mcpServers` 수용?, 프로젝트-로컬 로드 ✅검증(`mcp list`→[project], 프로세스 cwd) — exec 중 도구 호출·동명 사용자서버 우선순위만 미검증, 세션 디스크 포맷.
+**확인 필요(라이브 — factory `402 Payment Required` 확인: 유료 구독 필수):**
+- **stream-json 부분 스키마 실측(402 직전, 2026-06-19):** `{type:"system",subtype:"init",session_id,tools[],model,reasoning_effort}` · `{type:"message",role,text,session_id}` · `{type:"error",source,message}`. **session_id 가 매 이벤트에 존재**(init 부터 — json 모드의 최종 result 보다 빠름).
+- **미확인(성공 run 필요):** assistant 응답·`tool_use`·`file_change`·`{type:"result"}`+usage 형태, `--settings` 의 `mcpServers` 수용 여부, exec 중 MCP 도구 호출·동명 사용자서버 우선순위, 세션 디스크 포맷.
+- **검증됨(유료 키 불요):** MCP 프로젝트-로컬 로드(`mcp list`→[project], 프로세스 cwd), stream-json 출력모드 유효성.
 
 ---
 
