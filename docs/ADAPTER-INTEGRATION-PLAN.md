@@ -14,11 +14,11 @@
 
 | ID | 작업 | 파일 | 난이도 | 헌법 | 효과 |
 |----|------|------|--------|------|------|
-| **S1** | OfficeEvent에 `reasoning` kind 추가 + parse.ts에 opencode/codex `reasoning`·claude thinking 분기 | `packages/core/src/office.ts`, `apps/server/src/run/parse.ts`, web 렌더(`Markdown`/버블) + i18n | 🟡 | ✅ 5(뷰) | reasoning 0/6→4/6. 사고과정 가시화 |
-| **S2** | **codex `file_change` 파싱 버그 수정** — `parse.ts:116`이 `item.path`(없음) 검사 → `item.changes:[{path,kind}]` 순회로. `"patch"` 가짜 타입 제거. `turn.failed`/`error`→`{kind:"error"}` | `apps/server/src/run/parse.ts:110-127` | 🟢 | ✅ 5 | codex 파일이벤트 유실 복구 + 실패 표면화 |
-| **S3** | **caller-set 세션ID 훅** — `SpawnArgs.assignSessionId` + `applySessionId(args,id)` 훅(`applyResume` 대칭), 엔진이 UUID 발급해 fresh run에 전달(resume턴 제외) | `packages/core/src/adapter.ts`, `packages/adapter-utils/src/define.ts`, `apps/server/src/run/engine.ts` | 🟡 | ✅ 3(per-run flag) | 세션정리 결정화(현재 사후 스트림 읽기 의존). claude가 1차 수혜 |
+| **S1** ✅완료 | OfficeEvent `reasoning` kind + parse(opencode `--thinking`·codex reasoning item·claude thinking 블록) + Talk 접이식 표시 | `office.ts`·`parse.ts`·`TalkPage`·i18n | 🟡 | ✅ 5(뷰) | dafacce·dc41ddb·c4e9232. 라이브 표시는 reasoning 내는 run 필요 |
+| **S2** ✅완료(39cff4c) | **codex `file_change` 파싱 버그 수정** — `parse.ts:116`이 `item.path`(없음) 검사 → `item.changes:[{path,kind}]` 순회로. `"patch"` 가짜 타입 제거. `turn.failed`/`error`→`{kind:"error"}` | `apps/server/src/run/parse.ts:110-127` | 🟢 | ✅ 5 | codex 파일이벤트 유실 복구 + 실패 표면화 |
+| **S3** ✅완료(b5deeb3) | **caller-set 세션ID 훅** — `SpawnArgs.assignSessionId` + `applySessionId(args,id)` 훅(`applyResume` 대칭), 엔진이 UUID 발급해 fresh run에 전달(resume턴 제외) | `packages/core/src/adapter.ts`, `packages/adapter-utils/src/define.ts`, `apps/server/src/run/engine.ts` | 🟡 | ✅ 3(per-run flag) | 세션정리 결정화(현재 사후 스트림 읽기 의존). claude가 1차 수혜 |
 | **S4** | **실비용 플러밍** — `captureActivityFromDisk`/이벤트가 `costUsd`+`costReported=true` 설정 시 엔진 추정 스킵 | `packages/core/src/adapter.ts`(capture 반환형), `apps/server/src/run/engine.ts:913` | 🟡 | ✅ 5 | devin ATIF 실비용 등 "~추정" 제거 |
-| **S5** | usage 이벤트에 `cacheReadTokens`/`cacheCreationTokens`/`reasoningTokens` 옵션 필드 | `packages/core/src/office.ts`, `apps/server/src/run/parse.ts`, `engine.ts` 누적 | 🟢 | ✅ 5 | 캐시 적중률(최대 비용 레버) 가시화 |
+| **S5** ✅완료(cbeb6d8) | usage.cachedInputTokens 캡처(codex·opencode·claude) + estimateCost 캐시분 10% 할인 | `office.ts`·`parse.ts`·`engine.ts`·`pricing.ts` | 🟢 | ✅ 5 | **codex 비용 과대평가 보정**. 토큰 표시 UI·devin ATIF cache 할인은 후속 |
 | **S6** | (Tier3) adapter-utils에 **PTY spawn** 옵션(`needsPty`) — antigravity stdout 드롭 우회 | `packages/adapter-utils/src/spawn.ts`, `define.ts` | 🔴 | ✅ 1 | agy 답변 캡처(검증 필요) |
 | **S7** | (Tier3) **구조화-스트림/ACP 공통 클라이언트** — devin `acp` + factory `stream-jsonrpc` 공유 | `packages/adapter-utils/`(신규) | 🔴 | ✅ 1 | 두 CLI 실시간 활동 |
 
