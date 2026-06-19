@@ -27,12 +27,12 @@
 | **codex** | `exec --json` | ✅ JSONL(`item.*`) | 🟡 추정(토큰×단가) | ✅ (+cache/reasoning) | ✅ | ✅** | △ 가능* | ✅ `exec resume` | ✅ `-c mcp_servers.*`(per-run, stdio+http; **SSE 불가**) | ❌ 합성 |
 | **opencode** | `run --format json` | ✅ JSONL | ✅ 실값(무료=$0) | ✅ (+cache/reasoning) | ✅ | ✅ | ✅ `--thinking`* | ✅ `--session`/`--fork` | ✅ XDG 리다이렉트(per-run) | ❌ 합성 |
 | **devin** | `-p/--print` | ❌ 평문 / **`acp` 가능*** | 🟡 추정 → **실값 가능(ATIF ACU/credit)*** | ✅ `--export` | ✅ `--export` | ✅ git 복원 | ❌ | ✅ disk 캡처(`devin list`) | ✅ `<cwd>/.devin/config.local.json` 또는 `--config`(per-run) | ❌ 합성 |
-| **factory(droid)** | `exec` | **`-o stream-json` 가능*** (현재 `json` 최종객체만) | 🟡 추정 | △ 결과객체 | **가능*** (현재 ❌) | ✅ git 복원 | △ 가능* | ✅ `--session-id`/`--fork` | **`.factory/mcp.json` 프로젝트-로컬** ✅(읽기 검증: `mcp list`→[project]) | ✅ `--append-system-prompt` |
+| **factory(droid)** | `exec` | ✅ `-o stream-json`(실측 검증) | 🟡 추정(+cache할인) | ✅ completion.usage | ✅ tool_call | ✅ stream | ✅ | ✅ `--session-id`/`--fork` | **`.factory/mcp.json` 프로젝트-로컬** ✅(`mcp list`→[project]) | ✅ `--append-system-prompt` |
 | **antigravity(agy)** | `--print` | ❌ 평문, **stdout 드롭 버그** | ❌ 불가 | ❌ 불가 | △ disk only* | ✅ git 복원 | ❌ | ✅ disk 캡처(mtime) | ❌ per-run 불가(`.antigravitycli` 무시·upstream #60) | ❌ 합성 |
 
 `*` = **CLI는 지원하나 loom 미구현** (→ [구현 플랜](./ADAPTER-INTEGRATION-PLAN.md)). `**` = 파싱 버그로 현재 유실.
 
-**집계(현재 loom 실현 기준):** 비용 실값 2/6 · 토큰 5/6 · 도구 4/6 · 파일 6/6(stream 4 + git복원 2) · reasoning 2/6(codex·opencode) · 세션 6/6 · MCP 5/6(factory 읽기 검증됨).
+**집계(현재 loom 실현 기준):** 비용 실값 2/6 · 토큰 5/6 · 도구 5/6 · 파일 6/6(stream 4 + git복원 2) · reasoning 4/6(claude·codex·opencode·factory) · 세션 6/6 · MCP 5/6(factory 읽기 검증됨).
 **집계(CLI가 허용하는 천장):** 비용 실값 3/6 · 토큰 6/6 · 도구 5/6 · reasoning 4/6 · MCP 5/6. → **gap의 대부분은 CLI 한계가 아니라 loom 미구현.**
 
 진짜 CLI 한계(loom으로 못 채움): **antigravity의 비용·토큰·MCP·구조화출력**(Gemini CLI 구조), 그리고 **antigravity의 stdout 드롭**(PTY로 우회 시도 가능하나 미검증).
@@ -74,7 +74,7 @@
 - **MCP:** 3단계 계층 `~/.factory/mcp.json`(user) > `.factory/mcp.json`(folder) > `.factory/mcp.json`(project). **스키마는 claude `.mcp.json`과 동일**. ⇒ **프로젝트-로컬 `<cwd>/.factory/mcp.json`로 헌법3 준수 주입 가능**(devin 패턴). `droid mcp add`는 전역에 써서 부적합.
 - **stream-jsonrpc 프로토콜:** `droid.initialize_session`→`droid.add_user_message`, 알림 `droid.session_notification`(create_message·tool_result·complete), 권한 역요청 `droid.request_permission`엔 `{selectedOption:"proceed_once"}`로 자동승인. loom은 권한을 자동승인하므로 최소 클라이언트로 구동 가능.
 - **현재 사용:** `exec --output-format json`, `--auto`/skip-perms, `--model`, `--append-system-prompt`, `--session-id`/resume.
-- **구현 완료:** MCP 주입 ✅(프로젝트-로컬 `.factory/mcp.json` — `droid mcp list` 가 [project] 스코프로 읽음을 검증; exec 중 도구 호출만 유료 게이트), 프리셋 ✅31종+`custom:`. **남음:** `stream-json` 풍부 활동, `--mission`(자체 멀티에이전트), `--enabled/disabled-tools`.
+- **구현 완료:** MCP 주입 ✅(프로젝트-로컬 `.factory/mcp.json`, `mcp list`→[project] 검증), 프리셋 ✅31종+`custom:`, **stream-json 풍부 활동 ✅**(text·reasoning·tool·file·completion — custom 로컬모델로 전체 스키마 실측·구현). **남음:** `--mission`(자체 멀티에이전트), `--enabled/disabled-tools`, exec 중 MCP 도구 *호출* 라이브 확인.
 - **확인 필요(라이브 인증 run):** `stream-json` 줄별 스키마, `json` 결과의 `usage` 유무, `--settings`가 `mcpServers` 수용 여부.
 
 ### antigravity (`agy` 1.0.9) — 구조적 최약 (정정·강화)
