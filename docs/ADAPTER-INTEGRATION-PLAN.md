@@ -99,7 +99,7 @@
 | Tier | 작업 | 파일 | 난이도 | 비고 |
 |------|------|------|--------|------|
 | ✅ | 프리셋 18→**31종** + `custom:` (완료) | `preset-models.ts` | 🟢 | 모델 다양성 1위 |
-| ✅ | MCP 주입 — 프로젝트-로컬 `<cwd>/.factory/mcp.json`(devin 패턴, `toDroidMcpEntry`). 어댑터는 server import 불가 → claude 인코더 대신 동일스키마 자체 인코더. 빈 파일 skip(오염↓), stale loom 엔트리 제거 | `factory/src/index.ts`(`syncFactoryMcpConfig`/`applyMcpServers`) | 🟡 | **완료**(코드+테스트 6종). droid 실제 로드는 유료 키 라이브검증 대기 |
+| ✅ | MCP 주입 — 프로젝트-로컬 `<cwd>/.factory/mcp.json`(devin 패턴, `toDroidMcpEntry`). 어댑터는 server import 불가 → claude 인코더 대신 동일스키마 자체 인코더. 빈 파일 skip(오염↓), stale loom 엔트리 제거 | `factory/src/index.ts`(`syncFactoryMcpConfig`/`applyMcpServers`) | ✅ | **완료**(코드+테스트 6종). `droid mcp list`→[project] 로 읽기 검증됨(유료 키 불요, 프로세스 cwd 기준). exec 중 도구 호출만 유료 게이트 |
 | **2** | **`-o stream-json` + droid 스트림 이벤트 파싱**(현 `json` 최종객체만) | `index.ts`(buildCommand), `parse.ts`(droid 분기) | 🟡 | 단방향 JSONL → 기존 spawn 모델로 충분(RPC 불필요). **줄별 스키마 라이브 캡처 후** |
 | **2** | `captureActivityFromDisk` 토큰/비용 백필(세션 디스크 or `droid search --json`) | `index.ts` | 🟢 | devin `--export` 패턴 미러 |
 | **2** | 세션 저장 레이아웃 확정 → `sessionFiles` 정정 | `index.ts:81` | 🟢 | 현재 `~/.factory/sessions` 추정 |
@@ -107,7 +107,7 @@
 | **3** | `--mission`(자체 멀티에이전트) 단일-에이전트 토글 | `index.ts`, manifest | 🟡 | loom 워크플로우와 이중오케스트레이션 주의 → 토글로만 |
 | **3** | 양방향 `stream-jsonrpc` 드라이버(§S7) | `factory/src`, §S7 | 🔴 | `stream-json`이 도구/파일 부족할 때만. 80/20은 `stream-json` |
 
-**확인 필요(라이브, factory 무료판 불가일 수 있음):** `stream-json` 줄별 스키마, `json` 결과의 `usage`/cost 유무, `--settings`가 `mcpServers` 수용?, 프로젝트-로컬 `.factory/mcp.json` 실제 로드 + 동명 사용자서버 우선순위, 세션 디스크 포맷.
+**확인 필요(라이브, factory 무료판 불가일 수 있음):** `stream-json` 줄별 스키마, `json` 결과의 `usage`/cost 유무, `--settings`가 `mcpServers` 수용?, 프로젝트-로컬 로드 ✅검증(`mcp list`→[project], 프로세스 cwd) — exec 중 도구 호출·동명 사용자서버 우선순위만 미검증, 세션 디스크 포맷.
 
 ---
 

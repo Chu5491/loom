@@ -132,7 +132,9 @@ export const factoryAdapter = defineCliAdapter<DroidConfig>({
   sessionFiles: (sessionId) => findSessionPaths(homePath(".factory", "sessions"), sessionId),
   // MCP 주입 — 프로젝트-로컬 <cwd>/.factory/mcp.json 자동읽기(devin 패턴, 헌법3 준수).
   // servers 가 비어도 호출되지만(loadoutDir 항상 전달) sync 가 빈 파일은 안 만든다.
-  // 라이브 검증: factory 유료 키 필요(무료판 exec 불가) — 파일 형태는 단위테스트로 고정.
+  // 검증됨(2026-06-19): `droid mcp list` 가 이 파일을 [project] 스코프로 읽는다 —
+  // *프로세스 cwd* 기준(droid --cwd 플래그가 아니라 spawn cwd). loom 이 그 cwd 에
+  // 쓰므로 일치. exec 중 실제 도구 호출만 유료 키 라이브 게이트로 남음.
   applyMcpServers: ({ args, servers, cwd }) => {
     syncFactoryMcpConfig(cwd, servers);
     return { args };
