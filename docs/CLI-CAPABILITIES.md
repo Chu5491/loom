@@ -28,7 +28,7 @@
 | **opencode** | `run --format json` | ✅ JSONL | ✅ 실값(무료=$0) | ✅ (+cache/reasoning) | ✅ | ✅ | ✅ `--thinking`* | ✅ `--session`/`--fork` | ✅ XDG 리다이렉트(per-run) | ❌ 합성 |
 | **devin** | `-p/--print` | ❌ 평문 / **`acp` 가능*** | 🟡 추정 → **실값 가능(ATIF ACU/credit)*** | ✅ `--export` | ✅ `--export` | ✅ git 복원 | ❌ | ✅ disk 캡처(`devin list`) | ✅ `<cwd>/.devin/config.local.json` 또는 `--config`(per-run) | ❌ 합성 |
 | **factory(droid)** | `exec` | **`-o stream-json` 가능*** (현재 `json` 최종객체만) | 🟡 추정 | △ 결과객체 | **가능*** (현재 ❌) | ✅ git 복원 | △ 가능* | ✅ `--session-id`/`--fork` | **`.factory/mcp.json` 프로젝트-로컬** ✅(읽기 검증: `mcp list`→[project]) | ✅ `--append-system-prompt` |
-| **antigravity(agy)** | `--print` | ❌ 평문, **stdout 드롭 버그** | ❌ 불가 | ❌ 불가 | △ disk only* | ✅ git 복원 | ❌ | ✅ disk 캡처(mtime) | ❌ 전역만(CLI 한계) | ❌ 합성 |
+| **antigravity(agy)** | `--print` | ❌ 평문, **stdout 드롭 버그** | ❌ 불가 | ❌ 불가 | △ disk only* | ✅ git 복원 | ❌ | ✅ disk 캡처(mtime) | ❌ per-run 불가(`.antigravitycli` 무시·upstream #60) | ❌ 합성 |
 
 `*` = **CLI는 지원하나 loom 미구현** (→ [구현 플랜](./ADAPTER-INTEGRATION-PLAN.md)). `**` = 파싱 버그로 현재 유실.
 
@@ -80,7 +80,7 @@
 ### antigravity (`agy` 1.0.9) — 구조적 최약 (정정·강화)
 - **출력:** `--print` 평문만. `--output-format json` → `flags provided but not defined`, **exit 2**(JSON 모드 없음 확정).
 - **🔴 stdout 드롭 버그(upstream #76, 재현됨):** stdout이 TTY가 아니면(파이프/리다이렉트) `agy -p`가 **0바이트** 출력(왕복은 정상, exit 0). loom은 `stdio:["pipe","pipe","pipe"]`로 spawn → **현재 agy 답변 텍스트조차 미캡처**, git-diff 파일 백필 + 디스크 세션복구만 동작. PTY spawn으로 우회 시도 가능하나 `script` 의사TTY로도 안 됐음 → 검증 필요(불가 시 정직하게 UI 명시).
-- **MCP:** 전역 `~/.gemini/config/mcp_config.json`만(per-run·project-local 경로 없음) → `supportsMcpServers:false`가 **정확**.
+- **MCP(정밀 재검증 2026-06-19):** 프로젝트-로컬 `<workdir>/.antigravitycli/mcp_config.json` 경로는 **존재하나** 그 `mcpServers` 가 **upstream 버그로 조용히 무시**됨([issue #60](https://github.com/google-antigravity/antigravity-cli/issues/60)) — 실제 로드는 전역 `~/.gemini/config/mcp_config.json`만. 즉 "경로가 없다"가 아니라 "작동하는 경로가 전역뿐"이라 per-run 주입 불가 → `supportsMcpServers:false` 유지(정확). #60 수정 시 `.antigravitycli`(remote 필드는 `url`→`serverUrl`)로 재검토 가능.
 - **세션·활동:** 대화는 `~/.gemini/antigravity-cli/conversations/<id>.db`(sqlite+protobuf). 프롬프트·모델라벨·도구는 `strings`로 복구 가능하나 **토큰·비용은 .proto 없이 복구 불가**. `ANTIGRAVITY_CONVERSATION_ID` env는 무시됨 → **caller-set id 불가**, mtime 스캔이 유일.
 - **모델:** `agy models`는 ID 없이 표시라벨만(`Gemini 3.1 Pro (High)` 등) → 라벨→프리셋ID 정규화.
 
