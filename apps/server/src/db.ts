@@ -512,9 +512,19 @@ export function insertProject(p: Project): void {
     .run(p.id, p.name, p.path, p.createdAt);
 }
 
-export function deleteProjectDb(id: string): void {
-  // run.project_id 는 정리하지 않음 — 기록은 남기되 프로젝트만 등록 해제.
-  getDb().prepare(`DELETE FROM projects WHERE id = ?`).run(id);
+/** 프로젝트 등록 해제 = 캐스케이드 삭제. 이 프로젝트의 run·이벤트·대화(스레드)를 함께
+ *  지운다("프로젝트→대화→세션 일괄삭제" 목표 — 예전엔 run 을 보존해 대화·세션이 고아로
+ *  남았다). CLI 세션 파일·로그 정리는 호출측(routes/projects)이 행 삭제 *전에* 수행한다
+ *  (adapter+session_id 가 사라지면 디스크에서 못 찾으므로). run_events 는 deleteRunDb 와
+ *  같이 명시 삭제(FK pragma 의존 안 함). */
+export function deleteProjectCascadeDb(id: string): void {
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare(`DELETE FROM run_events WHERE run_id IN (SELECT id FROM runs WHERE project_id = ?)`).run(id);
+    db.prepare(`DELETE FROM runs WHERE project_id = ?`).run(id);
+    db.prepare(`DELETE FROM threads WHERE project_id = ?`).run(id);
+    db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
+  })();
 }
 
 export function projectPathExists(path: string): boolean {

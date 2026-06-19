@@ -7,8 +7,11 @@ import path from "node:path";
 import { Hono } from "hono";
 import { z } from "zod";
 import { paths } from "../config.js";
-import { deleteProjectDb, getProjectDb, insertProject, listProjectsDb, projectPathExists } from "../db.js";
+import { deleteProjectCascadeDb, getProjectDb, insertProject, listProjectsDb, listRunsDb, projectPathExists } from "../db.js";
 import { searchFiles } from "../files.js";
+import { deleteRunFiles } from "../run/engine.js";
+import { deleteSessionArtifacts, sessionArtifactsFromRuns } from "./cli-sessions.js";
+import { logger } from "../logger.js";
 import { isResponse, parseBody } from "./helpers.js";
 
 export const projectsRoute = new Hono();
@@ -41,9 +44,14 @@ projectsRoute.post("/", async (c) => {
 
 projectsRoute.delete("/:id", (c) => {
   const id = c.req.param("id");
-  deleteProjectDb(id);
-  // 프로젝트별 기록(분석·스탠드업)은 projectId 로 키된 data/ 파일 — 등록 해제 시
-  // 고아가 되므로 같이 거둔다. run 기록은 의도적으로 보존(deleteProjectDb 주석).
+  // 캐스케이드 — 프로젝트의 대화(스레드)·run·이벤트·그 run 들이 만든 CLI 세션·로그를 함께
+  // 정리("프로젝트→대화→CLI세션 일괄삭제"). 세션·로그는 run 행을 지우기 *전에* 모은다
+  // (adapter+session_id 가 사라지면 디스크에서 못 찾으므로).
+  const runs = listRunsDb({ projectId: id });
+  const freed = deleteSessionArtifacts(sessionArtifactsFromRuns(runs)); // CLI 세션(디스크)
+  for (const r of runs) deleteRunFiles(r.id); // raw 로그 파일
+  deleteProjectCascadeDb(id); // runs + 이벤트 + threads + project 행
+  // 프로젝트별 기록(분석·스탠드업)은 projectId 로 키된 data/ 파일 — 같이 거둔다.
   if (/^[0-9a-f-]{36}$/.test(id)) {
     for (const sub of ["analysis", "standup"]) {
       try {
@@ -53,6 +61,10 @@ projectsRoute.delete("/:id", (c) => {
       }
     }
   }
+  logger.info(
+    { projectId: id, removedRuns: runs.length, freedSessionFiles: freed.deletedFiles, freedBytes: freed.freedBytes },
+    "project deleted (cascade)",
+  );
   return c.json({ ok: true });
 });
 

@@ -166,3 +166,28 @@ describe("lastSessionId", () => {
     expect(db.lastSessionId("none", "Z")).toBeNull();
   });
 });
+
+describe("deleteProjectCascadeDb", () => {
+  it("프로젝트의 run·이벤트·대화를 캐스케이드 삭제하고 다른 프로젝트는 보존한다", () => {
+    db.insertProject({ id: "pc1", name: "a", path: "/tmp/pc-a", createdAt: "2026-06-19T00:00:00.000Z" });
+    db.insertProject({ id: "pc2", name: "b", path: "/tmp/pc-b", createdAt: "2026-06-19T00:00:00.000Z" });
+    db.insertThread({ id: "tc1", name: "t", projectId: "pc1", createdAt: "2026-06-19T00:00:00.000Z" });
+    db.insertThread({ id: "tc2", name: "t2", projectId: "pc2", createdAt: "2026-06-19T00:00:00.000Z" });
+    const a = { ...run("rc1"), projectId: "pc1", threadId: "tc1" };
+    db.insertRun(a); db.finishRun(a, { sessionId: "s-a" });
+    db.appendEvent("rc1", 0, { kind: "text", text: "x" });
+    const b = { ...run("rc2"), projectId: "pc2", threadId: "tc2" };
+    db.insertRun(b); db.finishRun(b, { sessionId: "s-b" });
+
+    db.deleteProjectCascadeDb("pc1");
+
+    expect(db.getProjectDb("pc1")).toBeNull();
+    expect(db.getRunDb("rc1")).toBeNull();
+    expect(db.getRunEventsDb("rc1")).toEqual([]); // 이벤트도 함께
+    expect(db.getThreadDb("tc1")).toBeNull(); // 대화(스레드)도 함께
+    // 다른 프로젝트는 손대지 않는다.
+    expect(db.getProjectDb("pc2")).not.toBeNull();
+    expect(db.getRunDb("rc2")).not.toBeNull();
+    expect(db.getThreadDb("tc2")).not.toBeNull();
+  });
+});
