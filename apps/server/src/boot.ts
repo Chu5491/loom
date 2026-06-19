@@ -9,6 +9,7 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { config, paths } from "./config.js";
+import { installAsyncGuard } from "./crash.js";
 import { backfillRunAdapters, failOrphanRuns } from "./db.js";
 import { logger } from "./logger.js";
 import { ensureOffice, readAgents } from "./office.js";
@@ -79,6 +80,9 @@ function mountStatic(app: Hono, webDir: string): void {
 }
 
 export async function bootServer(): Promise<BootedServer> {
+  // 비동기 누락(void run 등)이 서버 전체를 내리지 않게 — 로그만, 계속 서빙. dev·desktop 공통.
+  // (동기 예외의 종료 처리는 진입점 index.ts 에서만 — Electron 과 충돌 회피.)
+  installAsyncGuard();
   ensureOffice();
   // run 스코프 loadout 잔재 청소 — 크래시로 finish 를 못 거친 디렉토리가 쌓이지 않게.
   fs.rmSync(paths.loadouts, { recursive: true, force: true });
