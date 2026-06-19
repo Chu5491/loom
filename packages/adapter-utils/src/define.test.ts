@@ -108,3 +108,41 @@ describe("defineCliAdapter ephemeral passthrough", () => {
     expect(await spawnCapturingEphemeral({} as AdapterConfig)).toBe(false);
   });
 });
+
+// caller-set 세션 id — claude --session-id. /bin/echo 로 argv 조립 순서 검증.
+describe("defineCliAdapter caller-set session id", () => {
+  const ad = defineCliAdapter({
+    kind: "claude-code",
+    buildCommand: () => ({ command: "/bin/echo", args: ["BASE"] }),
+    prompt: { via: "arg" },
+    applyResume: (args, id) => ["--resume", id, ...args],
+    applySessionId: (args, id) => ["--session-id", id, ...args],
+  });
+
+  async function runEcho(spawnArgs: { prompt: string; assignSessionId?: string; resumeSessionId?: string }) {
+    const out: string[] = [];
+    const handle = await ad.spawn(
+      { ...spawnArgs, cwd: process.cwd(), env: {}, onStdout: (c) => out.push(c), onStderr: () => {} },
+      {} as AdapterConfig,
+    );
+    await handle.promise;
+    return out.join("").trim();
+  }
+
+  it("assignsSessionId is true when applySessionId is defined", () => {
+    expect(ad.assignsSessionId).toBe(true);
+  });
+
+  it("splices --session-id for a fresh run with assignSessionId", async () => {
+    expect(await runEcho({ prompt: "P", assignSessionId: "SID" })).toBe("--session-id SID BASE P");
+  });
+
+  it("prefers resume and omits --session-id when both are present (mutually exclusive)", async () => {
+    expect(await runEcho({ prompt: "P", assignSessionId: "SID", resumeSessionId: "OLD" })).toBe("--resume OLD BASE P");
+  });
+
+  it("defaults assignsSessionId to false when applySessionId is absent", () => {
+    const plain = defineCliAdapter({ kind: "codex", buildCommand: () => ({ command: "/bin/echo", args: [] }) });
+    expect(plain.assignsSessionId).toBe(false);
+  });
+});

@@ -14,6 +14,12 @@ export interface SpawnArgs {
    *  Adapters that support session resume use it to continue the prior
    *  conversation; adapters that don't ignore it. */
   resumeSessionId?: string;
+  /** Caller-assigned session id (a fresh UUID) for CLIs that let the caller
+   *  set it (claude-code `--session-id`). The engine mints it for fresh
+   *  (non-resume) runs on such CLIs so the on-disk session path is known
+   *  before spawn → deterministic cleanup. Mutually exclusive with
+   *  resumeSessionId. Adapters without `applySessionId` ignore it. */
+  assignSessionId?: string;
   /** Tool names to auto-approve (e.g. loom's delegate — part of the explicit
    *  delegation opt-in). Adapters that support it splice the flag in
    *  (claude `--allowedTools`); others ignore it. */
@@ -55,6 +61,11 @@ export interface CliAdapter {
   /** 시스템 프롬프트 채널 지원 — true 면 엔진이 system 을 SpawnArgs.systemPrompt 로
    *  따로 넘기고(claude --append-system-prompt), false 면 prompt 에 합쳐 보낸다. */
   supportsSystemPrompt: boolean;
+  /** true = 이 CLI 는 caller 가 세션 id 를 지정할 수 있다(claude `--session-id`).
+   *  엔진은 fresh run 에 UUID 를 발급해 SpawnArgs.assignSessionId 로 넘기고 세션
+   *  경로를 spawn 전에 알아 정리를 결정적으로 한다. false 면 CLI 가 자체 발급한 id 를
+   *  스트림/디스크에서 사후 캡처한다. */
+  assignsSessionId: boolean;
   buildCommand(config: AdapterConfig): BuiltCommand;
   spawn(args: SpawnArgs, config: AdapterConfig): Promise<RunHandle>;
   /** Pluck a session id out of a stdout chunk. Run-service feeds every

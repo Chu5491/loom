@@ -593,6 +593,12 @@ async function run(
     }
   }
   log.info({ cwd, resume: !!resumeSessionId }, "run start");
+  // caller-set 세션 — fresh run(resume 아님) + caller-set 지원 어댑터(claude)면 loom 이
+  // UUID 를 발급해 --session-id 로 넘긴다(claude 가 그 id 로 세션 생성 → loom 이 id 소유).
+  // state.sessionId 를 pre-set 하지 않고 init 이벤트 캡처(extractClaudeSessionId)로 채운다:
+  // 세션이 실제 생성된 run 만 id 가 잡혀, 생성 전 크래시한 run 이 phantom id 를 persist 해
+  // 다음 턴 resume 을 깨는 걸 막는다(lastSessionId 는 성공여부를 안 가림). resume 턴은 미발급.
+  const assignSessionId = !resumeSessionId && adapter.assignsSessionId ? randomUUID() : undefined;
   // 평문 CLI(antigravity/devin)의 디스크 세션 캡처 기준점 — 이 run 이 만진
   // 대화를 직전 잔재와 구분하려고 spawn 직전에 찍는다.
   const sessionSince = Date.now();
@@ -608,6 +614,7 @@ async function run(
         mcpConfigPath: loadout.mcpConfigPath ?? undefined,
         mcpServers: mcp,
         resumeSessionId: resumeSessionId ?? undefined,
+        assignSessionId,
         // 위임 opt-in 의 일부 — delegate 도구는 권한 프롬프트 없이 호출돼야 한다.
         allowedTools: mcp.some((m) => m.name === "loom") ? ["mcp__loom__delegate"] : undefined,
         onStdout: (c) => consume(state, c),

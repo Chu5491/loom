@@ -37,6 +37,11 @@ export interface AdapterDefinition<TConfig extends AdapterConfig = AdapterConfig
    *  support session resume leave this undefined and the session id
    *  is silently ignored. */
   applyResume?(args: string[], sessionId: string): string[];
+  /** Optional: set the id of a *new* session when the caller assigns one
+   *  (claude-code `--session-id <uuid>`). Distinct from applyResume (which
+   *  continues an existing session). Defining this opts the adapter into
+   *  caller-set session ids → CliAdapter.assignsSessionId. */
+  applySessionId?(args: string[], sessionId: string): string[];
   /** Optional: auto-approve the given tool names (claude `--allowedTools`).
    *  Carried by spawnArgs.allowedTools — part of an explicit per-agent
    *  opt-in (e.g. delegation), never injected silently. */
@@ -122,6 +127,7 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
     kind: def.kind,
     supportsMcpServers: def.supportsMcpServers ?? true,
     supportsSystemPrompt: def.supportsSystemPrompt ?? false,
+    assignsSessionId: !!def.applySessionId,
     buildCommand(config: AdapterConfig): BuiltCommand {
       return def.buildCommand(config as TConfig);
     },
@@ -147,6 +153,10 @@ export function defineCliAdapter<TConfig extends AdapterConfig = AdapterConfig>(
         spawnArgs.resumeSessionId && def.applyResume
           ? def.applyResume(built.args, spawnArgs.resumeSessionId)
           : built.args;
+      // caller-set 세션 id — resume 이 아닐 때만(상호배타). claude `--session-id <uuid>`.
+      if (!spawnArgs.resumeSessionId && spawnArgs.assignSessionId && def.applySessionId) {
+        baseArgs = def.applySessionId(baseArgs, spawnArgs.assignSessionId);
+      }
       if (spawnArgs.allowedTools?.length && def.applyAllowedTools) {
         baseArgs = def.applyAllowedTools(baseArgs, spawnArgs.allowedTools);
       }

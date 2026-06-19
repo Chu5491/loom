@@ -285,6 +285,9 @@ export const claudeCodeAdapter = defineCliAdapter<ClaudeCodeConfig>({
   applySystemPrompt: (args, system) => [...args, "--append-system-prompt", system],
   resolveEnv: (cfg) => cfg.env ?? {},
   applyResume: (args, sessionId) => ["--resume", sessionId, ...args],
+  // caller-set 세션 — loom 이 발급한 UUID 로 새 세션을 시작(--session-id). resume 과
+  // 상호배타(define 이 resume 우선). 세션 경로를 spawn 전에 알아 정리가 결정적.
+  applySessionId: (args, sessionId) => ["--session-id", sessionId, ...args],
   // headless 도구별 자동 승인 — loom delegate 등 명시적 opt-in 도구만 온다.
   // variadic 플래그가 뒤따르는 인자/stdin 을 삼키지 않게 `--flag=a,b` 단일 인자로.
   applyAllowedTools: (args, tools) => [...args, `--allowedTools=${tools.join(",")}`],

@@ -18,6 +18,12 @@ describe("claudeProjectSlug (cwd → ~/.claude/projects 폴더명)", () => {
   });
 });
 
+describe("claudeCodeAdapter caller-set session", () => {
+  it("opts into caller-set session ids (claude supports --session-id)", () => {
+    expect(claudeCodeAdapter.assignsSessionId).toBe(true);
+  });
+});
+
 describe("parseAnthropicModels (Anthropic /v1/models → options)", () => {
   it("keeps claude models, maps display_name, sorts newest first, tags family", () => {
     const out = parseAnthropicModels([
