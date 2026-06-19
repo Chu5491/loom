@@ -2,13 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> 사용자 관점 문서는 [README.md](./README.md), v2 기준 설계는 [docs/V2-PLAN.md](./docs/V2-PLAN.md), spec 주입 검증은 [docs/SPEC-INJECTION-VERIFIED.md](./docs/SPEC-INJECTION-VERIFIED.md), 스킬·규약 작성 규약은 [docs/SKILL-AUTHORING.md](./docs/SKILL-AUTHORING.md), CLI별 능력·활동 캡처 매트릭스는 [docs/CLI-CAPABILITIES.md](./docs/CLI-CAPABILITIES.md).
+> 사용자 관점 문서는 [README.md](./README.md), v2 기준 설계는 [docs/V2-PLAN.md](./docs/V2-PLAN.md), spec 주입 검증은 [docs/SPEC-INJECTION-VERIFIED.md](./docs/SPEC-INJECTION-VERIFIED.md), 스킬·규약 작성 규약은 [docs/SKILL-AUTHORING.md](./docs/SKILL-AUTHORING.md), CLI별 능력·활동 캡처 매트릭스는 [docs/CLI-CAPABILITIES.md](./docs/CLI-CAPABILITIES.md), 어댑터 깊은 통합 로드맵은 [docs/ADAPTER-INTEGRATION-PLAN.md](./docs/ADAPTER-INTEGRATION-PLAN.md).
 
 ---
 
 ## 1. 프로젝트 한 줄 요약
 
-**여러 CLI 에이전트(claude / antigravity / codex / opencode / devin)를 한 오피스에서 같이 부리는 협업 도구.**
+**여러 CLI 에이전트(claude / codex / opencode / devin / factory / antigravity)를 한 오피스에서 같이 부리는 협업 도구.**
 
 ### 헌법 (모든 결정을 지배하는 5원칙)
 
