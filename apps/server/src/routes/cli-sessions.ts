@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAdapter } from "../adapters/registry.js";
 import { listRunsDb, getProjectDb } from "../db.js";
+import type { RunInfo } from "@loom/core";
 import { isResponse, parseBody } from "./helpers.js";
 import { logger } from "../logger.js";
 
@@ -68,7 +69,12 @@ export interface SessionArtifact {
  *  runs 장부(adapter+session_id)가 "loom 것"의 진실 — 직접 쓴 세션은 안 잡힌다.
  *  cwd 는 claude 처럼 경로가 cwd 에 의존하는 CLI 를 위해 프로젝트 path 로 채운다. */
 export function collectSessionArtifacts(filter: { threadId?: string; projectId?: string }): SessionArtifact[] {
-  const runs = listRunsDb(filter);
+  return sessionArtifactsFromRuns(listRunsDb(filter));
+}
+
+/** run 행 목록 → loom 이 만든 세션들의 디스크 아티팩트. filter 가 아니라 run 행을 받아,
+ *  리텐션 스윕(컷오프로 고른 run)도 같은 로직으로 세션을 정리할 수 있게 한다. */
+export function sessionArtifactsFromRuns(runs: RunInfo[]): SessionArtifact[] {
   const seen = new Set<string>();
   const out: SessionArtifact[] = [];
   for (const r of runs) {

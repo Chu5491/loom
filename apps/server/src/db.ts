@@ -396,13 +396,15 @@ export function pruneEmptyThreadsBefore(cutoffIso: string): number {
 }
 
 /** 보존 스윕용 — ended_at 이 cutoff 이전인 끝난 run id 들(running 은 제외). */
-export function runIdsEndedBefore(cutoffIso: string): string[] {
+/** 보존 컷오프보다 오래 끝난 run 들(전체 행) — 정리 시 그 run 의 CLI 세션 파일까지
+ *  지우려면 adapter+session_id 가 필요하므로 id 만이 아니라 RunInfo 를 돌려준다. */
+export function runsEndedBefore(cutoffIso: string): RunInfo[] {
   return getDb()
-    .prepare<[string], { id: string }>(
-      `SELECT id FROM runs WHERE status != 'running' AND ended_at IS NOT NULL AND ended_at < ?`,
+    .prepare<[string], RunRow>(
+      `SELECT * FROM runs WHERE status != 'running' AND ended_at IS NOT NULL AND ended_at < ?`,
     )
     .all(cutoffIso)
-    .map((r) => r.id);
+    .map(toInfo);
 }
 
 /** 삭제 후 디스크 회수 — sqlite 는 행을 지워도 파일이 안 줄어든다(VACUUM 필요). */

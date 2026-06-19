@@ -9,12 +9,14 @@ import type { RunInfo } from "@loom/core";
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "loom-retention-test-"));
 process.env.LOOM_HOME = home;
+process.env.HOME = home; // CLI 세션 root(claude ~/.claude 등)의 기준 — 세션 정리 검증용
 process.env.LOOM_RETENTION_DAYS = "30";
 
 vi.mock("../src/run/engine.js", () => ({ deleteRunFiles: vi.fn() }));
 
 const db = await import("../src/db.js");
 const { sweepOldRuns, retentionCutoff } = await import("../src/run/retention.js");
+const { claudeProjectSlug } = await import("@loom/adapter-claude-code");
 
 afterAll(() => {
   db.closeDb();
@@ -85,5 +87,23 @@ describe("sweepOldRuns", () => {
     expect(db.getThreadDb("th-old-empty")).toBeNull(); // 정리됨
     expect(db.getThreadDb("th-new-empty")).not.toBeNull(); // 막 만든 건 보존
     expect(db.getThreadDb("th-with-run")).not.toBeNull(); // run 있는 건 보존
+  });
+
+  it("deletes the CLI session files of pruned runs (CLI 세션 스토어가 무한정 안 쌓이게)", () => {
+    const now = Date.now();
+    const proj = path.join(home, "retproj");
+    db.insertProject({ id: "p-ret", name: "retproj", path: proj, createdAt: new Date(now - 40 * DAY).toISOString() });
+    const sessFile = path.join(home, ".claude", "projects", claudeProjectSlug(proj), "retsess.jsonl");
+    fs.mkdirSync(path.dirname(sessFile), { recursive: true });
+    fs.writeFileSync(sessFile, "x");
+    const r: RunInfo = { ...finished("r-sess", now - 40 * DAY), projectId: "p-ret", adapter: "claude-code" };
+    db.insertRun({ ...r, status: "running", endedAt: null });
+    db.finishRun(r, { sessionId: "retsess" }); // session_id 는 finish 가 채운다
+    expect(fs.existsSync(sessFile)).toBe(true);
+
+    sweepOldRuns(now);
+
+    expect(db.getRunDb("r-sess")).toBeNull(); // run 행 정리
+    expect(fs.existsSync(sessFile)).toBe(false); // 그 run 의 CLI 세션 파일도 함께 정리
   });
 });
