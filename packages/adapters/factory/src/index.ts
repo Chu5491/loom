@@ -27,12 +27,13 @@ export interface DroidConfig extends AdapterConfig {
 
 export function buildDroidCommand(config: DroidConfig = {}): BuiltCommand {
   const command = config.command ?? "droid";
-  // `droid exec` = 비대화 1회 실행. `--output-format json` 은 완료 시 단일 객체
-  //   {type:"result", is_error, result, session_id, usage:{input_tokens, output_tokens}}
-  // 를 낸다(실측, droid 0.150.1). parse.ts 가 result/is_error/session_id + usage 토큰을
-  // 잡는다 — cost 직접값은 없어 엔진이 단가로 추정(codex 와 같은 결). 도구/파일 단위
-  // 이벤트만 없다(stream-jsonrpc 필요) → 활동 카드가 제한적.
-  const args: string[] = ["exec", "--output-format", "json"];
+  // `droid exec -o stream-json` = 비대화 1회, 단방향 JSONL 스트림(실측 droid 0.150.1):
+  //   {type:"system",subtype:"init",session_id} · {type:"message",role,text} ·
+  //   {type:"reasoning",text} · {type:"tool_call",toolName,parameters{file_path,...}} ·
+  //   {type:"completion",finalText,usage{input/output/cache_read_input_tokens}} 최종.
+  // parse.ts 가 text/reasoning/tool/file/usage 로 매핑(claude·codex 수준 활동). cost 직접값은
+  // 없어 엔진이 토큰×단가 추정(캐시분 할인). 단방향이라 stream-jsonrpc(양방향) 불필요.
+  const args: string[] = ["exec", "--output-format", "stream-json"];
   // 자율성: bypass 면 권한 우회, 아니면 --auto(기본 low). 기본 read-only 면 파일 편집이
   // 막혀 코딩이 조용히 실패하므로 최소 low 를 준다(codex workspace-write 와 같은 결).
   if (config.dangerouslySkipPermissions) {
@@ -47,18 +48,15 @@ export function buildDroidCommand(config: DroidConfig = {}): BuiltCommand {
   return { command, args };
 }
 
-/** `droid exec --output-format json` 최종 객체에서 session_id 를 캡처 — 다음 턴
- *  `--session-id` 로 재생(스레드 연속성). 주의: json 이 단일-라인(machine) 이라고
- *  가정한다 — pretty-print 라면 라인 파서가 못 읽으니 인증 후 실측 필요. */
+/** stream-json 은 모든 이벤트가 session_id 를 갖는다(init 부터, 실측). 첫 등장값을
+ *  캡처해 다음 턴 `--session-id` 로 재생(스레드 연속성). */
 export function extractDroidSessionId(chunk: string): string | null {
   for (const raw of chunk.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line[0] !== "{") continue;
     try {
-      const j = JSON.parse(line) as { type?: string; session_id?: string };
-      if (j.type === "result" && typeof j.session_id === "string" && j.session_id) {
-        return j.session_id;
-      }
+      const j = JSON.parse(line) as { session_id?: unknown };
+      if (typeof j.session_id === "string" && j.session_id) return j.session_id;
     } catch {
       // partial / malformed line
     }
@@ -139,8 +137,7 @@ export const factoryAdapter = defineCliAdapter<DroidConfig>({
     syncFactoryMcpConfig(cwd, servers);
     return { args };
   },
-  // 도구/파일 단위 추출기(extractToolUses/Touched*)는 아직 미정의 — droid json 출력은
-  //   토큰(usage)만 주고 도구/파일 이벤트가 없다. 풍부 활동은 -o stream-json(단방향
-  //   JSONL) 또는 stream-jsonrpc(양방향)가 필요 → 라이브 인증 후 별도 구현
-  //   (docs/ADAPTER-INTEGRATION-PLAN.md §5).
+  // 활동(텍스트·reasoning·도구·파일·토큰)은 -o stream-json 출력을 server parse.ts 가
+  //   직접 매핑한다 — 어댑터 레벨 extractToolUses/Touched* 불필요(stream 이 풍부).
+  //   stream-json 전체 스키마는 custom 로컬모델로 실측 검증(2026-06-19).
 });

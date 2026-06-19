@@ -102,4 +102,29 @@ describe("parseLine", () => {
       { kind: "text", text: "answer" },
     ]);
   });
+
+  // factory(droid) stream-json — 실측 스키마(droid 0.150.1, custom 로컬모델).
+  it("maps factory(droid) assistant message to text and skips the user echo", () => {
+    expect(parseLine(JSON.stringify({ type: "message", role: "assistant", text: "PONG" }))).toEqual([{ kind: "text", text: "PONG" }]);
+    expect(parseLine(JSON.stringify({ type: "message", role: "user", text: "the prompt" }))).toEqual([]);
+  });
+
+  it("maps factory(droid) top-level reasoning to a reasoning event", () => {
+    expect(parseLine(JSON.stringify({ type: "reasoning", text: "let me think" }))).toEqual([{ kind: "reasoning", text: "let me think" }]);
+  });
+
+  it("maps factory(droid) tool_call Create to a file write, Grep to a tool event", () => {
+    const create = JSON.stringify({ type: "tool_call", toolName: "Create", parameters: { file_path: "/tmp/hi.txt", content: "hello" } });
+    expect(parseLine(create)).toEqual([{ kind: "file", path: "/tmp/hi.txt", action: "write" }]);
+    const grep = JSON.stringify({ type: "tool_call", toolName: "Grep", parameters: { pattern: "TODO" } });
+    expect(parseLine(grep)).toEqual([{ kind: "tool", name: "Grep", target: "TODO" }]);
+  });
+
+  it("maps factory(droid) completion to result + usage (with cache_read tokens)", () => {
+    const line = JSON.stringify({ type: "completion", finalText: "Done.", session_id: "s1", usage: { input_tokens: 29437, output_tokens: 229, cache_read_input_tokens: 12000 } });
+    expect(parseLine(line)).toEqual([
+      { kind: "result", text: "Done.", sessionId: "s1" },
+      { kind: "usage", inputTokens: 29437, outputTokens: 229, cachedInputTokens: 12000 },
+    ]);
+  });
 });

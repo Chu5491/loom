@@ -14,6 +14,7 @@ import type { OfficeEvent } from "@loom/core";
 const FILE_TOOLS = new Set([
   "edit", "write", "Edit", "Write", "replace", "write_file", "apply_patch",
   "MultiEdit", "multi_edit", "NotebookEdit", "notebook_edit", "create_file",
+  "Create", "ApplyPatch", // factory(droid) 파일 쓰기 도구
 ]);
 
 function str(v: unknown): string | undefined {
@@ -74,8 +75,11 @@ export function parseLine(line: string): OfficeEvent[] {
   // opencode 텍스트
   const part = j.part as { text?: unknown; tool?: unknown; state?: { input?: unknown } } | undefined;
   if (type === "text" && str(part?.text)) return [{ kind: "text", text: str(part!.text)! }];
-  // opencode 사고과정(--thinking 시) — {type:"reasoning", part:{text}}.
-  if (type === "reasoning" && str(part?.text)) return [{ kind: "reasoning", text: str(part!.text)! }];
+  // 사고과정 — opencode {type:"reasoning", part:{text}} · factory(droid) {type:"reasoning", text}.
+  if (type === "reasoning") {
+    const rt = str(part?.text) ?? str(j.text);
+    if (rt) return [{ kind: "reasoning", text: rt }];
+  }
 
   // claude assistant 메시지(텍스트 + tool_use)
   const msg = j.message as { content?: unknown } | undefined;
@@ -95,6 +99,29 @@ export function parseLine(line: string): OfficeEvent[] {
   if (type === "tool_use") {
     const name = str(part?.tool) ?? str(j.tool_name);
     if (name) return [toolEvent(name, part?.state?.input ?? j.parameters)];
+  }
+
+  // factory(droid) stream-json — message(role)/tool_call/completion. reasoning 은 위에서 공유.
+  //   {type:"message",role:"assistant",text} 답변 · role:"user" 는 프롬프트 에코라 skip.
+  //   {type:"tool_call",toolName,parameters{file_path,...}} 도구/파일.
+  //   {type:"completion",finalText,usage{input/output/cache_read_input_tokens}} 최종+토큰.
+  if (type === "message") {
+    if (str(j.role) === "assistant" && str(j.text)) return [{ kind: "text", text: str(j.text)! }];
+    return [];
+  }
+  if (type === "tool_call") {
+    const name = str(j.toolName) ?? str(j.toolId);
+    if (name) return [toolEvent(name, j.parameters)];
+  }
+  if (type === "completion") {
+    const out: OfficeEvent[] = [];
+    const ft = str(j.finalText);
+    if (ft) out.push({ kind: "result", text: ft, sessionId: str(j.session_id) });
+    const u = j.usage as { input_tokens?: unknown; output_tokens?: unknown; cache_read_input_tokens?: unknown } | undefined;
+    if (u && (num(u.input_tokens) || num(u.output_tokens))) {
+      out.push({ kind: "usage", inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens), cachedInputTokens: num(u.cache_read_input_tokens) });
+    }
+    return out;
   }
 
   // codex 토큰 사용량 — {type:"turn.completed", usage:{input_tokens, output_tokens, ...}}.

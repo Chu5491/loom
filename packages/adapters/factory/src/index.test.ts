@@ -17,11 +17,12 @@ function makeServer(over: Partial<McpServer> & Pick<McpServer, "kind" | "name">)
 }
 
 describe("buildDroidCommand", () => {
-  it("defaults: droid exec --output-format json --auto low", () => {
+  it("defaults: droid exec --output-format stream-json --auto low", () => {
     const { command, args } = buildDroidCommand();
     expect(command).toBe("droid");
+    // stream-json = 단방향 JSONL(실측) → text/reasoning/tool/file/completion 풀 활동.
     // 기본 --auto low — droid 기본 read-only 면 파일 편집이 막혀 코딩이 실패하므로.
-    expect(args).toEqual(["exec", "--output-format", "json", "--auto", "low"]);
+    expect(args).toEqual(["exec", "--output-format", "stream-json", "--auto", "low"]);
   });
 
   it("bypass uses --skip-permissions-unsafe instead of --auto", () => {
@@ -75,6 +76,11 @@ describe("extractDroidSessionId", () => {
   it("returns null when no result/session_id is present", () => {
     expect(extractDroidSessionId('{"type":"text","part":{"text":"hi"}}')).toBeNull();
     expect(extractDroidSessionId("plain text, not json")).toBeNull();
+  });
+
+  it("captures session_id from the stream-json init event (every event carries it)", () => {
+    const line = JSON.stringify({ type: "system", subtype: "init", session_id: "5c19-init", model: "custom:glm-4.7-0" });
+    expect(extractDroidSessionId(line)).toBe("5c19-init");
   });
 });
 
