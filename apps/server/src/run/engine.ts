@@ -791,11 +791,9 @@ export function waitForRun(id: string, timeoutMs: number): Promise<RunInfo> {
   });
 }
 
-const DELEGATE_TIMEOUT_MS = 10 * 60_000;
-
-// 위임 폭(breadth) 상한 — 깊이 가드(MAX_CHAIN_HOPS)는 병렬 tool call 이 한 번에
-// 띄우는 자식 수를 못 막고, 위임 자식은 동시성 슬롯도 우회한다(데드락 방지 설계).
-const MAX_CONCURRENT_DELEGATIONS = 3;
+// 위임 타이밍(delegateTimeoutMs)·폭(maxConcurrentDelegations)은 config(env)로 조정.
+// 깊이 가드(MAX_CHAIN_HOPS)는 병렬 tool call 이 한 번에 띄우는 자식 수를 못 막고, 위임
+// 자식은 동시성 슬롯도 우회한다(데드락 방지 설계) — 그래서 별도의 폭 한도가 필요하다.
 const delegationsInFlight = new Map<string, number>();
 
 /** 에이전트 주도 위임 — run 도중 MCP delegate 도구가 호출. 자식 run 을 띄우고
@@ -814,8 +812,8 @@ export async function delegateFromRun(
     return { ok: false, error: `delegation depth limit (${MAX_CHAIN_HOPS}) reached` };
   }
   const inFlight = delegationsInFlight.get(parentRunId) ?? 0;
-  if (inFlight >= MAX_CONCURRENT_DELEGATIONS) {
-    return { ok: false, error: `concurrent delegation limit (${MAX_CONCURRENT_DELEGATIONS}) reached — wait for a delegation to finish` };
+  if (inFlight >= config.maxConcurrentDelegations) {
+    return { ok: false, error: `concurrent delegation limit (${config.maxConcurrentDelegations}) reached — wait for a delegation to finish` };
   }
   delegationsInFlight.set(parentRunId, inFlight + 1);
 
@@ -833,7 +831,7 @@ export async function delegateFromRun(
     if (!started.ok) return { ok: false, error: started.error };
 
     try {
-      const done = await waitForRun(started.run.id, DELEGATE_TIMEOUT_MS);
+      const done = await waitForRun(started.run.id, config.delegateTimeoutMs);
       const events = runs.get(started.run.id)?.events ?? getRunEventsDb(started.run.id);
       const result = [...events].reverse().find(
         (e): e is Extract<OfficeEvent, { kind: "result" }> => e.kind === "result",

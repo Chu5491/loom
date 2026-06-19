@@ -5,6 +5,13 @@
 
 import path from "node:path";
 
+/** env 정수 파싱 + 검증(1 이상). 잘못되면 부팅 즉시 실패(조용한 오작동 방지). */
+function posInt(raw: string | undefined, def: number, name: string): number {
+  const v = Number(raw ?? String(def));
+  if (!Number.isInteger(v) || v < 1) throw new Error(`${name} 값이 잘못됨: "${raw}" — 1 이상 정수 필요`);
+  return v;
+}
+
 const rawPort = process.env.LOOM_PORT ?? "3200";
 const port = Number(rawPort);
 if (!Number.isFinite(port) || port < 0 || port > 65535) {
@@ -33,6 +40,13 @@ if (!Number.isInteger(maxConcurrentRuns) || maxConcurrentRuns < 1) {
   throw new Error(`LOOM_MAX_RUNS 값이 잘못됨: "${rawMax}" — 1 이상 정수 필요`);
 }
 
+// 워크플로우/위임 타이밍(분·건수) — 운영 환경에 맞게 조정. 위임 한 건 한도(delegate)는
+// join 대기보다 짧게 두는 게 보통(위임이 join 안에서 끝나도록).
+const joinTimeoutMin = posInt(process.env.LOOM_JOIN_TIMEOUT_MIN, 60, "LOOM_JOIN_TIMEOUT_MIN");
+const stepTimeoutMin = posInt(process.env.LOOM_STEP_TIMEOUT_MIN, 30, "LOOM_STEP_TIMEOUT_MIN");
+const delegateTimeoutMin = posInt(process.env.LOOM_DELEGATE_TIMEOUT_MIN, 10, "LOOM_DELEGATE_TIMEOUT_MIN");
+const maxConcurrentDelegations = posInt(process.env.LOOM_MAX_DELEGATIONS, 3, "LOOM_MAX_DELEGATIONS");
+
 // 기록 보존 일수 — ended_at 이 이보다 오래된 run(+로그)을 자동 정리. 0=비활성(무한 보존).
 // 헌법: data/ 는 기록일 뿐 — 디스크가 무한정 차지 않게 한다.
 const rawRetention = process.env.LOOM_RETENTION_DAYS ?? "30";
@@ -49,7 +63,13 @@ if (!Number.isInteger(minFreeMb) || minFreeMb < 0) {
   throw new Error(`LOOM_MIN_FREE_MB 값이 잘못됨: "${rawMinFree}" — 0 이상 정수 필요(0=비활성)`);
 }
 
-export const config = { port, host, home, maxConcurrentRuns, webDir, retentionDays, minFreeMb } as const;
+export const config = {
+  port, host, home, maxConcurrentRuns, webDir, retentionDays, minFreeMb,
+  joinTimeoutMs: joinTimeoutMin * 60_000,
+  stepTimeoutMs: stepTimeoutMin * 60_000,
+  delegateTimeoutMs: delegateTimeoutMin * 60_000,
+  maxConcurrentDelegations,
+} as const;
 
 export const paths = {
   office: path.join(home, "office"),

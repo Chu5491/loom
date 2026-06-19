@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isResponse, parseBody } from "./helpers.js";
-import { searchRunsDb, setRunRating } from "../db.js";
+import { agentStatsDb, searchRunsDb, setRunRating } from "../db.js";
 import { readAgents, readSkills, readWorkflows } from "../office.js";
 import { pickAgent } from "../run/dispatch.js";
 import { startWorkflow } from "../run/workflow.js";
@@ -137,7 +137,9 @@ const dispatchSchema = z.object({
 runsRoute.post("/dispatch", async (c) => {
   const data = await parseBody(c, dispatchSchema);
   if (isResponse(data)) return data;
-  const pick = pickAgent(data.prompt, readAgents(), readSkills());
+  // 키워드 동점일 때 30일 성공률이 높은 에이전트를 우선해 라우팅 품질을 높인다.
+  const successRate = Object.fromEntries(agentStatsDb().map((s) => [s.agent, s.runs > 0 ? s.succeeded / s.runs : 0]));
+  const pick = pickAgent(data.prompt, readAgents(), readSkills(), successRate);
   if (!pick) return c.json({ error: "no_agents" }, 400);
   const result = await startRun({ ...data, agent: pick.agent });
   if (!result.ok) return c.json({ error: result.error }, result.status);

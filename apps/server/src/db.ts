@@ -338,12 +338,15 @@ export function searchRunsDb(q: string, limit = 30): RunSearchHit[] {
 }
 
 /** 같은 스레드에서 이 에이전트가 마지막으로 남긴 CLI 세션 id — resume 용. */
+/** 이 스레드+에이전트의 직전 세션 id — 다음 턴이 resume 으로 이어간다. 실제 세션을 받은
+ *  (session_id 있는) run 만 보고 가장 최근 것. 동시 시작(같은 started_at)은 rowid 로
+ *  결정적 tie-break — 안 하면 SQLite 가 임의 행을 골라 resume 대상이 흔들린다. */
 export function lastSessionId(threadId: string, agent: string): string | null {
   const row = getDb()
     .prepare<[string, string], { session_id: string }>(
       `SELECT session_id FROM runs
        WHERE thread_id = ? AND agent = ? AND session_id IS NOT NULL
-       ORDER BY started_at DESC LIMIT 1`,
+       ORDER BY started_at DESC, rowid DESC LIMIT 1`,
     )
     .get(threadId, agent);
   return row?.session_id ?? null;

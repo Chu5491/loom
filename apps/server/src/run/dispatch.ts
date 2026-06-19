@@ -51,13 +51,17 @@ export function scoreAgent(task: string, agent: AgentSpec, skills: SkillSpec[]):
   return { agent: agent.name, score, matched: [...matched] };
 }
 
-/** 최고점 에이전트 — 동점이면 정의 순서. 모두 0점이면 첫 에이전트(명시적 폴백). */
-export function pickAgent(task: string, agents: AgentSpec[], skills: SkillSpec[]): DispatchPick | null {
+/** 최고점 에이전트 — 키워드 동점이면 30일 성공률(successRate, 0~1)이 높은 쪽을 고른다.
+ *  성공률도 같으면 정의 순서(안정 정렬). 모두 0점·무실적이면 첫 에이전트(명시적 폴백).
+ *  successRate 를 안 주면 키워드 점수 + 정의 순서로만 — 기존 동작과 동일. 라우팅일 뿐 주입 아님. */
+export function pickAgent(
+  task: string,
+  agents: AgentSpec[],
+  skills: SkillSpec[],
+  successRate?: Record<string, number>,
+): DispatchPick | null {
   if (agents.length === 0) return null;
-  let best = scoreAgent(task, agents[0]!, skills);
-  for (const a of agents.slice(1)) {
-    const s = scoreAgent(task, a, skills);
-    if (s.score > best.score) best = s;
-  }
-  return best;
+  const scored = agents.map((a) => ({ pick: scoreAgent(task, a, skills), rate: successRate?.[a.name] ?? 0 }));
+  scored.sort((x, y) => y.pick.score - x.pick.score || y.rate - x.rate);
+  return scored[0]!.pick;
 }

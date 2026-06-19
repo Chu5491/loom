@@ -41,4 +41,15 @@ describe("pickAgent", () => {
   it("returns null with no agents", () => {
     expect(pickAgent("anything", [], skills)).toBeNull();
   });
+
+  it("키워드 동점이면 성공률(successRate) 높은 에이전트를 고른다", () => {
+    const twins: AgentSpec[] = [
+      { name: "tw-a", adapter: "claude-code", prompt: "handles deploy tasks" },
+      { name: "tw-b", adapter: "codex", prompt: "handles deploy tasks" },
+    ];
+    // 둘 다 "deploy" 1점 동점 → 성공률 높은 tw-b
+    expect(pickAgent("deploy", twins, [], { "tw-a": 0.2, "tw-b": 0.8 })?.agent).toBe("tw-b");
+    // successRate 미제공이면 기존 동작(정의 순서)
+    expect(pickAgent("deploy", twins, [])?.agent).toBe("tw-a");
+  });
 });

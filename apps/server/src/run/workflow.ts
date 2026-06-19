@@ -13,17 +13,16 @@ import {
   listGatesDb,
   listJoinArrivalsDb,
 } from "../db.js";
+import { config } from "../config.js";
 import { logger } from "../logger.js";
 import { readWorkflows } from "../office.js";
 import { cancelRun, startRun, waitForRun, type StartRunResult } from "./engine.js";
 
-export const MAX_WORKFLOW_STEPS = 20;
-// 위임(10분)보다 길게 — 워크플로우 스텝은 코딩 에이전트의 실제 작업 단위.
-const STEP_TIMEOUT_MS = 30 * 60_000;
-// join backstop — 한 분기가 (fail 엣지가 join 으로 안 이어져) 영영 도착 안 하면
-// join 이 영구 대기하던 한계를 끊는다. 느린 형제 분기(스텝 타임아웃 30분)가
-// 정상 도착할 시간을 충분히 주고도 남게 길게 잡는다.
-export const JOIN_TIMEOUT_MS = 60 * 60_000;
+export const MAX_WORKFLOW_STEPS = 20; // 루프 방어 backstop — 안전 상한이라 config 대상 아님.
+// 타이밍은 config(env)로 운영 조정. 기본값은 delegate(10m) < step(30m) < join(60m) 순서 —
+// 위임이 스텝 안에서, 느린 형제 분기가 join backstop 안에서 끝나도록 잡혀 있다.
+const STEP_TIMEOUT_MS = config.stepTimeoutMs;
+export const JOIN_TIMEOUT_MS = config.joinTimeoutMs;
 
 // ── 트리거 판정 (순수) — run 이 끝났을 때 어떤 워크플로우가 발화하는지 ─────────
 export interface RunOutcome {

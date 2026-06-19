@@ -150,3 +150,19 @@ describe("gates & join arrivals", () => {
     expect(db.listJoinArrivalsDb().some((g) => g.chainId === "c1")).toBe(false);
   });
 });
+
+describe("lastSessionId", () => {
+  it("스레드+에이전트의 최근 세션을 반환하고 session_id 없는 run 은 무시한다", () => {
+    const a = { ...run("ls1"), agent: "A", threadId: "t1", startedAt: "2026-06-10T00:00:00.000Z" };
+    db.insertRun(a); db.finishRun(a, { sessionId: "sess-old" });
+    const b = { ...run("ls2"), agent: "A", threadId: "t1", startedAt: "2026-06-10T01:00:00.000Z" };
+    db.insertRun(b); db.finishRun(b, { sessionId: "sess-new" });
+    const c = { ...run("ls3"), agent: "A", threadId: "t1", startedAt: "2026-06-10T02:00:00.000Z" };
+    db.insertRun(c); // session_id 없음(미완료) → resume 대상에서 제외
+    expect(db.lastSessionId("t1", "A")).toBe("sess-new");
+  });
+
+  it("세션이 아직 없으면 null", () => {
+    expect(db.lastSessionId("none", "Z")).toBeNull();
+  });
+});
