@@ -47,7 +47,7 @@
 |------|------|------|--------|------|
 | **1** | **`--oss` + `--local-provider ollama\|lmstudio`** (무료 로컬모델) | `index.ts`(buildCommand), `manifest.ts` | 🟢 | 가성비 핵심. oss시 model 자유입력 |
 | **1** | file_change 파싱 버그 수정(§S2) | `parse.ts:110-127` | 🟢 | |
-| **1** | pricing/프리셋 갱신 — `gpt-5.5`·`*-codex` 단가 추가, `gpt-oss`→{0,0}, 기본모델 실재 ID | `pricing.ts:14-23`, `preset-models.ts`, `manifest.ts:22` | 🟢 | 현재 누락모델 `DEFAULT{1,5}`로 오추정 |
+| **2** | pricing — ⚠️정정: codex gpt-5.x 는 `gpt-5` 접두 부분매칭으로 **이미 커버됨**(`"gpt-5.5".includes("gpt-5")`, 검증). 실제 갭=비-OpenAI(factory/devin) 모델이 `DEFAULT{1,5}` + 로컬모델 0원 미반영 → `--oss` 도입 시 함께 | `pricing.ts:14-29`, `preset-models.ts` | 🟡 | 단독 가치 낮음(추정은 본래 근사) |
 | **1** | `--skip-git-repo-check` | `index.ts`, manifest | 🟢 | 비-git 프로젝트 dir 대응 |
 | **2** | `--output-schema <FILE>` 타입 보장 워크플로우 핸드오프(스키마는 loadout 디렉토리에 기록) | `index.ts`, `office.ts`(WorkflowNode), `run/workflow.ts`, `loadout.ts` | 🟡 | **헌법3**: `$CODEX_HOME` 아닌 `data/loadouts/`에 |
 | **2** | `reasoning` 아이템 표면화(§S1) + cache/reasoning 토큰(§S5) | `parse.ts` | 🟡 | oss 프로바이더는 reasoning 미방출 — graceful |
