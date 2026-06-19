@@ -81,4 +81,15 @@ describe("parseLine", () => {
     const line = JSON.stringify({ type: "item.completed", item: { type: "reasoning", text: "planning" } });
     expect(parseLine(line)).toEqual([{ kind: "reasoning", text: "planning" }]);
   });
+
+  it("captures claude thinking blocks as reasoning, in order with text", () => {
+    const line = JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "thinking", thinking: "let me reason" }, { type: "text", text: "answer" }] },
+    });
+    expect(parseLine(line)).toEqual([
+      { kind: "reasoning", text: "let me reason" },
+      { kind: "text", text: "answer" },
+    ]);
+  });
 });

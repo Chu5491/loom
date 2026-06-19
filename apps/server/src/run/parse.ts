@@ -83,6 +83,9 @@ export function parseLine(line: string): OfficeEvent[] {
     const out: OfficeEvent[] = [];
     for (const c of msg!.content as Record<string, unknown>[]) {
       if (c.type === "text" && str(c.text)) out.push({ kind: "text", text: str(c.text)! });
+      // 확장사고 블록 — assistant content 에 {type:"thinking", thinking}. 답변과 분리해
+      // reasoning 으로(--include-partial-messages 없이도 최종 메시지에 실려 옴).
+      if (c.type === "thinking" && str(c.thinking)) out.push({ kind: "reasoning", text: str(c.thinking)! });
       if (c.type === "tool_use" && str(c.name)) out.push(toolEvent(str(c.name)!, c.input));
     }
     return out;
