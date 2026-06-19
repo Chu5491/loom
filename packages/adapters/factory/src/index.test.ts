@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import type { McpServer } from "@loom/core";
+import { parseDroidModels } from "./models.js";
 import {
   buildDroidCommand,
   extractDroidSessionId,
@@ -138,5 +139,30 @@ describe("syncFactoryMcpConfig / toDroidMcpEntry", () => {
     expect(syncFactoryMcpConfig(tmp, [])).toBeNull();
     expect(fs.existsSync(path.join(tmp, ".factory", "mcp.json"))).toBe(false);
     fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+describe("parseDroidModels (droid 모델 목록 추출 — 잘못된 모델 exec 출력)", () => {
+  // 실측 출력(droid 0.150.1): built-in 콤마줄 + custom `custom:id (label)` 줄.
+  const sample = [
+    "Invalid model: __loom_list__",
+    "",
+    "Available built-in models:",
+    "  claude-opus-4-8, gpt-5.5, glm-5.2, glm-5.1",
+    "",
+    "Available custom models:",
+    "  custom:glm-4.7-0 (glm-4.7)",
+    "",
+    "Note: Custom models are loaded from ~/.factory/settings.json",
+  ].join("\n");
+
+  it("extracts built-in (comma) and custom (custom:id (label)) lists", () => {
+    const { builtins, customs } = parseDroidModels(sample);
+    expect(builtins).toEqual(["claude-opus-4-8", "gpt-5.5", "glm-5.2", "glm-5.1"]);
+    expect(customs).toEqual([{ id: "custom:glm-4.7-0", label: "glm-4.7" }]);
+  });
+
+  it("returns empty lists for unrelated output (→ listModels falls back to presets)", () => {
+    expect(parseDroidModels("Authentication failed")).toEqual({ builtins: [], customs: [] });
   });
 });
