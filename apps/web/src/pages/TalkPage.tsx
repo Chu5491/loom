@@ -24,6 +24,7 @@ import { MeetingView } from "../components/MeetingView.js";
 import { TasksView } from "../components/TasksView.js";
 import { WorkflowLiveGraph } from "../components/WorkflowLiveGraph.js";
 import { NotesModal, WorkflowRunModal, RunDetailModal } from "../components/talk/Modals.js";
+import { Centered, Avatar, Welcome, HandoffDivider, UserBubble } from "../components/talk/atoms.js";
 import { useI18n } from "../context/I18nContext.js";
 import { useConfirm, useAlert } from "../context/DialogContext.js";
 import { useRunStream } from "../hooks/useRunStream.js";
@@ -552,44 +553,6 @@ export function TalkPage({ project }: { project: Project }) {
   );
 }
 
-// 프로젝트 공유 메모 — <project>/.loom/notes.md. 사람과 에이전트가 같은 파일을
-// 읽고 쓴다(run 프롬프트에는 파일이 있을 때만 경로 안내).
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mx-auto flex h-full max-w-3xl items-center justify-center px-6">
-      <p className="text-center text-sm text-muted-foreground">{children}</p>
-    </div>
-  );
-}
-
-// 에이전트 아바타 = 그 CLI 의 브랜드 아이콘(Office 와 동일). 미상이면 글자 폴백.
-function Avatar({ agent, size = 32 }: { agent?: AgentSpec; size?: number }) {
-  if (agent) return <AgentAvatar adapter={agent.adapter} size={size} className="rounded-lg" />;
-  return (
-    <span
-      className="inline-flex shrink-0 items-center justify-center rounded-lg border border-border bg-muted/60 font-mono text-xs text-muted-foreground"
-      style={{ width: size, height: size }}
-    >
-      ?
-    </span>
-  );
-}
-
-function Welcome({ activeAgent }: { activeAgent?: AgentSpec }) {
-  const { t } = useI18n();
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-gradient-accent text-white shadow-[var(--shadow-glow)]">
-        <Bot className="size-6" />
-      </span>
-      <h2 className="font-display text-xl font-semibold">{t("talk.welcomeTitle")}</h2>
-      <p className="max-w-sm text-sm text-muted-foreground">
-        {activeAgent ? t("talk.welcomeWith", { name: activeAgent.label || activeAgent.name }) : t("talk.welcomeSub")}
-      </p>
-    </div>
-  );
-}
-
 // ── 스레드 사이드바 — 대화 목록을 큼직하게 (lg+). hover 시 이름변경·삭제 ─────────
 function ThreadSidebar({
   threads, threadId, renaming, onRenaming, onPick, onRename, onDelete,
@@ -876,32 +839,6 @@ function TeamPanel({
         </div>
       ) : null}
     </aside>
-  );
-}
-
-// 핸드오프 커넥터 — 버블 사이에 "누가 → 누구" 흐름을 그린다.
-function HandoffDivider({ from, to }: { from: string; to: string }) {
-  return (
-    <div className="mb-2 flex items-center gap-2">
-      <span className="h-px flex-1 bg-gradient-to-r from-transparent to-primary/40" />
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
-        <Workflow className="size-3 text-primary" />
-        <span className="font-medium text-foreground">@{from}</span>
-        <span className="text-primary">→</span>
-        <span className="font-medium text-foreground">@{to}</span>
-      </span>
-      <span className="h-px flex-1 bg-gradient-to-l from-transparent to-primary/40" />
-    </div>
-  );
-}
-
-function UserBubble({ text }: { text: string }) {
-  return (
-    <div className="flex justify-end">
-      <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary/15 px-4 py-2.5 text-sm leading-relaxed">
-        {text}
-      </div>
-    </div>
   );
 }
 
