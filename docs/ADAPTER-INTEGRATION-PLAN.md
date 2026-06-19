@@ -109,8 +109,8 @@
 
 **라이브 검증 현황** (factory `402 Payment Required` — 단 **custom 로컬모델로 402 우회 검증 성공**, 2026-06-19):
 - **✅ stream-json 전체 스키마 실측·구현(custom:glm-4.7-0):** `system/init` · `message(role,text)` · `reasoning(text)` · `tool_call(toolName,parameters)` · `tool_result(isError)` · **`completion(finalText,usage{input/output/cache_read_input_tokens})`** = 최종(`result` 아님). session_id 는 매 이벤트에 존재. → parse.ts 구현 완료(5b81a0f).
-- **✅ MCP 프로젝트-로컬 로드:** `mcp list`→[project], 프로세스 cwd 기준.
-- **미확인(아직 게이트):** exec 중 실제 MCP 도구 *호출* 동작, `--settings` 의 `mcpServers` 수용 여부, 동명 사용자서버 우선순위, 세션 디스크 포맷.
+- **✅ MCP 프로젝트-로컬 로드(exec 검증):** `.factory/mcp.json` 의 서버를 `mcp list`→[project] + **exec 시 로드**(init.tools 에 MCP 도구 `everything___echo` 등 등장, 도구명 `<server>___<tool>`).
+- **미확인(소소):** `--settings` 의 `mcpServers` 수용 여부, 동명 사용자서버 우선순위, 세션 디스크 포맷.
 
 ---
 

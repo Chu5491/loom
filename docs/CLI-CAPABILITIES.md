@@ -74,7 +74,7 @@
 - **MCP:** 3단계 계층 `~/.factory/mcp.json`(user) > `.factory/mcp.json`(folder) > `.factory/mcp.json`(project). **스키마는 claude `.mcp.json`과 동일**. ⇒ **프로젝트-로컬 `<cwd>/.factory/mcp.json`로 헌법3 준수 주입 가능**(devin 패턴). `droid mcp add`는 전역에 써서 부적합.
 - **stream-jsonrpc 프로토콜:** `droid.initialize_session`→`droid.add_user_message`, 알림 `droid.session_notification`(create_message·tool_result·complete), 권한 역요청 `droid.request_permission`엔 `{selectedOption:"proceed_once"}`로 자동승인. loom은 권한을 자동승인하므로 최소 클라이언트로 구동 가능.
 - **현재 사용:** `exec --output-format json`, `--auto`/skip-perms, `--model`, `--append-system-prompt`, `--session-id`/resume.
-- **구현 완료:** MCP 주입 ✅(프로젝트-로컬 `.factory/mcp.json`, `mcp list`→[project] 검증), 프리셋 ✅31종+`custom:`, **stream-json 풍부 활동 ✅**(text·reasoning·tool·file·completion — custom 로컬모델로 전체 스키마 실측·구현). **남음:** `--mission`(자체 멀티에이전트), `--enabled/disabled-tools`, exec 중 MCP 도구 *호출* 라이브 확인.
+- **구현 완료(end-to-end 검증):** MCP 주입 ✅(`.factory/mcp.json` → **exec 시 서버 로드·도구 노출 실측**: init.tools 에 `everything___echo` 등 등장, 도구명 `<server>___<tool>`), 프리셋 ✅31종+`custom:`, **stream-json 풍부 활동 ✅**(text·reasoning·tool·file·completion 전체 스키마 실측). **남음(소소):** `--mission`(자체 멀티에이전트), `--enabled/disabled-tools`.
 - **확인 필요(라이브 인증 run):** `stream-json` 줄별 스키마, `json` 결과의 `usage` 유무, `--settings`가 `mcpServers` 수용 여부.
 
 ### antigravity (`agy` 1.0.9) — 구조적 최약 (정정·강화)
