@@ -99,6 +99,12 @@ export function parseLine(line: string): OfficeEvent[] {
     if (u) return [{ kind: "usage", inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens) }];
   }
 
+  // codex 실패 턴 — {type:"turn.failed", error:{message}}. 안 잡으면 실패가 무음(빈 run).
+  if (type === "turn.failed") {
+    const err = (j.error as Record<string, unknown> | undefined)?.message;
+    return [{ kind: "error", message: str(err) ?? "codex turn failed" }];
+  }
+
   // opencode 토큰+비용 — {type:"step_finish", part:{cost, tokens:{input, output, ...}}}.
   // cost 를 직접 보고(유료 모델은 실값, 무료는 0).
   if (type === "step_finish") {
@@ -113,8 +119,18 @@ export function parseLine(line: string): OfficeEvent[] {
     if (item?.type === "command_execution" && str(item.command)) {
       return [{ kind: "tool", name: "shell", target: str(item.command)!.slice(0, 80) }];
     }
-    if ((item?.type === "file_change" || item?.type === "patch") && str(item.path)) {
-      return [{ kind: "file", path: str(item.path)!, action: "edit" }];
+    // codex file_change 는 {changes:[{path,kind}]} 형태(단수 path 아님 — 과거 버그로 유실됐음).
+    if (item?.type === "file_change") {
+      const out: OfficeEvent[] = [];
+      const changes = Array.isArray(item.changes) ? (item.changes as Record<string, unknown>[]) : [];
+      for (const ch of changes) {
+        const p = str(ch.path);
+        if (p) out.push({ kind: "file", path: p, action: ch.kind === "add" ? "write" : "edit" });
+      }
+      // 구형/단일 경로 폴백.
+      const single = str(item.path);
+      if (!out.length && single) out.push({ kind: "file", path: single, action: "edit" });
+      if (out.length) return out;
     }
     // MCP 도구 호출(위임 등) + 웹 검색 — 활동에서 빠지지 않게.
     if (item?.type === "mcp_tool_call") {

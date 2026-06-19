@@ -50,4 +50,25 @@ describe("parseLine", () => {
     const ws = JSON.stringify({ type: "item.completed", item: { type: "web_search", query: "loom orchestration" } });
     expect(parseLine(ws)).toEqual([{ kind: "tool", name: "web_search", target: "loom orchestration" }]);
   });
+
+  it("captures codex file_change from item.completed changes[] (was dropped — path is not at item.path)", () => {
+    const fc = JSON.stringify({
+      type: "item.completed",
+      item: { type: "file_change", changes: [{ path: "src/a.ts", kind: "update" }, { path: "src/b.ts", kind: "add" }] },
+    });
+    expect(parseLine(fc)).toEqual([
+      { kind: "file", path: "src/a.ts", action: "edit" },
+      { kind: "file", path: "src/b.ts", action: "write" },
+    ]);
+  });
+
+  it("falls back to a single item.path for legacy file_change shape", () => {
+    const fc = JSON.stringify({ type: "item.completed", item: { type: "file_change", path: "legacy.ts" } });
+    expect(parseLine(fc)).toEqual([{ kind: "file", path: "legacy.ts", action: "edit" }]);
+  });
+
+  it("surfaces a codex turn.failed as an error event (was silent → empty run)", () => {
+    const f = JSON.stringify({ type: "turn.failed", error: { message: "rate limited" } });
+    expect(parseLine(f)).toEqual([{ kind: "error", message: "rate limited" }]);
+  });
 });
