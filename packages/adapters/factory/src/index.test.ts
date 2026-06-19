@@ -1,10 +1,20 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
+import type { McpServer } from "@loom/core";
 import {
   buildDroidCommand,
   extractDroidSessionId,
   factoryAdapter,
+  toDroidMcpEntry,
+  syncFactoryMcpConfig,
   DROID_PRESET_MODELS,
 } from "./index.js";
+
+function makeServer(over: Partial<McpServer> & Pick<McpServer, "kind" | "name">): McpServer {
+  return { description: null, command: null, args: [], env: {}, url: null, headers: {}, ...over };
+}
 
 describe("buildDroidCommand", () => {
   it("defaults: droid exec --output-format json --auto low", () => {
@@ -79,5 +89,48 @@ describe("factoryAdapter", () => {
     expect(cats.has("Anthropic")).toBe(true);
     expect(cats.has("OpenAI")).toBe(true);
     expect(cats.has("Google")).toBe(true);
+  });
+
+  it("supports per-run MCP injection (applyMcpServers defined)", () => {
+    expect(factoryAdapter.supportsMcpServers).toBe(true);
+  });
+});
+
+describe("syncFactoryMcpConfig / toDroidMcpEntry", () => {
+  it("encodes a stdio server as { type:'stdio', command, args, env }", () => {
+    const e = toDroidMcpEntry(makeServer({ kind: "stdio", name: "x", command: "node", args: ["s.js"], env: { K: "v" } }));
+    expect(e).toEqual({ type: "stdio", command: "node", args: ["s.js"], env: { K: "v" } });
+  });
+
+  it("encodes an http server as { type:'http', url, headers }", () => {
+    const e = toDroidMcpEntry(makeServer({ kind: "http", name: "remote", url: "https://mcp.example/mcp", headers: { Authorization: "Bearer t" } }));
+    expect(e).toEqual({ type: "http", url: "https://mcp.example/mcp", headers: { Authorization: "Bearer t" } });
+  });
+
+  it("writes <cwd>/.factory/mcp.json with the run's servers (project-local, not ~/.factory)", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "factory-mcp-"));
+    const file = syncFactoryMcpConfig(tmp, [makeServer({ kind: "stdio", name: "fs", command: "fs-mcp", args: [] })]);
+    expect(file).toBe(path.join(tmp, ".factory", "mcp.json"));
+    const out = JSON.parse(fs.readFileSync(file!, "utf8"));
+    expect(out.mcpServers.fs).toEqual({ type: "stdio", command: "fs-mcp", args: [] });
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("preserves the user's existing servers and strips the stale loom delegate entry", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "factory-mcp-"));
+    const file = path.join(tmp, ".factory", "mcp.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: { mine: { type: "stdio", command: "mine" }, loom: { type: "http", url: "http://x/runOLD" } } }));
+    syncFactoryMcpConfig(tmp, [makeServer({ kind: "stdio", name: "fs", command: "fs-mcp", args: [] })]);
+    const out = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(Object.keys(out.mcpServers).sort()).toEqual(["fs", "mine"]);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("does not create an empty file when there are no servers and no existing config", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "factory-mcp-"));
+    expect(syncFactoryMcpConfig(tmp, [])).toBeNull();
+    expect(fs.existsSync(path.join(tmp, ".factory", "mcp.json"))).toBe(false);
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 });

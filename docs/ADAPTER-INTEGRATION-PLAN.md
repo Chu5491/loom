@@ -98,8 +98,8 @@
 
 | Tier | 작업 | 파일 | 난이도 | 비고 |
 |------|------|------|--------|------|
-| **1** | **프리셋 18→34종 + `custom:` 안내** | `preset-models.ts`, `manifest.ts` | 🟢 | 모델 다양성 1위 노출 |
-| **1** | **MCP 주입 — 프로젝트-로컬 `<cwd>/.factory/mcp.json`**(devin 패턴; claude 인코더 `toClaudeMcpEntry` 재사용; 기존 사용자 항목 병합; 종료 시 정리) | `factory/src/index.ts`(`applyMcpServers`), `loadout.ts:55` 재사용 | 🟡 | 현재 office가 MCP 할당해도 droid에 미전달. **전역 `~/.factory` 금지** |
+| ✅ | 프리셋 18→**31종** + `custom:` (완료) | `preset-models.ts` | 🟢 | 모델 다양성 1위 |
+| ✅ | MCP 주입 — 프로젝트-로컬 `<cwd>/.factory/mcp.json`(devin 패턴, `toDroidMcpEntry`). 어댑터는 server import 불가 → claude 인코더 대신 동일스키마 자체 인코더. 빈 파일 skip(오염↓), stale loom 엔트리 제거 | `factory/src/index.ts`(`syncFactoryMcpConfig`/`applyMcpServers`) | 🟡 | **완료**(코드+테스트 6종). droid 실제 로드는 유료 키 라이브검증 대기 |
 | **2** | **`-o stream-json` + droid 스트림 이벤트 파싱**(현 `json` 최종객체만) | `index.ts`(buildCommand), `parse.ts`(droid 분기) | 🟡 | 단방향 JSONL → 기존 spawn 모델로 충분(RPC 불필요). **줄별 스키마 라이브 캡처 후** |
 | **2** | `captureActivityFromDisk` 토큰/비용 백필(세션 디스크 or `droid search --json`) | `index.ts` | 🟢 | devin `--export` 패턴 미러 |
 | **2** | 세션 저장 레이아웃 확정 → `sessionFiles` 정정 | `index.ts:81` | 🟢 | 현재 `~/.factory/sessions` 추정 |

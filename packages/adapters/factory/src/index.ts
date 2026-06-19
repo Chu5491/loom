@@ -1,5 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
 import { defineCliAdapter, homePath, findSessionPaths } from "@loom/adapter-utils";
-import type { AdapterConfig, BuiltCommand } from "@loom/core";
+import type { AdapterConfig, BuiltCommand, McpServer } from "@loom/core";
 
 export { factoryManifest } from "./manifest.js";
 export { factoryProbe } from "./probe.js";
@@ -64,6 +66,55 @@ export function extractDroidSessionId(chunk: string): string | null {
   return null;
 }
 
+const LOOM_DELEGATE = "loom";
+
+/** McpServer → droid `.factory/mcp.json` 항목. claude `.mcp.json` 과 동일 스키마:
+ *    stdio    → { type:"stdio", command, args, env }
+ *    http/sse → { type:"http"|"sse", url, headers }
+ *  exported for tests. */
+export function toDroidMcpEntry(s: McpServer): Record<string, unknown> {
+  if (s.kind === "stdio") {
+    return {
+      type: "stdio",
+      ...(s.command ? { command: s.command } : {}),
+      args: s.args,
+      ...(Object.keys(s.env).length > 0 ? { env: s.env } : {}),
+    };
+  }
+  return {
+    type: s.kind,
+    ...(s.url ? { url: s.url } : {}),
+    ...(Object.keys(s.headers).length > 0 ? { headers: s.headers } : {}),
+  };
+}
+
+/** `<cwd>/.factory/mcp.json` 에 mcpServers 를 merge-write. droid 는 MCP 설정파일
+ *  경로 플래그가 없어(claude --mcp-config 와 달리) 이 프로젝트-로컬 파일을 자동으로
+ *  읽는다 — user > folder > project 계층의 project 단계(헌법3: 전역 ~/.factory 불가침).
+ *  devin 의 .devin/config.local.json 과 같은 패턴. 사용자의 기존 서버는 보존하고 같은
+ *  이름만 이번 run 정의로 교체, runId 가 박힌 stale loom delegate 엔트리는 매번 제거.
+ *  주입할 것도 정리할 기존 파일도 없으면 빈 파일을 만들지 않는다(repo 오염 최소화).
+ *  exported for tests. */
+export function syncFactoryMcpConfig(cwd: string, servers: McpServer[]): string | null {
+  const file = path.join(cwd, ".factory", "mcp.json");
+  let existing: Record<string, unknown> = {};
+  let hadFile = false;
+  try {
+    existing = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+    hadFile = true;
+  } catch {
+    // 없거나 깨졌으면 새로 시작
+  }
+  const prev = { ...((existing.mcpServers ?? {}) as Record<string, unknown>) };
+  delete prev[LOOM_DELEGATE]; // stale transient loom 엔트리 제거
+  const next = { ...prev, ...Object.fromEntries(servers.map((s) => [s.name, toDroidMcpEntry(s)])) };
+  if (!hadFile && Object.keys(next).length === 0) return null;
+  const merged = { ...existing, mcpServers: next };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(merged, null, 2));
+  return file;
+}
+
 export const factoryAdapter = defineCliAdapter<DroidConfig>({
   kind: "factory",
   buildCommand: buildDroidCommand,
@@ -79,11 +130,15 @@ export const factoryAdapter = defineCliAdapter<DroidConfig>({
   extractSessionId: extractDroidSessionId,
   // 세션 정리 — droid 세션 = ~/.factory/sessions 아래(인증 후 생성, 레이아웃 미검증) — id 로 찾는다.
   sessionFiles: (sessionId) => findSessionPaths(homePath(".factory", "sessions"), sessionId),
-  // 도구/파일 단위 추출기(extractToolUses/Touched*)는 미정의 — droid json 은 토큰(usage)은
-  //   주지만 도구/파일 이벤트는 없다. droid 에서 그걸 받는 유일한 채널은 stream-jsonrpc 인데,
-  //   이는 *양방향* JSON-RPC(stdin: droid.initialize_session→add_user_message, stdout:
-  //   session_notification + request_permission/ask_user 역요청)라 loom 의 단방향 spawn
-  //   (prompt 1회→stdout 파싱) 모델과 구조가 다르다. 도입하려면 어댑터가 RPC 클라이언트를
-  //   구현해야 함 → 1차 보류. 인증 후 단방향 stream-json 스키마가 확인되면 그쪽으로 확장.
-  //   MCP 도 `droid mcp`·.factory/mcp.json 경로가 있으나 스키마 미검증이라 함께 보류.
+  // MCP 주입 — 프로젝트-로컬 <cwd>/.factory/mcp.json 자동읽기(devin 패턴, 헌법3 준수).
+  // servers 가 비어도 호출되지만(loadoutDir 항상 전달) sync 가 빈 파일은 안 만든다.
+  // 라이브 검증: factory 유료 키 필요(무료판 exec 불가) — 파일 형태는 단위테스트로 고정.
+  applyMcpServers: ({ args, servers, cwd }) => {
+    syncFactoryMcpConfig(cwd, servers);
+    return { args };
+  },
+  // 도구/파일 단위 추출기(extractToolUses/Touched*)는 아직 미정의 — droid json 출력은
+  //   토큰(usage)만 주고 도구/파일 이벤트가 없다. 풍부 활동은 -o stream-json(단방향
+  //   JSONL) 또는 stream-jsonrpc(양방향)가 필요 → 라이브 인증 후 별도 구현
+  //   (docs/ADAPTER-INTEGRATION-PLAN.md §5).
 });
