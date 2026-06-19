@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowUp, Bot, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, Crown, FilePen, FilePlus2, FileSearch, FileText, Info,
+  ArrowUp, Bot, Brain, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, Crown, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare,
   ListTodo, Loader2, NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
 } from "lucide-react";
@@ -905,6 +905,16 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
         {/* 완료 — 활동 카드 하나로 통합(시스템: 도구·파일·스킬·비용·시간 + 에이전트: 요약). */}
         {showCard ? <ActivityCard report={view.report} activity={activity} /> : null}
 
+        {/* 사고 과정(reasoning) — 길 수 있어 접어 둔다. opencode --thinking·codex reasoning. */}
+        {!running && view.reasoning ? (
+          <details className="rounded-2xl rounded-bl-md border border-border bg-muted/30 px-3 py-2">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+              <Brain className="size-3 text-primary" />{t("talk.report.reasoning")}
+            </summary>
+            <div className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">{view.reasoning}</div>
+          </details>
+        ) : null}
+
         {/* 본문 텍스트 — 리포트가 있으면 원문 산문은 접어 둔다(카드가 주인공). */}
         {isStartError ? (
           <ErrorLine text={runId.slice(4)} />
@@ -1198,6 +1208,7 @@ interface TraceItem {
 interface DerivedView {
   trace: TraceItem[];
   body: string;
+  reasoning?: string;
   report?: WorkReport;
   result?: Extract<OfficeEvent, { kind: "result" }>;
   errors: string[];
@@ -1350,12 +1361,14 @@ function ActivityCard({ report, activity }: { report?: WorkReport; activity: Act
 function deriveView(events: OfficeEvent[]): DerivedView {
   const trace: TraceItem[] = [];
   const texts: string[] = [];
+  const reasonings: string[] = [];
   const errors: string[] = [];
   let result: Extract<OfficeEvent, { kind: "result" }> | undefined;
   let loadout: { skills: string[]; mcp: string[]; delegate: boolean } | undefined;
   let changedFiles = 0;
   for (const e of events) {
     if (e.kind === "text") texts.push(e.text);
+    else if (e.kind === "reasoning") reasonings.push(e.text);
     else if (e.kind === "tool") trace.push({ kind: "tool", name: e.name, target: e.target });
     else if (e.kind === "file") {
       trace.push({ kind: "file", name: e.action === "edit" ? "Edit" : "Write", target: e.path, action: e.action });
@@ -1368,7 +1381,7 @@ function deriveView(events: OfficeEvent[]): DerivedView {
   // result 가 오면 그게 최종 전체 텍스트 — 누적 text 보다 우선.
   const rawBody = result?.text ?? texts.join("");
   const { body, report } = extractReport(rawBody);
-  return { trace, body, report, result, errors, changedFiles, loadout };
+  return { trace, body, reasoning: reasonings.length ? reasonings.join("\n\n") : undefined, report, result, errors, changedFiles, loadout };
 }
 
 // run 에 실린 스킬·MCP·위임 — 평문 CLI 도 "무엇을 쓸 수 있었나"를 보여주는 칩 줄.
