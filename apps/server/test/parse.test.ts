@@ -82,6 +82,16 @@ describe("parseLine", () => {
     expect(parseLine(line)).toEqual([{ kind: "reasoning", text: "planning" }]);
   });
 
+  it("captures codex cached_input_tokens (for cheaper cache-aware estimation)", () => {
+    const line = JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10000, output_tokens: 50, cached_input_tokens: 9000 } });
+    expect(parseLine(line)).toEqual([{ kind: "usage", inputTokens: 10000, outputTokens: 50, cachedInputTokens: 9000 }]);
+  });
+
+  it("captures opencode cache.read tokens from step_finish", () => {
+    const line = JSON.stringify({ type: "step_finish", part: { cost: 0, tokens: { input: 13084, output: 15, cache: { read: 13000, write: 0 } } } });
+    expect(parseLine(line)).toEqual([{ kind: "usage", costUsd: 0, inputTokens: 13084, outputTokens: 15, cachedInputTokens: 13000 }]);
+  });
+
   it("captures claude thinking blocks as reasoning, in order with text", () => {
     const line = JSON.stringify({
       type: "assistant",

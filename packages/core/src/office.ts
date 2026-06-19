@@ -157,7 +157,9 @@ export type OfficeEvent =
   | { kind: "result"; text: string; costUsd?: number; sessionId?: string }
   // 토큰/비용 사용량 — result 와 별개 라인으로 오는 CLI(codex turn.completed,
   // opencode step_finish)용. result 텍스트 합성을 건드리지 않고 누적된다.
-  | { kind: "usage"; costUsd?: number; inputTokens?: number; outputTokens?: number }
+  // cachedInputTokens = inputTokens 중 캐시 적중분(재처리 아닌 캐시 읽기 → 단가 ~10%).
+  // 비용 추정 정확도에 쓰인다(loom 안정 시스템프롬프트는 캐시 적중률을 높임).
+  | { kind: "usage"; costUsd?: number; inputTokens?: number; outputTokens?: number; cachedInputTokens?: number }
   | { kind: "error"; message: string };
 
 /** 등록된 로컬 작업 디렉토리. 머신별 경로라 휴대 안 됨 → data/(gitignore)에 기록.

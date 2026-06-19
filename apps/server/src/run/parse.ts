@@ -64,9 +64,9 @@ export function parseLine(line: string): OfficeEvent[] {
     ];
     // 일부 CLI(factory/droid·claude)는 최종 result 에 usage 토큰을 함께 준다. cost 직접값이
     // 없는 droid 는 이 토큰으로 엔진이 단가 추정, claude 는 total_cost_usd 가 우선이라 표시용.
-    const u = j.usage as { input_tokens?: unknown; output_tokens?: unknown } | undefined;
+    const u = j.usage as { input_tokens?: unknown; output_tokens?: unknown; cache_read_input_tokens?: unknown } | undefined;
     if (u && (num(u.input_tokens) || num(u.output_tokens))) {
-      out.push({ kind: "usage", inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens) });
+      out.push({ kind: "usage", inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens), cachedInputTokens: num(u.cache_read_input_tokens) });
     }
     return out;
   }
@@ -101,7 +101,7 @@ export function parseLine(line: string): OfficeEvent[] {
   // cost 는 안 줌 → engine 이 모델 단가로 추정.
   if (type === "turn.completed") {
     const u = j.usage as Record<string, unknown> | undefined;
-    if (u) return [{ kind: "usage", inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens) }];
+    if (u) return [{ kind: "usage", inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens), cachedInputTokens: num(u.cached_input_tokens) }];
   }
 
   // codex 실패 턴 — {type:"turn.failed", error:{message}}. 안 잡으면 실패가 무음(빈 run).
@@ -113,8 +113,8 @@ export function parseLine(line: string): OfficeEvent[] {
   // opencode 토큰+비용 — {type:"step_finish", part:{cost, tokens:{input, output, ...}}}.
   // cost 를 직접 보고(유료 모델은 실값, 무료는 0).
   if (type === "step_finish") {
-    const sp = j.part as { cost?: unknown; tokens?: { input?: unknown; output?: unknown } } | undefined;
-    if (sp) return [{ kind: "usage", costUsd: num(sp.cost), inputTokens: num(sp.tokens?.input), outputTokens: num(sp.tokens?.output) }];
+    const sp = j.part as { cost?: unknown; tokens?: { input?: unknown; output?: unknown; cache?: { read?: unknown } } } | undefined;
+    if (sp) return [{ kind: "usage", costUsd: num(sp.cost), inputTokens: num(sp.tokens?.input), outputTokens: num(sp.tokens?.output), cachedInputTokens: num(sp.tokens?.cache?.read) }];
   }
 
   // codex (신형): {type:"item.completed", item:{type:"agent_message"|"command_execution"|...}}

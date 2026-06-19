@@ -37,10 +37,24 @@ function rateFor(model: string | undefined): Rate {
   return DEFAULT;
 }
 
-/** 입력/출력 토큰 → 추정 USD. 토큰이 둘 다 없으면 null(추정 불가). */
-export function estimateCost(model: string | undefined, inputTokens?: number, outputTokens?: number): number | null {
+// 캐시 적중 input 의 단가 배수 — 캐시 읽기는 재처리가 아니라 ~10%(OpenAI·Anthropic 공통
+// 근사). loom 의 안정 시스템프롬프트 설계는 캐시 적중률을 높여, 캐시분을 풀가격으로 치면
+// 비용이 과대평가된다. 정확한 청구는 제공자 콘솔이 진실 — 여기선 근사 보정.
+const CACHE_RATE = 0.1;
+
+/** 입력/출력 토큰 → 추정 USD. 토큰이 둘 다 없으면 null(추정 불가).
+ *  cachedInputTokens(inputTokens 의 부분집합)는 캐시 단가로 할인한다. */
+export function estimateCost(
+  model: string | undefined,
+  inputTokens?: number,
+  outputTokens?: number,
+  cachedInputTokens?: number,
+): number | null {
   if (!inputTokens && !outputTokens) return null;
   const r = rateFor(model);
-  const cost = ((inputTokens ?? 0) * r.input + (outputTokens ?? 0) * r.output) / 1_000_000;
+  const input = inputTokens ?? 0;
+  const cached = Math.min(cachedInputTokens ?? 0, input); // 부분집합 보장
+  const fresh = input - cached;
+  const cost = (fresh * r.input + cached * r.input * CACHE_RATE + (outputTokens ?? 0) * r.output) / 1_000_000;
   return Math.round(cost * 1_000_000) / 1_000_000; // 6자리 반올림
 }

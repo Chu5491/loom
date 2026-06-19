@@ -97,6 +97,8 @@ interface RunState {
   costReported?: boolean;
   inputTokens?: number;
   outputTokens?: number;
+  /** inputTokens 중 캐시 적중분 — 비용 추정 시 ~10% 단가로 할인(과대평가 방지). */
+  cachedInputTokens?: number;
   /** 비용 추정용 모델 id — run() 이 adapterConfig 에서 채운다. */
   model?: string;
   sessionId?: string;
@@ -506,6 +508,7 @@ function emit(state: RunState, events: OfficeEvent[]): void {
       // 토큰 누적(codex/opencode 는 스텝마다 보고). cost 가 있으면(opencode) 합산.
       if (ev.inputTokens != null) state.inputTokens = (state.inputTokens ?? 0) + ev.inputTokens;
       if (ev.outputTokens != null) state.outputTokens = (state.outputTokens ?? 0) + ev.outputTokens;
+      if (ev.cachedInputTokens != null) state.cachedInputTokens = (state.cachedInputTokens ?? 0) + ev.cachedInputTokens;
       if (ev.costUsd != null) { state.costUsd = (state.costUsd ?? 0) + ev.costUsd; state.costReported = true; }
     }
     // plain-text CLI(devin/antigravity)는 줄 단위 text 이벤트 — 누적해야 여러 줄
@@ -918,7 +921,7 @@ function finish(state: RunState, status: RunInfo["status"], exitCode: number | n
   // CLI 가 비용을 안 줬는데(codex) 토큰은 있으면 모델 단가로 추정 — 예산 가드가
   // claude 외 CLI 에서도 의미를 갖게. opencode 는 cost 를 직접 주므로 추정 안 함.
   if (!state.costReported && (state.inputTokens || state.outputTokens)) {
-    state.costUsd = estimateCost(state.model, state.inputTokens, state.outputTokens) ?? state.costUsd;
+    state.costUsd = estimateCost(state.model, state.inputTokens, state.outputTokens, state.cachedInputTokens) ?? state.costUsd;
   }
   // 추정 = CLI 가 실값을 안 줬는데 우리가 토큰으로 채운 경우(codex·devin). UI 가 "~" 표시.
   const costEstimated = !state.costReported && state.costUsd != null;
