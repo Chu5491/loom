@@ -42,6 +42,11 @@ describe("buildOpencodeCommand", () => {
     expect(args).toEqual(["run", "--format", "json", "--continue", "--model", "x"]);
   });
 
+  it("appends --thinking when thinking=true", () => {
+    expect(buildOpencodeCommand({ thinking: true }).args).toContain("--thinking");
+    expect(buildOpencodeCommand({}).args).not.toContain("--thinking");
+  });
+
   it("appends --session when sessionId is given", () => {
     const { args } = buildOpencodeCommand({ sessionId: "sess-123" });
     expect(args[args.indexOf("--session") + 1]).toBe("sess-123");

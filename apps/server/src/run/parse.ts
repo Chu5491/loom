@@ -74,6 +74,8 @@ export function parseLine(line: string): OfficeEvent[] {
   // opencode 텍스트
   const part = j.part as { text?: unknown; tool?: unknown; state?: { input?: unknown } } | undefined;
   if (type === "text" && str(part?.text)) return [{ kind: "text", text: str(part!.text)! }];
+  // opencode 사고과정(--thinking 시) — {type:"reasoning", part:{text}}.
+  if (type === "reasoning" && str(part?.text)) return [{ kind: "reasoning", text: str(part!.text)! }];
 
   // claude assistant 메시지(텍스트 + tool_use)
   const msg = j.message as { content?: unknown } | undefined;
@@ -116,6 +118,11 @@ export function parseLine(line: string): OfficeEvent[] {
   if (type === "item.completed") {
     const item = j.item as Record<string, unknown> | undefined;
     if (item?.type === "agent_message" && str(item.text)) return [{ kind: "text", text: str(item.text)! }];
+    // codex 사고과정 — {item:{type:"reasoning", text|summary}}. 필드는 라이브 재확인 권장.
+    if (item?.type === "reasoning") {
+      const rt = str(item.text) ?? str(item.summary);
+      if (rt) return [{ kind: "reasoning", text: rt }];
+    }
     if (item?.type === "command_execution" && str(item.command)) {
       return [{ kind: "tool", name: "shell", target: str(item.command)!.slice(0, 80) }];
     }

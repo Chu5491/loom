@@ -51,6 +51,13 @@ export const opencodeManifest: AdapterManifest = {
       ],
     },
     {
+      kind: "boolean",
+      key: "thinking",
+      label: "Show reasoning",
+      help: "--thinking. 모델 사고과정(reasoning)을 스트림에 노출. 추론 토큰이 과금될 수 있음.",
+      group: "basic",
+    },
+    {
       kind: "string",
       key: "agent",
       label: "Agent profile",

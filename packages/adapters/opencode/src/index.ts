@@ -24,6 +24,9 @@ export interface OpencodeConfig extends AdapterConfig {
    *  high/xhigh(OpenAI reasoning_effort), high/max(Anthropic thinking budget),
    *  low/high(Google). claude --effort·codex model_reasoning_effort 의 opencode 짝. */
   variant?: string;
+  /** 사고과정(reasoning) 블록을 스트림에 노출(--thinking). 켜야 reasoning 이벤트가
+   *  나온다. 추론 토큰이 과금되므로 opt-in. */
+  thinking?: boolean;
 }
 
 export function buildOpencodeCommand(config: OpencodeConfig = {}): BuiltCommand {
@@ -33,6 +36,7 @@ export function buildOpencodeCommand(config: OpencodeConfig = {}): BuiltCommand 
   if (config.sessionId) args.push("--session", config.sessionId);
   if (config.model) args.push("--model", config.model);
   if (config.variant) args.push("--variant", config.variant);
+  if (config.thinking) args.push("--thinking");
   if (config.agent) args.push("--agent", config.agent);
   if (config.extraArgs?.length) args.push(...config.extraArgs);
   return { command, args };

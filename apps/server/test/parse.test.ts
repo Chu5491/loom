@@ -71,4 +71,14 @@ describe("parseLine", () => {
     const f = JSON.stringify({ type: "turn.failed", error: { message: "rate limited" } });
     expect(parseLine(f)).toEqual([{ kind: "error", message: "rate limited" }]);
   });
+
+  it("captures opencode reasoning (--thinking) as a reasoning event", () => {
+    const line = JSON.stringify({ type: "reasoning", part: { text: "let me think" } });
+    expect(parseLine(line)).toEqual([{ kind: "reasoning", text: "let me think" }]);
+  });
+
+  it("captures codex reasoning item as a reasoning event", () => {
+    const line = JSON.stringify({ type: "item.completed", item: { type: "reasoning", text: "planning" } });
+    expect(parseLine(line)).toEqual([{ kind: "reasoning", text: "planning" }]);
+  });
 });

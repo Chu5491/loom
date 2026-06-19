@@ -144,6 +144,9 @@ export interface Office {
  *  raw 는 항상 디스크에 보존(Raw는 진실, Parsed는 경험). */
 export type OfficeEvent =
   | { kind: "text"; text: string }
+  // 모델 사고과정(reasoning) — 답변 텍스트와 분리해 보존한다. opencode --thinking,
+  // codex reasoning 아이템에서 온다. result 텍스트 합성(lastText)엔 섞지 않는다.
+  | { kind: "reasoning"; text: string }
   | { kind: "tool"; name: string; target?: string }
   | { kind: "file"; path: string; action: "edit" | "write" }
   // run 시작 시 엔진이 1회 발화 — 이 run 에 실린 스킬·MCP·위임(loadout). 평문 CLI
