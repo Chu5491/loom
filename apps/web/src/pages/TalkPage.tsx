@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowUp, Bot, Brain, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, Crown, FilePen, FilePlus2, FileSearch, FileText, Info,
+  ArrowUp, Bot, Brain, CalendarClock, Check, ChevronDown, ChevronRight, CirclePlay, Coins, Crown, FilePen, FilePlus2, FileSearch, FileText, Info,
   FolderGit2, FolderOpen, GitBranch, Globe, Image as ImageIcon, MessagesSquare,
   ListTodo, Loader2, NotebookPen, Paperclip, Pencil, Plug, RotateCcw, ScanSearch, Sparkles, Terminal, ThumbsDown, ThumbsUp, Trash2, Users, Workflow, Wrench, X,
 } from "lucide-react";
@@ -775,8 +775,10 @@ function AgentBubble({ agent, fromAgent, runId, run, startedAt, workflows, isLas
     const durationMs = run?.startedAt && run?.endedAt
       ? Math.max(0, new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime())
       : undefined;
-    return { tools, files, loadout: view.loadout, costUsd: view.result?.costUsd, costEstimated: run?.costEstimated, durationMs };
-  }, [view.trace, view.loadout, view.result, run?.startedAt, run?.endedAt, run?.costEstimated]);
+    // 비용: claude 는 result 에 실값, 나머지(codex/factory/devin/opencode)는 finish 후
+    // run.costUsd(실값/추정)에 채워진다 — 둘 다 폴백해 모든 CLI 가 카드에 비용을 보이게.
+    return { tools, files, loadout: view.loadout, costUsd: view.result?.costUsd ?? run?.costUsd ?? undefined, costEstimated: run?.costEstimated, durationMs, tokens: view.tokens };
+  }, [view.trace, view.loadout, view.result, view.tokens, run?.startedAt, run?.endedAt, run?.costEstimated, run?.costUsd]);
 
   const hasActivity = activity.tools.length > 0 || activity.files.length > 0
     || (!!activity.loadout && (activity.loadout.skills.length > 0 || activity.loadout.mcp.length > 0));
@@ -1214,6 +1216,8 @@ interface DerivedView {
   errors: string[];
   changedFiles: number;
   loadout?: { skills: string[]; mcp: string[]; delegate: boolean };
+  /** 누적 토큰(usage 이벤트) — 입력·출력·캐시 적중분. S5 가 캡처, ActivityCard 가 표시. */
+  tokens?: { input: number; output: number; cached: number };
 }
 
 // 도구 표시명 정리 — mcp__server__tool → server·tool, 그 외는 그대로.
@@ -1234,6 +1238,7 @@ interface ActivityData {
   costUsd?: number;
   costEstimated?: boolean;
   durationMs?: number;
+  tokens?: { input: number; output: number; cached: number };
 }
 
 // 활동 카드 — 시스템이 파싱한 사실(도구·파일·스킬·비용·시간) + 에이전트 요약(report).
@@ -1241,7 +1246,8 @@ interface ActivityData {
 function ActivityCard({ report, activity }: { report?: WorkReport; activity: ActivityData }) {
   const { t } = useI18n();
   const has = (a?: unknown[]) => Array.isArray(a) && a.length > 0;
-  const { tools, files, loadout, costUsd, costEstimated, durationMs } = activity;
+  const { tools, files, loadout, costUsd, costEstimated, durationMs, tokens } = activity;
+  const fmtTok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
   // report.files(에이전트 주장)보다 시스템이 잡은 file 이벤트를 우선(사실).
   const fileList = files.length ? files : (report?.files ?? []);
   const totalToolCalls = tools.reduce((n, x) => n + x.count, 0);
@@ -1257,6 +1263,14 @@ function ActivityCard({ report, activity }: { report?: WorkReport; activity: Act
   if (fileList.length > 0) stats.push({ icon: <FilePen className="size-3" />, label: t("talk.act.files", { n: String(fileList.length) }) });
   if (durationMs != null) stats.push({ icon: <Terminal className="size-3" />, label: fmtDuration(durationMs) });
   if (costUsd != null && costUsd > 0) stats.push({ icon: <Sparkles className="size-3" />, label: `${costEstimated ? "~" : ""}$${costUsd.toFixed(4)}` });
+  // 토큰(입력↑/출력↓) + 캐시 적중률 — loom 의 안정 시스템프롬프트가 캐시를 높이는 가성비 신호.
+  if (tokens && (tokens.input > 0 || tokens.output > 0)) {
+    const pct = tokens.input > 0 && tokens.cached > 0 ? Math.round((tokens.cached / tokens.input) * 100) : 0;
+    stats.push({
+      icon: <Coins className="size-3" />,
+      label: `↑${fmtTok(tokens.input)} ↓${fmtTok(tokens.output)}${pct > 0 ? ` · ${t("talk.act.cached")} ${pct}%` : ""}`,
+    });
+  }
 
   return (
     <div className="mb-2 overflow-hidden rounded-2xl rounded-bl-md border border-primary/25 bg-card shadow-[var(--shadow-glow-sm)]">
@@ -1366,6 +1380,7 @@ function deriveView(events: OfficeEvent[]): DerivedView {
   let result: Extract<OfficeEvent, { kind: "result" }> | undefined;
   let loadout: { skills: string[]; mcp: string[]; delegate: boolean } | undefined;
   let changedFiles = 0;
+  let inT = 0, outT = 0, cachedT = 0;
   for (const e of events) {
     if (e.kind === "text") texts.push(e.text);
     else if (e.kind === "reasoning") reasonings.push(e.text);
@@ -1376,12 +1391,17 @@ function deriveView(events: OfficeEvent[]): DerivedView {
     } else if (e.kind === "handoff") trace.push({ kind: "handoff", name: `@${e.toAgent}`, target: e.reason });
     else if (e.kind === "loadout") loadout = { skills: e.skills, mcp: e.mcp, delegate: e.delegate };
     else if (e.kind === "result") result = e;
+    else if (e.kind === "usage") { inT += e.inputTokens ?? 0; outT += e.outputTokens ?? 0; cachedT += e.cachedInputTokens ?? 0; }
     else if (e.kind === "error") errors.push(e.message);
   }
   // result 가 오면 그게 최종 전체 텍스트 — 누적 text 보다 우선.
   const rawBody = result?.text ?? texts.join("");
   const { body, report } = extractReport(rawBody);
-  return { trace, body, reasoning: reasonings.length ? reasonings.join("\n\n") : undefined, report, result, errors, changedFiles, loadout };
+  return {
+    trace, body, reasoning: reasonings.length ? reasonings.join("\n\n") : undefined,
+    report, result, errors, changedFiles, loadout,
+    tokens: inT || outT ? { input: inT, output: outT, cached: cachedT } : undefined,
+  };
 }
 
 // run 에 실린 스킬·MCP·위임 — 평문 CLI 도 "무엇을 쓸 수 있었나"를 보여주는 칩 줄.
