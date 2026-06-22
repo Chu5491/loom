@@ -86,14 +86,13 @@ export interface CliAdapter {
     ctx: { cwd: string; since: number },
     config: AdapterConfig,
   ): Promise<string | null>;
-  /** Recover the agent's activity (tokens, cache, cost, tool calls) from the
-   *  CLI's own on-disk export, for plain-text CLIs (devin) whose stdout carries
-   *  no machine-readable activity. Called after exit. Tokens feed the engine's
-   *  cost estimate; if the export reports real cost (`costUsd`), the engine uses
-   *  that instead of the token estimate. `tools` backfills the activity card /
-   *  task detail so a plain-text CLI shows what it reached for, like the
-   *  stream-json CLIs. `since` (epoch-ms, pre-spawn) lets the adapter ignore a
-   *  stale export. Disk *read* only (헌법 3조). */
+  /** Recover the agent's activity (tokens, cache, tool calls) from the CLI's
+   *  own on-disk export, for plain-text CLIs (devin) whose stdout carries no
+   *  machine-readable activity. Called after exit. Tokens feed the engine's cost
+   *  estimate (devin bills in ACU → approximate USD; the export carries no real
+   *  USD cost). `tools` backfills the activity card / task detail so a plain-text
+   *  CLI shows what it reached for, like the stream-json CLIs. `since` (epoch-ms,
+   *  pre-spawn) lets the adapter ignore a stale export. Disk *read* only (헌법 3조). */
   captureActivityFromDisk?(
     ctx: { cwd: string; since: number },
     config: AdapterConfig,
@@ -102,8 +101,6 @@ export interface CliAdapter {
     outputTokens?: number;
     /** input 중 캐시 적중분 — 비용 추정 시 할인 단가 적용(없으면 미적용). */
     cachedInputTokens?: number;
-    /** export 가 실비용을 보고하면 — 엔진이 토큰×단가 추정 대신 이 값을 쓴다. */
-    costUsd?: number;
     tools?: { name: string; target?: string }[];
   } | null>;
   /** loom 이 만든 이 세션이 자기 CLI store 에 남긴 파일 경로들(정리용). 사용자가

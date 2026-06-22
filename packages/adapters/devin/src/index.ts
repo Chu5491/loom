@@ -22,15 +22,15 @@ export interface DevinConfig extends AdapterConfig {
 // devin 은 stdout 에 토큰/비용을 안 흘린다(평문). 대신 `--export` 가 턴마다 ATIF
 // 대화 파일을 떨군다(설치본에 `--output-format` 플래그는 없음 → `--export` 단독이
 // ATIF). 매 run cwd 루트의 dotfile 에 써두고, 종료 후 captureDevinActivity 가 읽어
-// 토큰·캐시·비용을 돌려주고 파일을 지운다(정리).
-// ATIF 스키마는 버전마다 필드명이 다르다 — v1.4 는 `steps[].metadata.metrics`(스텝별),
-// v1.7 은 `final_metrics`(집계). devin 2026.5.26-0+ 는 export 에 cost·cache 를 추가
-// (changelog: total_input_tokens/output_tokens/cache_read_tokens/cache_creation_tokens/
-// committed_credit_cost/committed_acu_cost/generation_model). readMetrics 가 신·구 필드명을
-// 모두 시도해 한 파서로 흡수한다.
-// 비용: devin CLI 는 ACU 과금(USD 환산율은 export 에 없음). committed_credit_cost 를
-// USD 로 본다(credit≈USD 가정) — 정확한 위치·누적여부·credit↔USD 관계는 다음 실
-// devin run(ACU 소모)에서 검증. 비용 필드가 없으면 엔진이 토큰×단가로 추정(폴백 유지).
+// 토큰·캐시를 돌려주고 파일을 지운다(정리).
+// ATIF 스키마는 버전마다 토큰 필드명이 다르다 — `steps[].metadata.metrics`(구) /
+// `final_metrics`(집계) / `steps[].metrics`(신). readMetrics 가 별칭을 모두 시도해 흡수.
+// 비용(실측 2026.7.23, swe-1-6-slow): changelog 는 `--export --output-format atif` 가
+// committed_credit_cost/committed_acu_cost 를 넣는다지만, 설치본엔 `--output-format`
+// 플래그가 없고 `--export` 단독 산출(schema_version)엔 **cost 필드가 아예 없다**(토큰·
+// 캐시만 — final_metrics.total_prompt/completion/cached_tokens). 따라서 비용은 USD 로
+// 못 줘서 엔진이 토큰×단가로 추정(devin=ACU 과금, USD 환산율은 어디에도 없음). cost
+// 가 export 에 들어오게 되면 그때 매핑(현재는 정직하게 추정).
 export const DEVIN_EXPORT_REL = ".loom-devin-export.json";
 
 export function buildDevinCommand(config: DevinConfig = {}): BuiltCommand {
@@ -50,7 +50,6 @@ export interface DevinActivity {
   inputTokens?: number;
   outputTokens?: number;
   cachedInputTokens?: number;
-  costUsd?: number;
   tools?: { name: string; target?: string }[];
 }
 
@@ -65,9 +64,10 @@ function toolTarget(argsObj: unknown): string | undefined {
   return typeof first === "string" ? first : undefined;
 }
 
-// ATIF 스키마가 버전마다 토큰/비용 필드명을 바꾼다(2026.5.26-0 에서 cost·cache 추가).
+// ATIF 스키마가 버전마다 토큰 필드명을 바꾼다(실측 2026.7.23: final_metrics 는
+// total_prompt/completion/cached_tokens, steps[].metrics 는 prompt/completion/cached_tokens).
 // metrics-유사 객체 하나에서 알려진 별칭을 모두 시도 — 신·구 export 를 한 파서로 흡수.
-function readMetrics(o: unknown): { in?: number; out?: number; cache?: number; credit?: number } {
+function readMetrics(o: unknown): { in?: number; out?: number; cache?: number } {
   const m = o as Record<string, unknown> | undefined;
   if (!m || typeof m !== "object") return {};
   const num = (...keys: string[]): number | undefined => {
@@ -77,12 +77,11 @@ function readMetrics(o: unknown): { in?: number; out?: number; cache?: number; c
   return {
     in: num("total_input_tokens", "input_tokens", "total_prompt_tokens", "prompt_tokens"),
     out: num("total_completion_tokens", "output_tokens", "completion_tokens"),
-    cache: num("cache_read_tokens", "total_cached_tokens", "cache_read_input_tokens"),
-    credit: num("committed_credit_cost", "credit_cost"),
+    cache: num("cache_read_tokens", "total_cached_tokens", "cached_tokens", "cache_read_input_tokens"),
   };
 }
 
-/** devin `--export` ATIF 파일 파싱 — 토큰·캐시·비용(집계 또는 스텝별) + 도구 호출
+/** devin `--export` ATIF 파일 파싱 — 토큰·캐시(집계 또는 스텝별) + 도구 호출
  *  (steps[].tool_calls[].function_name + arguments). 평문 stdout 엔 없어서 여기서
  *  되살린다. since 보다 오래된 파일은 이전 run 잔재. exported for tests. */
 export function parseDevinActivity(data: unknown): DevinActivity | null {
@@ -97,10 +96,6 @@ export function parseDevinActivity(data: unknown): DevinActivity | null {
     if (agg.out != null) out = agg.out;
     if (agg.cache != null) cache = agg.cache;
   }
-  // 비용(credit→USD): 집계 우선. 스텝별이면 committed=누적 가정 → 최댓값을 총비용으로.
-  let credit = fm.credit ?? rootM.credit;
-  let stepCreditMax: number | undefined;
-
   const tools: { name: string; target?: string }[] = [];
   const steps = root?.steps;
   if (Array.isArray(steps)) {
@@ -117,7 +112,6 @@ export function parseDevinActivity(data: unknown): DevinActivity | null {
         if (sm.out != null) out += sm.out;
         if (sm.cache != null) cache += sm.cache;
       }
-      if (sm.credit != null) stepCreditMax = stepCreditMax == null ? sm.credit : Math.max(stepCreditMax, sm.credit);
       if (Array.isArray(step?.tool_calls)) {
         for (const tc of step.tool_calls) {
           if (typeof tc?.function_name === "string") {
@@ -127,13 +121,11 @@ export function parseDevinActivity(data: unknown): DevinActivity | null {
       }
     }
   }
-  if (credit == null) credit = stepCreditMax;
-  if (!inp && !out && !cache && credit == null && tools.length === 0) return null;
+  if (!inp && !out && !cache && tools.length === 0) return null;
   return {
     ...(inp ? { inputTokens: inp } : {}),
     ...(out ? { outputTokens: out } : {}),
     ...(cache ? { cachedInputTokens: cache } : {}),
-    ...(credit != null ? { costUsd: credit } : {}),
     ...(tools.length ? { tools } : {}),
   };
 }

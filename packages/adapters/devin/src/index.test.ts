@@ -261,24 +261,30 @@ describe("parseDevinActivity", () => {
     expect(parseDevinActivity({})).toBeNull();
   });
 
-  // 신 ATIF 스키마(devin 2026.5.26-0+): final_metrics 가 새 필드명 + cache + cost 를 담는다.
-  it("reads the new field names (total_input_tokens/output_tokens) + cache_read_tokens", () => {
+  // changelog 가 적은 신 필드명(total_input_tokens/output_tokens/cache_read_tokens) — 설치본
+  // 실 export 엔 안 나오지만 방어적 별칭이 잡는지 확인(미래/다른 빌드 대비).
+  it("reads the changelog field-name aliases (total_input_tokens/output_tokens/cache_read_tokens)", () => {
     const data = { final_metrics: { total_input_tokens: 500, output_tokens: 50, cache_read_tokens: 200 } };
     expect(parseDevinActivity(data)).toEqual({ inputTokens: 500, outputTokens: 50, cachedInputTokens: 200 });
   });
 
-  it("maps committed_credit_cost to costUsd (real cost replaces token estimate)", () => {
-    const data = { final_metrics: { total_input_tokens: 100, output_tokens: 10, committed_credit_cost: 0.42 } };
-    expect(parseDevinActivity(data)).toEqual({ inputTokens: 100, outputTokens: 10, costUsd: 0.42 });
+  // 설치본 실측 스키마(2026.7.23): final_metrics 집계(total_prompt/completion/cached_tokens).
+  // cost 필드는 없음 — 토큰·캐시만.
+  it("reads the real installed-build schema (final_metrics total_*_tokens, no cost)", () => {
+    const data = {
+      final_metrics: { total_prompt_tokens: 14731, total_completion_tokens: 44, total_cached_tokens: 2432 },
+      steps: [{ step_id: "s1", source: "agent", message: "PONG", metrics: { prompt_tokens: 14731, completion_tokens: 44, cached_tokens: 2432 } }],
+    };
+    expect(parseDevinActivity(data)).toEqual({ inputTokens: 14731, outputTokens: 44, cachedInputTokens: 2432 });
   });
 
-  // committed_* 가 스텝별(누적)로 올 때 — 최댓값(=마지막 누적)을 총비용으로.
-  it("takes the max committed_credit_cost across steps (cumulative) when no aggregate", () => {
+  // 집계가 없으면 steps[].metrics(prompt/completion/cached_tokens)를 합산.
+  it("sums step-level prompt/completion/cached_tokens when no final_metrics", () => {
     const data = { steps: [
-      { metrics: { input_tokens: 30, output_tokens: 3, committed_credit_cost: 0.10 } },
-      { metrics: { input_tokens: 40, output_tokens: 4, committed_credit_cost: 0.25 } },
+      { metrics: { prompt_tokens: 30, completion_tokens: 3, cached_tokens: 5 } },
+      { metrics: { prompt_tokens: 40, completion_tokens: 4, cached_tokens: 6 } },
     ] };
-    expect(parseDevinActivity(data)).toEqual({ inputTokens: 70, outputTokens: 7, costUsd: 0.25 });
+    expect(parseDevinActivity(data)).toEqual({ inputTokens: 70, outputTokens: 7, cachedInputTokens: 11 });
   });
 });
 

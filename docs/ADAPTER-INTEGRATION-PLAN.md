@@ -84,13 +84,13 @@
 |------|------|------|--------|------|
 | **1** | **`read_config_from` 6키 전부 false** (현 3키 → `opencode,vscode,zed` 누수) | `index.ts:244`, 테스트 | 🟢 | 헌법2 누수 차단 |
 | **1** | manifest permission-mode 문구 정정(`auto`→Devin 기본; 값 `normal\|dangerous\|bypass` vs 실측 `auto\|smart\|dangerous` 혼재) | `manifest.ts:50,80` | 🟢 | 어댑터는 `dangerous`만 방출(안전) |
-| **2** | **ATIF 실비용 추출** — `committed_acu_cost`/`committed_credit_cost`/`generation_model`(§S4) | `index.ts:63`(`parseDevinActivity`), `define.ts` 반환형, `engine.ts:666` | 🟡 | 어댑터 "비용필드 없음" 주석 stale. **빌드에 필드 존재 먼저 확인** |
+| ✅확인(2026-06-22) | ~~ATIF 실비용 추출~~ — **실측: `--export` 산출에 cost 필드 없음**(changelog 는 `--output-format atif` 기준이나 플래그 부재). 토큰·캐시(total_prompt/completion/cached_tokens)만 캡처 **구현 완료** | `index.ts`(parseDevinActivity readMetrics) | — | 비용은 추정 유지 — 실비용은 acp 만 가능 |
 | **2** | MCP 주입을 `--config <PATH>`(loadout 디렉토리)로 — repo의 `.devin/` 오염 제거 | `index.ts`(`syncDevinMcpConfig`), manifest 경고 제거 | 🟡 | **확인 필요: `--config`가 교체냐 레이어냐**(교체면 사용자 MCP 재병합) |
 | **2** | 세션 완전정리(db row + 파일) | `index.ts:198`(`sessionFiles`) | 🟡 | `devin` 네이티브 삭제 우선, 없으면 가드된 sqlite row 삭제 |
 | **3** | **`acp` 모드** — 실시간 구조화 활동(plain-text+사후 ATIF 스택 전체 대체) | `devin/src`(ACP 클라이언트, §S7), `engine.ts` 캡처 제거 | 🔴 | JSON-RPC 클라이언트(initialize→session/new→session/prompt, session/update 파싱). config 플래그 뒤 프로토타입 |
 | **—** | ~~`--agent-config`/AGENT.md 페르소나~~ | — | — | 헌법2 경계(자동 import) + 이미 compose로 주입 → **스킵** |
 
-**확인 필요(라이브):** ATIF 비용필드 존재(`devin -p "hi" --export /tmp/x.json` grep), `--config` 의미(교체/레이어), `acp` `session/update`가 토큰·비용 운반 여부, 세션 저장이 db인지 파일인지.
+**확인 필요(라이브):** ~~ATIF 비용필드 존재~~ → **확인됨(2026-06-22): cost 필드 없음**(토큰·캐시만 실재). `--config` 의미(교체/레이어), `acp` `session/update`가 토큰·비용 운반 여부, 세션 저장이 db인지 파일인지.
 
 ---
 

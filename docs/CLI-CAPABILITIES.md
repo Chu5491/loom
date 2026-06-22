@@ -26,7 +26,7 @@
 | **claude-code** | `-p/--print` | `--output-format stream-json` ✅ | ✅ 실값 `total_cost_usd` | ✅ (+cache) | ✅ | ✅ | △ 가능* | ✅ `--resume` + **`--session-id`(caller-set, 결정적)** | ✅ `--mcp-config --strict-mcp-config`(per-run 파일) | ✅ `--append-system-prompt` |
 | **codex** | `exec --json` | ✅ JSONL(`item.*`) | 🟡 추정(토큰×단가) | ✅ (+cache/reasoning) | ✅ | ✅** | △ 가능* | ✅ `exec resume` | ✅ `-c mcp_servers.*`(per-run, stdio+http; **SSE 불가**) | ❌ 합성 |
 | **opencode** | `run --format json` | ✅ JSONL | ✅ 실값(무료=$0) | ✅ (+cache/reasoning) | ✅ | ✅ | ✅ `--thinking`* | ✅ `--session`/`--fork` | ✅ XDG 리다이렉트(per-run) | ❌ 합성 |
-| **devin** | `-p/--print` | ❌ 평문 / **`acp` 가능*** | 🟡 추정 → **실값 가능(ATIF ACU/credit)*** | ✅ `--export` | ✅ `--export` | ✅ git 복원 | ❌ | ✅ disk 캡처(`devin list`) | ✅ `<cwd>/.devin/config.local.json` 또는 `--config`(per-run) | ❌ 합성 |
+| **devin** | `-p/--print` | ❌ 평문 / **`acp` 가능*** | 🟡 추정(ATIF export 에 cost 필드 없음·실측 2026.7.23) | ✅ `--export`(+cache) | ✅ `--export` | ✅ git 복원 | ❌ | ✅ disk 캡처(`devin list`) | ✅ `<cwd>/.devin/config.local.json` 또는 `--config`(per-run) | ❌ 합성 |
 | **factory(droid)** | `exec` | ✅ `-o stream-json`(실측 검증) | 🟡 추정(+cache할인) | ✅ completion.usage | ✅ tool_call | ✅ stream | ✅ | ✅ `--session-id`/`--fork` | **`.factory/mcp.json` 프로젝트-로컬** ✅(`mcp list`→[project]) | ✅ `--append-system-prompt` |
 | **antigravity(agy)** | `--print` | ❌ 평문(텍스트 캡처 OK, 1.0.10 stdout 정상) | ❌ 불가 | ❌ 불가 | △ disk only* | ✅ git 복원 | ❌ | ✅ disk 캡처(mtime) | ❌ per-run 불가(`.antigravitycli` 무시·upstream #60) | ❌ 합성 |
 
@@ -63,10 +63,10 @@
 
 ### devin (`devin` 2026.5.x)
 - **출력:** `-p/--print`는 **평문, JSON 모드 없음**. 구조화는 `--export`(ATIF, 사후) 또는 **`acp`(Agent Client Protocol, JSON-RPC over stdio, 실시간)**.
-- **ATIF 비용(신규):** changelog 2026.5.26-0부터 ATIF에 `committed_acu_cost`·`committed_credit_cost`·`generation_model` 포함 → **추정 대신 실측 ACU/credit 보고 가능**(어댑터 "비용필드 없음" 주석은 stale).
+- **ATIF 토큰·캐시(실측 2026.7.23, 구현됨):** `--export` ATIF 의 `final_metrics.total_prompt/completion/cached_tokens` + `steps[].metrics` 를 loom 이 캡처(parseDevinActivity). **단 cost 필드(`committed_*_cost`)는 `--export` 산출에 없다** — changelog 는 `--export --output-format atif` 기준이나 그 플래그가 설치본에 없음(`--export` 단독만). 비용은 추정 유지(devin=ACU, export 에 USD 없음).
 - **설정/MCP:** `--config <PATH>`(`~/.config/devin/config.json` 오버라이드). 프로젝트/로컬 config는 `permissions`·`mcpServers`·`read_config_from`·`hooks`만 설정 가능(`model`·`sandbox`는 user-only). `read_config_from` = `cursor,windsurf,claude,opencode,vscode,zed` **6키 전부 기본 true**.
 - **현재 사용:** `--print`(arg), `--model`, `--permission-mode dangerous`, `--export`(토큰·도구 복원), `--resume` + `devin list` 세션 복구, MCP via `.devin/config.local.json`.
-- **가용·미사용:** **`acp` 실시간 스트리밍**(devin의 plain-text+사후복원 스택 전체 대체 가능), ATIF 실비용, `--config`(repo 오염 없는 깔끔한 MCP).
+- **가용·미사용:** **`acp` 실시간 스트리밍**(devin의 plain-text+사후복원 스택 전체 대체 가능), `--config`(repo 오염 없는 깔끔한 MCP). (ATIF 실비용은 export 에 cost 필드가 없어 불가 — 토큰·캐시 캡처는 구현됨.)
 - **버그:** `read_config_from`를 3키(`cursor,windsurf,claude`)만 false 처리 → **`opencode,vscode,zed` 자동 import가 켜진 채**(헌법2 누수). 세션 cleanup이 파일만 지우고 sqlite row 잔존 가능.
 
 ### factory (`droid` 0.150.1) — 모델 다양성 1위 (30+ + `custom:`)
@@ -89,6 +89,6 @@
 ## 결론
 
 - **활동 캡처의 천장은 높다 — 대부분 loom 미구현이지 CLI 한계가 아니다.** factory(stream-json+MCP)·devin(acp+실비용)·codex(로컬모델+output-schema)·opencode(reasoning+무료모델)·claude(결정적 세션)에 분명한 구현 여지가 있다.
-- **공통 누락:** reasoning(6/6 미파싱), codex 파일이벤트(파싱 버그), 실비용(devin ATIF 미활용).
+- **공통 누락(갱신):** reasoning 은 4/6 파싱(claude·codex·opencode·factory — devin·agy 는 평문), codex 파일이벤트·캐시토큰 보정됨(S2·S5). devin 실비용은 **불가 판명**(ATIF `--export` 산출에 cost 필드 없음·실측) — 토큰·캐시만.
 - **진짜 한계:** antigravity의 비용·토큰·MCP·구조화출력 — Gemini CLI 구조(평문 출력이라 불변). stdout 드롭은 1.0.10 에서 해소(텍스트 캡처 정상). UI/문서에 "이 CLI는 비용·토큰 미보고, 헤드리스 제약" 명시가 정직한 처리.
 - 실행 로드맵 → [ADAPTER-INTEGRATION-PLAN.md](./ADAPTER-INTEGRATION-PLAN.md).
