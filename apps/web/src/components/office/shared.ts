@@ -3,7 +3,7 @@
 
 import type { AdapterKind, McpServer } from "@loom/core";
 
-export const ADAPTERS: AdapterKind[] = ["claude-code", "antigravity", "codex", "opencode", "devin"];
+export const ADAPTERS: AdapterKind[] = ["claude-code", "antigravity", "codex", "opencode", "devin", "factory"];
 export const MCP_UNSUPPORTED: AdapterKind[] = ["antigravity"];
 
 export const inputCls =

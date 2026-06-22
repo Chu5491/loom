@@ -40,6 +40,7 @@ const adapterKind = z.enum([
   "codex",
   "opencode",
   "devin",
+  "factory",
 ]);
 
 export const ruleSchema = z.object({ body: z.string().max(100_000) });
