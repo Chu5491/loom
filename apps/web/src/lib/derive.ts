@@ -1,6 +1,7 @@
 // Talk 화면의 순수 변환 로직 — OfficeEvent 스트림 → 표시용 view. 컴포넌트(JSX)와 분리해
 // 단위 테스트 가능하게 둔다. deriveView 가 reasoning·토큰·trace·result·report 를 한 번에 추린다.
 
+import { Bot, FilePen, FilePlus2, FileSearch, Globe, Pencil, Plug, Terminal, Workflow, Wrench } from "lucide-react";
 import type { OfficeEvent } from "@loom/core";
 import { extractReport, type WorkReport } from "./report.js";
 
@@ -77,4 +78,18 @@ export function deriveView(events: OfficeEvent[]): DerivedView {
     loadout,
     tokens: inT || outT ? { input: inT, output: outT, cached: cachedT } : undefined,
   };
+}
+
+// 도구 이름 → 아이콘. CLI마다 이름이 달라 휴리스틱 매칭(모르면 렌치).
+export function traceIcon(it: TraceItem) {
+  if (it.kind === "handoff") return Workflow;
+  if (it.kind === "file") return it.action === "edit" ? FilePen : FilePlus2;
+  const n = it.name.toLowerCase();
+  if (n.startsWith("mcp__")) return Plug;
+  if (/(^|_)(read|glob|grep|search|ls|cat)/.test(n)) return FileSearch;
+  if (/(edit|write|notebook|apply)/.test(n)) return Pencil;
+  if (/(bash|shell|terminal|exec|command)/.test(n)) return Terminal;
+  if (/(web|fetch|http|browser)/.test(n)) return Globe;
+  if (/(task|agent|subagent)/.test(n)) return Bot;
+  return Wrench;
 }
