@@ -58,7 +58,7 @@ cd packages/adapters/claude-code && npx vitest run src/index.test.ts
 ```
 packages/core/               타입 (런타임 의존성 0) — office.ts 가 도메인의 영혼
 packages/adapter-utils/      spawnProcess + defineCliAdapter (Node 표준만)
-packages/adapters/           claude-code / antigravity / codex / opencode / devin
+packages/adapters/           claude-code / antigravity / codex / opencode / devin / factory
 apps/server/                 Hono + better-sqlite3(기록만) + SSE
 apps/web/                    React + Vite + Tailwind 4 (라우터 없음 — 탭 셸)
 ```
@@ -98,7 +98,7 @@ data/                        ← gitignore 되는 기록
 
 ### 3.4 프론트엔드
 
-탭 셸 4개(Home / Projects / Office / Connections) + 헤더(CLI 인증 표시 · 프로젝트 전환 칩) + ⌘K 커맨드 팔레트. 프로젝트 선택 시 Home 은 Talk 워크스페이스(`TalkPage` — 스레드 독·스테이지·팀 패널), 미선택 시 미션 컨트롤(`HomePage`). TanStack Query + i18n/Theme Context, API 는 `api/client.ts` 단일 파일, SSE 는 `hooks/useRunStream.ts`. 마크다운 렌더는 `components/Markdown.tsx`(react-markdown — raw HTML 미실행). 라우터 없음 — 탭 상태는 `App.tsx` 로컬 state.
+탭 셸 5개(Home / Projects / Office / Connections / Guide) + 헤더(CLI 인증 표시 · 프로젝트 전환 칩) + ⌘K 커맨드 팔레트. 프로젝트 선택 시 Home 은 Talk 워크스페이스(`TalkPage` — 스레드 독·스테이지·팀 패널), 미선택 시 미션 컨트롤(`HomePage`). TanStack Query + i18n/Theme Context, API 는 `api/client.ts` 단일 파일, SSE 는 `hooks/useRunStream.ts`. 마크다운 렌더는 `components/Markdown.tsx`(react-markdown — raw HTML 미실행). 라우터 없음 — 탭 상태는 `App.tsx` 로컬 state.
 
 ### 3.5 어댑터 아키텍처
 
@@ -110,7 +110,8 @@ data/                        ← gitignore 되는 기록
 | antigravity | arg | **불가** (CLI 구조 한계 — UI에 명시) | `agy` |
 | codex | stdin | `-c mcp_servers.*` | |
 | opencode | trailing arg | XDG_CONFIG_HOME 리다이렉트 | |
-| devin | `--print` arg | `<cwd>/.devin/config.local.json` | plain text 출력 |
+| devin | `--print` arg | `<cwd>/.devin/config.local.json` | plain text + `--export` ATIF(비용/토큰/캐시) |
+| factory(droid) | stdin | `<cwd>/.factory/mcp.json` | `-o stream-json` (custom 로컬모델 가능) |
 
 어댑터는 `buildCommand()`(순수 함수, 테스트 대상) + 옵션 훅으로 구성. 등록은 `apps/server/src/adapters/registry.ts`.
 
