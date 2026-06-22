@@ -15,7 +15,7 @@
 > ⚠️ **2026-06-19 정정** — 이전 판(5 CLI, 2026-06-17)에는 코드 미확인으로 인한 오류가 있었다:
 > ① factory 누락(6번째 CLI). ② factory MCP·풍부스트림을 "구조적 불가"로 적었으나 **둘 다 가능**
 > (공식 `stream-json` 단방향 출력 + 프로젝트-로컬 `.factory/mcp.json`). ③ antigravity 는 "비용만 공백"이
-> 아니라 **비-TTY stdout 드롭 버그(upstream #76)로 답변 텍스트조차 현재 미캡처**. 아래는 실측 정정본.
+> 아니라 **비-TTY stdout 드롭 버그(upstream #76)로 답변 텍스트조차 미캡처**였다(1.0.9 기준). → **1.0.10 에서 해소**(2026-06-22 실측, `agy --print | cat` 정상 출력). 아래는 실측 정정본.
 
 ---
 
@@ -28,14 +28,14 @@
 | **opencode** | `run --format json` | ✅ JSONL | ✅ 실값(무료=$0) | ✅ (+cache/reasoning) | ✅ | ✅ | ✅ `--thinking`* | ✅ `--session`/`--fork` | ✅ XDG 리다이렉트(per-run) | ❌ 합성 |
 | **devin** | `-p/--print` | ❌ 평문 / **`acp` 가능*** | 🟡 추정 → **실값 가능(ATIF ACU/credit)*** | ✅ `--export` | ✅ `--export` | ✅ git 복원 | ❌ | ✅ disk 캡처(`devin list`) | ✅ `<cwd>/.devin/config.local.json` 또는 `--config`(per-run) | ❌ 합성 |
 | **factory(droid)** | `exec` | ✅ `-o stream-json`(실측 검증) | 🟡 추정(+cache할인) | ✅ completion.usage | ✅ tool_call | ✅ stream | ✅ | ✅ `--session-id`/`--fork` | **`.factory/mcp.json` 프로젝트-로컬** ✅(`mcp list`→[project]) | ✅ `--append-system-prompt` |
-| **antigravity(agy)** | `--print` | ❌ 평문, **stdout 드롭 버그** | ❌ 불가 | ❌ 불가 | △ disk only* | ✅ git 복원 | ❌ | ✅ disk 캡처(mtime) | ❌ per-run 불가(`.antigravitycli` 무시·upstream #60) | ❌ 합성 |
+| **antigravity(agy)** | `--print` | ❌ 평문(텍스트 캡처 OK, 1.0.10 stdout 정상) | ❌ 불가 | ❌ 불가 | △ disk only* | ✅ git 복원 | ❌ | ✅ disk 캡처(mtime) | ❌ per-run 불가(`.antigravitycli` 무시·upstream #60) | ❌ 합성 |
 
 `*` = **CLI는 지원하나 loom 미구현** (→ [구현 플랜](./ADAPTER-INTEGRATION-PLAN.md)). `**` = 파싱 버그로 현재 유실.
 
 **집계(현재 loom 실현 기준):** 비용 실값 2/6 · 토큰 5/6 · 도구 5/6 · 파일 6/6(stream 4 + git복원 2) · reasoning 4/6(claude·codex·opencode·factory) · 세션 6/6 · MCP 5/6(factory 읽기 검증됨).
 **집계(CLI가 허용하는 천장):** 비용 실값 3/6 · 토큰 6/6 · 도구 5/6 · reasoning 4/6 · MCP 5/6. → **gap의 대부분은 CLI 한계가 아니라 loom 미구현.**
 
-진짜 CLI 한계(loom으로 못 채움): **antigravity의 비용·토큰·MCP·구조화출력**(Gemini CLI 구조), 그리고 **antigravity의 stdout 드롭**(PTY로 우회 시도 가능하나 미검증).
+진짜 CLI 한계(loom으로 못 채움): **antigravity의 비용·토큰·MCP·구조화출력**(Gemini CLI 구조 — 평문 출력이라 불변). stdout 드롭은 **1.0.10 에서 해소**(텍스트 캡처 정상) → PTY 우회 불필요.
 
 ---
 
@@ -77,9 +77,9 @@
 - **구현 완료(end-to-end 검증):** MCP 주입 ✅(`.factory/mcp.json` → **exec 시 서버 로드·도구 노출 실측**: init.tools 에 `everything___echo` 등 등장, 도구명 `<server>___<tool>`), 프리셋 ✅31종+`custom:`, **stream-json 풍부 활동 ✅**(text·reasoning·tool·file·completion 전체 스키마 실측). **남음(소소):** `--mission`(자체 멀티에이전트), `--enabled/disabled-tools`.
 - **확인 필요(라이브 인증 run):** `stream-json` 줄별 스키마, `json` 결과의 `usage` 유무, `--settings`가 `mcpServers` 수용 여부.
 
-### antigravity (`agy` 1.0.9) — 구조적 최약 (정정·강화)
+### antigravity (`agy` 1.0.10) — 구조적 최약 (정정·강화)
 - **출력:** `--print` 평문만. `--output-format json` → `flags provided but not defined`, **exit 2**(JSON 모드 없음 확정).
-- **🔴 stdout 드롭 버그(upstream #76, 재현됨):** stdout이 TTY가 아니면(파이프/리다이렉트) `agy -p`가 **0바이트** 출력(왕복은 정상, exit 0). loom은 `stdio:["pipe","pipe","pipe"]`로 spawn → **현재 agy 답변 텍스트조차 미캡처**, git-diff 파일 백필 + 디스크 세션복구만 동작. PTY spawn으로 우회 시도 가능하나 `script` 의사TTY로도 안 됐음 → 검증 필요(불가 시 정직하게 UI 명시).
+- **✅ stdout 드롭(#76) 해소(1.0.10, 2026-06-22 실측):** 1.0.9 까지는 비-TTY 파이프에서 **0바이트**였으나 **1.0.10 에서 수정** — `agy --print "7×6?" | cat` → `42`, exit 0. loom 의 기존 `stdio:["pipe","pipe","pipe"]` spawn + 평문 파싱이 **agy 답변 텍스트를 캡처한다. PTY 우회 불필요(obsolete).** 단 출력은 여전히 평문이라 비용·토큰·도구는 stream 으로 안 옴(구조적) — 도구/세션은 disk 복구만.
 - **MCP(정밀 재검증 2026-06-19):** 프로젝트-로컬 `<workdir>/.antigravitycli/mcp_config.json` 경로는 **존재하나** 그 `mcpServers` 가 **upstream 버그로 조용히 무시**됨([issue #60](https://github.com/google-antigravity/antigravity-cli/issues/60)) — 실제 로드는 전역 `~/.gemini/config/mcp_config.json`만. 즉 "경로가 없다"가 아니라 "작동하는 경로가 전역뿐"이라 per-run 주입 불가 → `supportsMcpServers:false` 유지(정확). #60 수정 시 `.antigravitycli`(remote 필드는 `url`→`serverUrl`)로 재검토 가능.
 - **세션·활동:** 대화는 `~/.gemini/antigravity-cli/conversations/<id>.db`(sqlite+protobuf). 프롬프트·모델라벨·도구는 `strings`로 복구 가능하나 **토큰·비용은 .proto 없이 복구 불가**. `ANTIGRAVITY_CONVERSATION_ID` env는 무시됨 → **caller-set id 불가**, mtime 스캔이 유일.
 - **모델:** `agy models`는 ID 없이 표시라벨만(`Gemini 3.1 Pro (High)` 등) → 라벨→프리셋ID 정규화.
@@ -90,5 +90,5 @@
 
 - **활동 캡처의 천장은 높다 — 대부분 loom 미구현이지 CLI 한계가 아니다.** factory(stream-json+MCP)·devin(acp+실비용)·codex(로컬모델+output-schema)·opencode(reasoning+무료모델)·claude(결정적 세션)에 분명한 구현 여지가 있다.
 - **공통 누락:** reasoning(6/6 미파싱), codex 파일이벤트(파싱 버그), 실비용(devin ATIF 미활용).
-- **진짜 한계:** antigravity의 비용·토큰·MCP·구조화출력(+stdout 드롭) — Gemini CLI 구조. UI/문서에 "이 CLI는 비용·토큰 미보고, 헤드리스 제약" 명시가 정직한 처리.
+- **진짜 한계:** antigravity의 비용·토큰·MCP·구조화출력 — Gemini CLI 구조(평문 출력이라 불변). stdout 드롭은 1.0.10 에서 해소(텍스트 캡처 정상). UI/문서에 "이 CLI는 비용·토큰 미보고, 헤드리스 제약" 명시가 정직한 처리.
 - 실행 로드맵 → [ADAPTER-INTEGRATION-PLAN.md](./ADAPTER-INTEGRATION-PLAN.md).

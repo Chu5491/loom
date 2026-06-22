@@ -19,7 +19,7 @@
 | **S3** ✅완료(b5deeb3) | **caller-set 세션ID 훅** — `SpawnArgs.assignSessionId` + `applySessionId(args,id)` 훅(`applyResume` 대칭), 엔진이 UUID 발급해 fresh run에 전달(resume턴 제외) | `packages/core/src/adapter.ts`, `packages/adapter-utils/src/define.ts`, `apps/server/src/run/engine.ts` | 🟡 | ✅ 3(per-run flag) | 세션정리 결정화(현재 사후 스트림 읽기 의존). claude가 1차 수혜 |
 | **S4** | **실비용 플러밍** — `captureActivityFromDisk`/이벤트가 `costUsd`+`costReported=true` 설정 시 엔진 추정 스킵 | `packages/core/src/adapter.ts`(capture 반환형), `apps/server/src/run/engine.ts:913` | 🟡 | ✅ 5 | devin ATIF 실비용 등 "~추정" 제거 |
 | **S5** ✅완료(cbeb6d8) | usage.cachedInputTokens 캡처(codex·opencode·claude) + estimateCost 캐시분 10% 할인 | `office.ts`·`parse.ts`·`engine.ts`·`pricing.ts` | 🟢 | ✅ 5 | **codex 비용 과대평가 보정**. 토큰 표시 UI·devin ATIF cache 할인은 후속 |
-| **S6** | (Tier3) adapter-utils에 **PTY spawn** 옵션(`needsPty`) — antigravity stdout 드롭 우회 | `packages/adapter-utils/src/spawn.ts`, `define.ts` | 🔴 | ✅ 1 | agy 답변 캡처(검증 필요) |
+| ~~**S6**~~ ❌불필요 | ~~PTY spawn 옵션~~ — agy **1.0.10 에서 stdout 드롭(#76) 해소**(2026-06-22 실측, 파이프 출력 정상) → loom 의 기존 파이프 spawn 이 이미 텍스트 캡처. PTY obsolete | — | — | obsolete(업스트림 수정) |
 | **S7** | (Tier3) **구조화-스트림/ACP 공통 클라이언트** — devin `acp` + factory `stream-jsonrpc` 공유 | `packages/adapter-utils/`(신규) | 🔴 | ✅ 1 | 두 CLI 실시간 활동 |
 
 ---
@@ -118,13 +118,13 @@
 
 | Tier | 작업 | 파일 | 난이도 | 비고 |
 |------|------|------|--------|------|
-| **1** | **PTY spawn로 stdout 드롭 우회**(§S6) | `spawn.ts`, `define.ts`, `antigravity/src` | 🔴 | **선검증 필수**: `script` 의사TTY로도 0바이트였음. 안 되면 헤드리스 불가를 UI 명시 |
+| ~~1~~ ❌불필요 | ~~PTY spawn로 stdout 드롭 우회~~ — agy **1.0.10 stdout 정상**(파이프 출력 OK, 실측) → 텍스트 캡처 이미 동작. PTY obsolete | — | — | 남은 한계는 평문 구조적(비용/토큰/MCP 없음) |
 | **2** | `captureActivityFromDisk` — `conversations/<id>.db`에서 도구·모델 best-effort(`strings`/protobuf-aware) | 신규 `antigravity/src/activity.ts` | 🟡 | **토큰/비용은 약속 금지**(.proto 없음). 정직하게 공백 |
 | **2** | 세션 disambiguation — mtime 대신 워크스페이스 경로 매칭(db blob에 cwd 존재) | `index.ts:137-159` | 🟢 | 동시성 race 완화. caller-set id는 불가(env 무시 확인) |
 | **3** | manifest MCP 경로 문구 정정(`~/.gemini/config/mcp_config.json`) + 헤드리스 한계 정책경고 | `manifest.ts:37` | 🟢 | 정직성 |
 | **3** | `models.ts` 라벨→ID 정규화 회귀테스트 | `models.ts` test | 🟢 | 라벨 변경 감지 |
 
-**확인 필요(라이브):** PTY가 실제로 텍스트를 내놓는지(불발 시 Tier1 무의미). 토큰/비용은 하드 제로 — 예산/usage가 $0/공백으로 읽힘을 문서화.
+**검증 완료(2026-06-22):** agy 1.0.10 파이프 출력 정상(#76 해소) → 텍스트 캡처 동작, **PTY 불필요**. 토큰/비용/도구는 여전히 평문이라 하드 제로(구조적) — 예산/usage 가 $0·공백으로 읽힘을 문서화.
 
 ---
 
@@ -134,6 +134,6 @@
 2. **세션·비용 인프라(🟡):** S3(caller-set id, claude) → S4(실비용) → devin ATIF비용 → factory/opencode 프리셋·probe.
 3. **MCP·주입(🟡):** factory 프로젝트-로컬 MCP → devin `--config` → codex `--oss`/output-schema.
 4. **라이브 검증 게이트:** §4·§5·§6의 "확인 필요" 일괄 검증(가능한 CLI부터). 통과분만 진행.
-5. **🔴 전략(검증 후):** factory `stream-json` 파싱 → S7(ACP/jsonrpc 공통) → devin `acp` → antigravity PTY.
+5. **🔴 전략(검증 후):** ~~factory `stream-json` 파싱~~(완료) → S7(ACP/jsonrpc 공통) → devin `acp`. (antigravity PTY 는 1.0.10 으로 불필요해져 제외.)
 
 각 항목 머지 기준: 순수함수는 단위테스트, spawn/IO는 가짜명령(`/bin/cat`·`/bin/sh -c`), 라이브 LLM 호출은 자동테스트 제외(헌법). 한 커밋 한 가지.
