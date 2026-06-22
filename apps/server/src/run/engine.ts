@@ -676,10 +676,12 @@ async function run(
     if (exitCode === 0 && !state.abort.signal.aborted && adapter.captureActivityFromDisk) {
       try {
         const act = await adapter.captureActivityFromDisk({ cwd, since: sessionSince }, adapterConfig);
-        if (!state.costReported) {
-          if (act?.inputTokens != null) state.inputTokens = (state.inputTokens ?? 0) + act.inputTokens;
-          if (act?.outputTokens != null) state.outputTokens = (state.outputTokens ?? 0) + act.outputTokens;
-        }
+        // 토큰·캐시는 표시·추정용으로 항상 누적(평문 CLI 의 스트림 공백 보강).
+        if (act?.inputTokens != null) state.inputTokens = (state.inputTokens ?? 0) + act.inputTokens;
+        if (act?.outputTokens != null) state.outputTokens = (state.outputTokens ?? 0) + act.outputTokens;
+        if (act?.cachedInputTokens != null) state.cachedInputTokens = (state.cachedInputTokens ?? 0) + act.cachedInputTokens;
+        // export 가 실비용을 줬으면(devin ATIF committed_credit_cost) 토큰×단가 추정을 끄고 실값.
+        if (act?.costUsd != null) { state.costUsd = act.costUsd; state.costReported = true; }
         if (act?.tools?.length && !state.events.some((e) => e.kind === "tool")) {
           emit(state, act.tools.map((t) => ({ kind: "tool", name: t.name, ...(t.target ? { target: t.target } : {}) })));
         }

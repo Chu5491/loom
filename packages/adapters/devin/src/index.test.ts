@@ -227,6 +227,7 @@ describe("parseDevinActivity", () => {
     expect(parseDevinActivity(data)).toEqual({
       inputTokens: 2555,
       outputTokens: 103,
+      cachedInputTokens: 11968,
       tools: [
         { name: "find_file_by_name", target: "math.js" },
         { name: "read", target: "/p/math.js" },
@@ -244,7 +245,7 @@ describe("parseDevinActivity", () => {
       final_metrics: { total_prompt_tokens: 14341, total_completion_tokens: 28, total_cached_tokens: 2560 },
       steps: [{ step_id: "s1", source: "agent", message: "OK" }],
     };
-    expect(parseDevinActivity(data)).toEqual({ inputTokens: 14341, outputTokens: 28 });
+    expect(parseDevinActivity(data)).toEqual({ inputTokens: 14341, outputTokens: 28, cachedInputTokens: 2560 });
   });
 
   it("final_metrics (v1.7) wins over per-step metrics — no double count", () => {
@@ -258,6 +259,26 @@ describe("parseDevinActivity", () => {
   it("returns null when nothing usable is present", () => {
     expect(parseDevinActivity({ steps: [{ metadata: {} }] })).toBeNull();
     expect(parseDevinActivity({})).toBeNull();
+  });
+
+  // 신 ATIF 스키마(devin 2026.5.26-0+): final_metrics 가 새 필드명 + cache + cost 를 담는다.
+  it("reads the new field names (total_input_tokens/output_tokens) + cache_read_tokens", () => {
+    const data = { final_metrics: { total_input_tokens: 500, output_tokens: 50, cache_read_tokens: 200 } };
+    expect(parseDevinActivity(data)).toEqual({ inputTokens: 500, outputTokens: 50, cachedInputTokens: 200 });
+  });
+
+  it("maps committed_credit_cost to costUsd (real cost replaces token estimate)", () => {
+    const data = { final_metrics: { total_input_tokens: 100, output_tokens: 10, committed_credit_cost: 0.42 } };
+    expect(parseDevinActivity(data)).toEqual({ inputTokens: 100, outputTokens: 10, costUsd: 0.42 });
+  });
+
+  // committed_* 가 스텝별(누적)로 올 때 — 최댓값(=마지막 누적)을 총비용으로.
+  it("takes the max committed_credit_cost across steps (cumulative) when no aggregate", () => {
+    const data = { steps: [
+      { metrics: { input_tokens: 30, output_tokens: 3, committed_credit_cost: 0.10 } },
+      { metrics: { input_tokens: 40, output_tokens: 4, committed_credit_cost: 0.25 } },
+    ] };
+    expect(parseDevinActivity(data)).toEqual({ inputTokens: 70, outputTokens: 7, costUsd: 0.25 });
   });
 });
 
