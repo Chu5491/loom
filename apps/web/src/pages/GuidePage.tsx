@@ -175,7 +175,7 @@ function sections(lang: "ko" | "en"): Section[] {
             title: ko ? "큰 그림" : "Big picture",
             blocks: ko
                 ? [
-                      {p: "loom 은 여러 CLI 에이전트(claude · antigravity · codex · opencode · devin)를 **한 오피스에서 같이 부리는** 협업 도구예요. 핵심은 두 개념의 분리입니다."},
+                      {p: "loom 은 여러 CLI 에이전트(claude · antigravity · codex · opencode · devin · factory)를 **한 오피스에서 같이 부리는** 협업 도구예요. 핵심은 두 개념의 분리입니다."},
                       {ul: [
                           "**오피스(Office)** = 팀의 정의. 규약·스킬·MCP·에이전트·워크플로우. **git 에 커밋**되는 전역 공유물 — \"어떤 팀인가\".",
                           "**프로젝트(Project)** = 일터. 등록한 로컬 디렉토리이고 run 의 작업 폴더(cwd). 머신마다 다름 — \"어디서 일하나\".",
@@ -191,7 +191,7 @@ function sections(lang: "ko" | "en"): Section[] {
                       ]},
                   ]
                 : [
-                      {p: "loom orchestrates several CLI agents (claude · antigravity · codex · opencode · devin) in **one shared office**. The core idea is the split of two concepts."},
+                      {p: "loom orchestrates several CLI agents (claude · antigravity · codex · opencode · devin · factory) in **one shared office**. The core idea is the split of two concepts."},
                       {ul: [
                           "**Office** = the team definition: rules, skills, MCP, agents, workflows. **Committed to git**, globally shared — \"who the team is\".",
                           "**Project** = where work happens: a registered local directory used as each run's cwd. Machine-local — \"where you work\".",
