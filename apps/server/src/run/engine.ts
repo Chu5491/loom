@@ -2,13 +2,14 @@
 // parseEvents 로 OfficeEvent 를 만들어 구독자(SSE)에게 푸시한다.
 // P2: 영속은 raw 로그(data/logs) + 인메모리 run 맵. (sqlite 기록은 P2b.)
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { AdapterConfig, AgentSpec, McpServer, OfficeEvent, RunInfo, RuleSpec, SkillSpec } from "@loom/core";
 import { getAdapter } from "../adapters/registry.js";
 import { config, paths } from "../config.js";
-import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEventsDb, getThreadDb, insertRun, lastSessionId, listRunsDb, monthCostUsd, type RunFilter } from "../db.js";
+import { appendEvent, deleteRunDb, finishRun, getProjectDb, getRunDb, getRunEventsDb, getThreadDb, insertRun, lastSession, listRunsDb, monthCostUsd, type RunFilter } from "../db.js";
+import { readonlyConfig } from "./readonly.js";
 import { logger } from "../logger.js";
 import {
   readAgents,
@@ -76,6 +77,9 @@ export interface StartRunInput {
   /** 워크플로우 스텝으로 도는 run 의 태그 — 진행 보드가 노드별 상태를 그린다. */
   workflow?: string;
   node?: string;
+  /** 읽기 전용 — 코드는 읽되 파일 쓰기·명령 실행은 차단(회의실 패널·의장). 에이전트의
+   *  쓰기 권한(bypass 등)을 무시하고 각 CLI 네이티브 읽기전용 모드로 띄운다. */
+  readonly?: boolean;
 }
 export type StartRunResult =
   | { ok: true; run: RunInfo }
@@ -232,6 +236,31 @@ export function deleteRun(id: string): { ok: true } | { ok: false; status: 404 |
   return { ok: true };
 }
 
+// 회의 통째 삭제 — workflow 로 묶인 패널·의장 run 을 모두 거둔다. 진행 중이면 먼저
+// 취소하고 종료를 기다린다(삭제 후 트레일링 이벤트가 orphan 으로 재기록되는 race 방지 —
+// deleteRun 이 running 을 409 로 막는 것과 같은 취지). 인메모리·DB·이벤트·raw 로그 정리.
+// CLI 세션 파일 정리는 호출측(routes/meetings)이 행 삭제 전에 수행한다.
+const MEETING_CANCEL_WAIT_MS = 15_000;
+
+export async function deleteMeeting(meetingRuns: RunInfo[]): Promise<void> {
+  await Promise.all(
+    meetingRuns.map(async (r) => {
+      if (getRun(r.id)?.status !== "running") return;
+      cancelRun(r.id);
+      try {
+        await waitForRun(r.id, MEETING_CANCEL_WAIT_MS);
+      } catch {
+        // 타임아웃이어도(프로세스가 안 죽어도) 삭제는 진행 — 잔여 race 는 orphan prune 이 거둔다.
+      }
+    }),
+  );
+  for (const r of meetingRuns) {
+    runs.delete(r.id);
+    deleteRunDb(r.id);
+    deleteRunFiles(r.id);
+  }
+}
+
 export function cancelRun(id: string): boolean {
   const r = runs.get(id);
   if (r && r.info.status === "running") {
@@ -274,6 +303,12 @@ function selectSpecs(agent: AgentSpec, extraSkills: string[]): { rules: string[]
   const skills = skillNames.map((n) => allSkills.find((s) => s.name === n)).filter(Boolean).map((s) => s!);
   const mcp = (agent.mcp ?? []).map((n) => allMcp.find((m) => m.name === n)).filter(Boolean).map((m) => resolveServer(m!));
   return { rules, skills, mcp };
+}
+
+// 페르소나 지문 — 세션에 한 번 박히는 시스템 내용(rules 본문 + 에이전트 프롬프트)의 해시.
+// 이게 바뀌면(에이전트 정의 수정) 옛 세션을 resume 하지 않고 새로 시작해 새 페르소나를 주입.
+function personaFingerprint(prompt: string | undefined, rules: string[]): string {
+  return createHash("sha256").update(JSON.stringify({ prompt: prompt ?? "", rules })).digest("hex").slice(0, 16);
 }
 
 /** 프리뷰 — run 없이, 이 에이전트로 시작하면 CLI 에 들어갈 합성 프롬프트.
@@ -350,12 +385,19 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   if (input.threadId && !getThreadDb(input.threadId)) {
     return { ok: false, status: 404, error: "thread_not_found" };
   }
-  // 대화 연속성 — 같은 스레드에서 이 에이전트의 직전 CLI 세션을 resume.
-  // 어댑터가 resume 을 모르면 조용히 무시된다(adapter-utils 의 opt-in 설계).
-  const resumeSessionId = input.threadId ? lastSessionId(input.threadId, agent.name) : null;
-
   // office 에서 이 에이전트가 끌어올 rules·skills·mcp 만 추린다.
   const { rules, skills, mcp } = selectSpecs(agent, input.skills ?? []);
+
+  // 대화 연속성 — 같은 스레드에서 이 에이전트의 직전 CLI 세션을 resume. 단, 그 세션이
+  // 만들어질 때의 페르소나(rules+프롬프트)가 지금과 다르면(에이전트 정의 수정) 옛 세션을
+  // 이어가지 않고 새로 시작한다 — 안 그러면 바뀐 프롬프트가 진행 중 대화에 영영 안 닿는다.
+  // (어댑터가 resume 을 모르면 조용히 무시된다 — adapter-utils 의 opt-in 설계.)
+  const personaHash = personaFingerprint(agent.prompt, rules);
+  const prior = input.threadId ? lastSession(input.threadId, agent.name) : null;
+  const resumeSessionId = prior && prior.personaHash === personaHash ? prior.sessionId : null;
+  if (prior && !resumeSessionId) {
+    logger.info({ threadId: input.threadId, agent: agent.name }, "persona changed — fresh session (not resuming stale prompt)");
+  }
 
   const id = randomUUID();
 
@@ -446,7 +488,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     model: agent.model,
   };
   runs.set(id, state);
-  insertRun(info); // history 영속 — running 상태로 즉시 기록(finish 가 갱신).
+  insertRun(info, personaHash); // history 영속 — running 상태로 즉시 기록(finish 가 갱신). 지문도 같이 박는다.
 
   // 이 run 의 loadout(스킬·MCP·위임)을 첫 이벤트로 — 모든 CLI 공통. 평문 CLI 는
   // 도구 호출을 스트림에서 못 뽑으니, "무엇이 실렸나"라도 UI 에 보여준다.
@@ -464,9 +506,14 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
   const adapterConfig: AdapterConfig = {
     ...cfg,
     ...(agent.model ? { model: agent.model } : {}),
-    // 권한: bypass → 전 어댑터 공통 위험 토글, acceptEdits → claude/devin permission-mode.
-    ...(agent.permission === "bypass" ? { dangerouslySkipPermissions: true } : {}),
-    ...(agent.permission === "acceptEdits" ? { permissionMode: "acceptEdits" } : {}),
+    // 권한: readonly(회의 등)면 쓰기 권한을 무시하고 CLI 네이티브 읽기전용으로. 아니면
+    // bypass → 전 어댑터 공통 위험 토글, acceptEdits → claude/devin permission-mode.
+    ...(input.readonly
+      ? readonlyConfig(agent.adapter)
+      : {
+          ...(agent.permission === "bypass" ? { dangerouslySkipPermissions: true } : {}),
+          ...(agent.permission === "acceptEdits" ? { permissionMode: "acceptEdits" } : {}),
+        }),
     // 추론 강도: 지원하는 어댑터(codex 등)가 config.reasoning 으로 읽음.
     ...(agent.reasoning ? { reasoning: agent.reasoning } : {}),
     // 남은 월 예산을 run 하드캡으로 — claude(--max-budget-usd)가 읽어 도중 초과를 막는다.

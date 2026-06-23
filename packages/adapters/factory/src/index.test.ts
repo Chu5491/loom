@@ -32,6 +32,12 @@ describe("buildDroidCommand", () => {
     expect(args).not.toContain("--auto");
   });
 
+  it("readonly omits --auto and bypass (droid 기본 read-only — 파일 쓰기 차단)", () => {
+    const { args } = buildDroidCommand({ readonly: true });
+    expect(args).not.toContain("--auto");
+    expect(args).not.toContain("--skip-permissions-unsafe");
+  });
+
   it("respects an explicit autonomy level", () => {
     const { args } = buildDroidCommand({ auto: "medium" });
     expect(args[args.indexOf("--auto") + 1]).toBe("medium");

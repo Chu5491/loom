@@ -4,21 +4,54 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Send, Users, Gavel, ChevronRight } from "lucide-react";
+import { Loader2, Send, Users, Gavel, ChevronRight, RotateCcw, Trash2 } from "lucide-react";
 import type { Project } from "@loom/core";
 import { api, type Meeting } from "../api/client.js";
 import { AgentAvatar } from "./AgentAvatar.js";
 import { AgentResultCard } from "./AgentResult.js";
 import { Button } from "./ui.js";
 import { useI18n } from "../context/I18nContext.js";
+import { useConfirm, useAlert } from "../context/DialogContext.js";
 import { cn } from "../lib/utils.js";
 
 // 회의 상세 — 안건 → 정보(패널) → 취합(의장). 각 카드는 AgentResultCard 로
 // loom-report 상세(요약·단계·결정·파일·도구·비용)까지 컴팩트하게 한눈에.
-function MeetingDetail({ meeting, agentAdapter }: { meeting: Meeting; agentAdapter: (name: string) => string }) {
+function MeetingDetail({
+  meeting,
+  agentAdapter,
+  onRerun,
+  onDelete,
+  rerunPending,
+  deletePending,
+}: {
+  meeting: Meeting;
+  agentAdapter: (name: string) => string;
+  onRerun: () => void;
+  onDelete: () => void;
+  rerunPending: boolean;
+  deletePending: boolean;
+}) {
   const { t } = useI18n();
   return (
     <div className="mx-auto flex w-full max-w-5xl animate-in fade-in flex-col gap-4 pb-10 pt-1">
+      {/* 액션 — 재실행(같은 안건·참석자로 새 회의) · 삭제 */}
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="secondary" size="sm" onClick={onRerun} disabled={rerunPending}>
+          {rerunPending ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
+          {t("meeting.rerun")}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onDelete}
+          disabled={deletePending}
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+        >
+          {deletePending ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+          {t("meeting.delete")}
+        </Button>
+      </div>
+
       {/* 안건 */}
       <div className="rounded-xl border border-primary/20 bg-card px-3.5 py-3 shadow-sm">
         <p className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
@@ -33,7 +66,7 @@ function MeetingDetail({ meeting, agentAdapter }: { meeting: Meeting; agentAdapt
           <Users className="size-4 text-muted-foreground" />{t("meeting.opinions")}
           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{meeting.panel.length}</span>
         </h3>
-        <div className="grid items-start gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
           {meeting.panel.map((run) => (
             <AgentResultCard key={run.id} run={run} adapterOf={agentAdapter} role="panel" />
           ))}
@@ -104,6 +137,42 @@ export function MeetingView({ project }: { project: Project }) {
       void qc.invalidateQueries({ queryKey: ["meetings", project.id] });
     },
   });
+
+  const confirm = useConfirm();
+  const alert = useAlert();
+  const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+  // 재실행 = 같은 안건·참석자로 새 회의를 띄운다(원본은 그대로 둠).
+  const rerun = useMutation({
+    mutationFn: (m: Meeting) =>
+      api.startMeeting({
+        proposal: m.proposal,
+        participants: [...new Set(m.panel.map((r) => r.agent))],
+        projectId: project.id,
+      }),
+    onSuccess: (r) => {
+      setComposing(false);
+      setSelected(r.meetingId);
+      void qc.invalidateQueries({ queryKey: ["meetings", project.id] });
+    },
+    onError: (e) => void alert(errMsg(e)),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: string) => api.deleteMeeting(id),
+    onSuccess: (_r, id) => {
+      setSelected((cur) => (cur === id ? null : cur)); // 지운 게 선택돼 있었으면 다음 회의로
+      setComposing(false);
+      void qc.invalidateQueries({ queryKey: ["meetings", project.id] });
+    },
+    onError: (e) => void alert(errMsg(e)),
+  });
+
+  const confirmDelete = async (m: Meeting) => {
+    if (await confirm({ body: t("meeting.deleteConfirm"), tone: "danger", confirmLabel: t("common.delete") })) {
+      del.mutate(m.id);
+    }
+  };
 
   const list = meetings.data?.meetings ?? [];
   const current = list.find((m) => m.id === selected) ?? (composing ? null : list[0] ?? null);
@@ -238,7 +307,14 @@ export function MeetingView({ project }: { project: Project }) {
             </div>
           </div>
         ) : (
-          <MeetingDetail meeting={current} agentAdapter={adapterOf} />
+          <MeetingDetail
+            meeting={current}
+            agentAdapter={adapterOf}
+            onRerun={() => rerun.mutate(current)}
+            onDelete={() => void confirmDelete(current)}
+            rerunPending={rerun.isPending}
+            deletePending={del.isPending}
+          />
         )}
       </div>
     </div>

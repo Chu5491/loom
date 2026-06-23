@@ -4,9 +4,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { RunInfo } from "@loom/core";
-import { listMeetingRunsDb } from "../db.js";
+import { listMeetingRunsDb, runsByWorkflowDb } from "../db.js";
+import { deleteMeeting } from "../run/engine.js";
 import { startMeeting } from "../run/meeting.js";
+import { deleteSessionArtifacts, sessionArtifactsFromRuns } from "./cli-sessions.js";
 import { isResponse, parseBody } from "./helpers.js";
+import { logger } from "../logger.js";
 
 export const meetingsRoute = new Hono();
 
@@ -65,4 +68,17 @@ meetingsRoute.post("/", async (c) => {
   });
   if (!started.ok) return c.json({ error: started.error }, started.status as 400 | 500);
   return c.json({ meetingId: started.meetingId, panelRunIds: started.panelRunIds });
+});
+
+// 회의 삭제 — 패널·의장 run 을 통째로 거둔다(진행 중이면 취소 후). 세션 파일은 run 행을
+// 지우기 *전에* 모은다(adapter+session_id 가 사라지면 디스크에서 못 찾으므로).
+meetingsRoute.delete("/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!id.startsWith("meeting:")) return c.json({ error: "bad_request" }, 400);
+  const runs = runsByWorkflowDb(id);
+  if (runs.length === 0) return c.json({ error: "not_found" }, 404);
+  const freed = deleteSessionArtifacts(sessionArtifactsFromRuns(runs)); // CLI 세션(디스크)
+  await deleteMeeting(runs); // 취소·대기 후 run·이벤트·로그 정리
+  logger.info({ meetingId: id, removed: runs.length, freedSessionFiles: freed.deletedFiles }, "meeting deleted");
+  return c.json({ ok: true, removed: runs.length });
 });

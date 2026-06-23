@@ -3,9 +3,9 @@
 // + 받은 지시/원문. childrenOf 를 주면 위임 트리로 재귀(마스터→팀원 플로우).
 // 작업 상세(OrgTree)와 회의실(패널·의장)이 같은 카드로 통일 — 한눈에 보이게.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Loader2, Check, ChevronDown, ChevronRight, Crown, Gavel, CornerDownRight, MessageSquare,
+  Loader2, Check, ChevronDown, ChevronRight, ChevronUp, Crown, Gavel, CornerDownRight, MessageSquare,
   Wrench, FilePen, FileText, ListChecks, Sparkles, AlertTriangle, HelpCircle,
 } from "lucide-react";
 import type { AdapterKind, OfficeEvent, RunInfo } from "@loom/core";
@@ -83,6 +83,20 @@ export function AgentResultCard({
   const [promptOpen, setPromptOpen] = useState(false);
   const [proseOpen, setProseOpen] = useState(false);
 
+  // 회의실 패널은 답변 길이가 제각각 → 균일 타일로 정돈. 내용을 미리보기 높이로 클램프하고
+  // 넘치면 '전체 답변 보기'로 펼친다(짧은 카드는 그리드 stretch + h-full 로 행 높이를 채움).
+  const clampable = role === "panel";
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  // 클램프 상태에서만 측정 — 펼치면 max-h 가 풀려 clientHeight 가 커지므로 건너뛴다.
+  useEffect(() => {
+    if (!clampable || expanded) return;
+    const el = contentRef.current;
+    if (!el) return;
+    setOverflows(el.scrollHeight > el.clientHeight + 4);
+  }, [clampable, expanded, status, stream.events.length]);
+
   const toolCount = useMemo(() => stream.events.filter((e) => e.kind === "tool").length, [stream.events]);
   const evFileCount = useMemo(
     () => new Set(stream.events.filter((e): e is Extract<OfficeEvent, { kind: "file" }> => e.kind === "file").map((e) => e.path)).size,
@@ -110,8 +124,10 @@ export function AgentResultCard({
   const displayName = run.agent.replace(/^fn:/, "");
 
   return (
-    <div>
-      <div className={cn("rounded-xl border p-3 transition-colors", lead ? "border-primary/30 bg-primary/[0.04]" : "border-border bg-card")}>
+    // 패널은 그리드 stretch + flex-1 로 같은 행 카드를 동일 높이로(짧은 카드가 늘어남).
+    // h-full 은 행 높이에 묶여 '더보기' 펼침을 막으므로 쓰지 않는다.
+    <div className={cn(clampable && "flex flex-col")}>
+      <div className={cn("rounded-xl border p-3 transition-colors", lead ? "border-primary/30 bg-primary/[0.04]" : "border-border bg-card", clampable && "flex flex-1 flex-col")}>
         {/* 헤더 — (단계번호) 아바타·이름·역할·상태 + 작업량(우측) 한 줄 */}
         <div className="flex items-center gap-2">
           {step != null ? (
@@ -149,7 +165,8 @@ export function AgentResultCard({
           </p>
         ) : null}
 
-        {/* 내용 */}
+        {/* 내용 — 패널 카드는 미리보기 높이로 클램프해 균일 타일을 만든다 */}
+        <div ref={contentRef} className={cn("relative", clampable && !expanded && "max-h-64 overflow-hidden")}>
         {failed ? (
           <p className="mt-2 whitespace-pre-wrap text-[12px] text-destructive">{errorMsg || t("meeting.failed")}</p>
         ) : (
@@ -205,6 +222,20 @@ export function AgentResultCard({
             ) : null}
           </>
         )}
+        {clampable && !expanded && overflows ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-card to-transparent" />
+        ) : null}
+        </div>
+        {clampable && (overflows || expanded) ? (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-primary/80 transition-colors hover:text-primary"
+          >
+            {expanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+            {expanded ? t("meeting.collapse") : t("meeting.expand")}
+          </button>
+        ) : null}
       </div>
 
       {/* 위임 워크플로우 — 자식 카드를 단계 번호(①②③) + 흐름선과 함께 재귀 */}

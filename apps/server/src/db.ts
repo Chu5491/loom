@@ -110,6 +110,9 @@ export function getDb(): DB {
   if (!cols.some((c) => c.name === "adapter")) {
     db.exec(`ALTER TABLE runs ADD COLUMN adapter TEXT`); // run 시점 CLI 종류(kind) — 세션 파일 경로 유도·정리용
   }
+  if (!cols.some((c) => c.name === "persona_hash")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN persona_hash TEXT`); // 세션 생성 시 페르소나(prompt+rules) 지문 — 바뀌면 resume 안 함
+  }
   const schedCols = db.prepare<[], { name: string }>(`PRAGMA table_info(schedules)`).all();
   if (schedCols.length > 0 && !schedCols.some((c) => c.name === "workflow")) {
     db.exec(`ALTER TABLE schedules ADD COLUMN workflow TEXT`);
@@ -222,13 +225,13 @@ export function agentStatsDb(days = 30): AgentStat[] {
     .map((r) => ({ agent: r.agent, runs: r.runs, succeeded: r.succeeded, failed: r.failed, thumbsUp: r.up, thumbsDown: r.down }));
 }
 
-export function insertRun(info: RunInfo): void {
+export function insertRun(info: RunInfo, personaHash?: string | null): void {
   getDb()
     .prepare(
-      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id, project_id, thread_id, workflow, node, adapter)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO runs (id, agent, prompt, status, started_at, ended_at, exit_code, parent_run_id, project_id, thread_id, workflow, node, adapter, persona_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId, info.projectId, info.threadId, info.workflow ?? null, info.node ?? null, info.adapter ?? null);
+    .run(info.id, info.agent, info.prompt, info.status, info.startedAt, info.endedAt, info.exitCode, info.parentRunId, info.projectId, info.threadId, info.workflow ?? null, info.node ?? null, info.adapter ?? null, personaHash ?? null);
 }
 
 export function appendEvent(runId: string, seq: number, event: OfficeEvent): void {
@@ -352,6 +355,19 @@ export function lastSessionId(threadId: string, agent: string): string | null {
   return row?.session_id ?? null;
 }
 
+/** resume 판단용 — 직전 세션 id + 그 세션이 만들어질 때의 페르소나 지문. 지문이 지금과
+ *  다르면(프롬프트·rules 수정) 옛 세션을 이어가지 않고 새로 시작해 새 페르소나를 주입한다. */
+export function lastSession(threadId: string, agent: string): { sessionId: string; personaHash: string | null } | null {
+  const row = getDb()
+    .prepare<[string, string], { session_id: string; persona_hash: string | null }>(
+      `SELECT session_id, persona_hash FROM runs
+       WHERE thread_id = ? AND agent = ? AND session_id IS NOT NULL
+       ORDER BY started_at DESC, rowid DESC LIMIT 1`,
+    )
+    .get(threadId, agent);
+  return row ? { sessionId: row.session_id, personaHash: row.persona_hash } : null;
+}
+
 /** 회의실 — workflow="meeting:<id>" 로 묶인 run 들(프로젝트 스코프, 오래된 순).
  *  라우트가 meeting id 로 그룹핑해 패널/의장 run 을 구성한다. */
 export function listMeetingRunsDb(projectId: string | null): RunInfo[] {
@@ -360,6 +376,14 @@ export function listMeetingRunsDb(projectId: string | null): RunInfo[] {
       `SELECT * FROM runs WHERE workflow LIKE 'meeting:%' AND project_id IS ? ORDER BY started_at ASC`,
     )
     .all(projectId)
+    .map(toInfo);
+}
+
+/** 한 회의(=workflow)에 속한 run 들 — 회의 통째 삭제용. */
+export function runsByWorkflowDb(workflow: string): RunInfo[] {
+  return getDb()
+    .prepare<[string], RunRow>(`SELECT * FROM runs WHERE workflow = ? ORDER BY started_at ASC`)
+    .all(workflow)
     .map(toInfo);
 }
 

@@ -347,6 +347,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  // id 는 "meeting:<uuid>" — 콜론을 인코딩해 한 경로 세그먼트로 보낸다.
+  deleteMeeting: (id: string) =>
+    request<{ ok: boolean; removed: number }>(`/api/meetings/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   // ── runs (Talk) ────────────────────────────────────────────────────────
   /** threadId 스코프가 Talk 의 기본. 없으면 빈 스레드로 간주해 호출하지 않는다. */

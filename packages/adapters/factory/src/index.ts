@@ -21,6 +21,8 @@ export interface DroidConfig extends AdapterConfig {
   /** 모든 권한 확인 우회(`--skip-permissions-unsafe`). 엔진 공통 bypass 토글과 매핑.
    *  격리 환경 전용. */
   dangerouslySkipPermissions?: boolean;
+  /** 읽기 전용(회의실 등) — --auto 를 안 줘 droid 기본 read-only 로 둔다(쓰기 차단). */
+  readonly?: boolean;
   /** droid 가 보는 작업 디렉토리(`--cwd`). spawn cwd 와 구분. */
   cwd?: string;
 }
@@ -34,9 +36,12 @@ export function buildDroidCommand(config: DroidConfig = {}): BuiltCommand {
   // parse.ts 가 text/reasoning/tool/file/usage 로 매핑(claude·codex 수준 활동). cost 직접값은
   // 없어 엔진이 토큰×단가 추정(캐시분 할인). 단방향이라 stream-jsonrpc(양방향) 불필요.
   const args: string[] = ["exec", "--output-format", "stream-json"];
-  // 자율성: bypass 면 권한 우회, 아니면 --auto(기본 low). 기본 read-only 면 파일 편집이
-  // 막혀 코딩이 조용히 실패하므로 최소 low 를 준다(codex workspace-write 와 같은 결).
-  if (config.dangerouslySkipPermissions) {
+  // 자율성: readonly(회의 등)면 --auto 를 안 줘 droid 기본 read-only(쓰기 차단). 아니면
+  // bypass 면 권한 우회, 아니면 --auto(기본 low). 기본 read-only 면 파일 편집이 막혀
+  // 코딩이 조용히 실패하므로 최소 low 를 준다(codex workspace-write 와 같은 결).
+  if (config.readonly) {
+    // 권한 플래그 미부여 → droid 기본 read-only
+  } else if (config.dangerouslySkipPermissions) {
     args.push("--skip-permissions-unsafe");
   } else {
     args.push("--auto", config.auto ?? "low");

@@ -26,12 +26,13 @@ function delegateTool(selfAgent: string | null) {
     name: "delegate",
     description:
       "Delegate a task to a teammate agent and get its result back. " +
-      "Use when a teammate is better suited for a sub-task. Teammates:\n" + lines.join("\n"),
+      "Use when a teammate is better suited for a sub-task. Hand off the PROBLEM and let the " +
+      "specialist engineer it — do not pre-write the solution for them to paste. Teammates:\n" + lines.join("\n"),
     inputSchema: {
       type: "object",
       properties: {
         agent: { type: "string", enum: teammates.map((a) => a.name), description: "Teammate to delegate to" },
-        task: { type: "string", description: "Complete, self-contained task description for the teammate" },
+        task: { type: "string", description: "The PROBLEM for the teammate to solve themselves — goal & intent, relevant paths/constraints/context, and definition-of-done. State WHAT and WHY, not the finished solution: do NOT paste implementation code or exact edits to apply verbatim, and do NOT tell them to skip reading the code. The specialist designs and writes it." },
         reason: { type: "string", description: "One short line: why you are delegating this to that teammate" },
       },
       required: ["agent", "task"],

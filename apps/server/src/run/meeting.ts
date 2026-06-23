@@ -57,7 +57,8 @@ export async function startMeeting(
   const meetingId = `meeting:${randomUUID()}`;
   const started = await Promise.all(
     participants.map((agent) =>
-      startRun({ agent, prompt: input.proposal, projectId: input.projectId, workflow: meetingId, node: "panel" }),
+      // readonly — 회의는 의견·정보 취합용. 코드는 읽되 파일 쓰기·명령 실행은 차단한다.
+      startRun({ agent, prompt: input.proposal, projectId: input.projectId, workflow: meetingId, node: "panel", readonly: true }),
     ),
   );
   const panelRunIds = started.filter((s) => s.ok).map((s) => (s as { run: { id: string } }).run.id);
@@ -90,6 +91,7 @@ async function runSynthesis(input: MeetingInput, meetingId: string, panelRunIds:
     projectId: input.projectId,
     workflow: meetingId,
     node: "chair",
+    readonly: true, // 의장도 취합 텍스트만 — 파일을 쓰지 않게 읽기 전용.
   });
   if (!result.ok) logger.warn({ meetingId, error: result.error }, "meeting chair run did not start");
 }

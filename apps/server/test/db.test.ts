@@ -167,6 +167,40 @@ describe("lastSessionId", () => {
   });
 });
 
+describe("lastSession (resume 페르소나 지문)", () => {
+  it("직전 세션 id + 그때의 페르소나 지문을 함께 돌려주고, 최신 run 을 반영한다", () => {
+    db.insertThread({ id: "pst", name: "t", projectId: null, createdAt: "2026-06-23T00:00:00.000Z" });
+    const a = { ...run("psr1"), agent: "M", threadId: "pst", startedAt: "2026-06-23T00:01:00.000Z" };
+    db.insertRun(a, "hashOLD");
+    db.finishRun({ ...a, status: "succeeded", endedAt: "x", exitCode: 0 }, { sessionId: "sess-old" });
+    expect(db.lastSession("pst", "M")).toEqual({ sessionId: "sess-old", personaHash: "hashOLD" });
+
+    // 프롬프트가 바뀐 새 턴 → 다른 지문의 새 세션. lastSession 은 최신 것을 본다.
+    const b = { ...run("psr2"), agent: "M", threadId: "pst", startedAt: "2026-06-23T00:02:00.000Z" };
+    db.insertRun(b, "hashNEW");
+    db.finishRun({ ...b, status: "succeeded", endedAt: "x", exitCode: 0 }, { sessionId: "sess-new" });
+    expect(db.lastSession("pst", "M")).toEqual({ sessionId: "sess-new", personaHash: "hashNEW" });
+  });
+
+  it("세션이 없으면 null", () => {
+    expect(db.lastSession("none", "Z")).toBeNull();
+  });
+});
+
+describe("runsByWorkflowDb", () => {
+  it("한 회의(workflow)의 run 만 시작순으로 모으고 다른 회의는 제외한다", () => {
+    const m1 = "meeting:m-1";
+    const m2 = "meeting:m-2";
+    db.insertRun({ ...run("mr-panel"), workflow: m1, node: "panel", startedAt: "2026-06-20T00:00:00.000Z" });
+    db.insertRun({ ...run("mr-chair"), workflow: m1, node: "chair", startedAt: "2026-06-20T00:01:00.000Z" });
+    db.insertRun({ ...run("mr-other"), workflow: m2, node: "panel", startedAt: "2026-06-20T00:00:30.000Z" });
+
+    expect(db.runsByWorkflowDb(m1).map((r) => r.id)).toEqual(["mr-panel", "mr-chair"]); // 시작순, m2 제외
+    expect(db.runsByWorkflowDb(m2).map((r) => r.id)).toEqual(["mr-other"]);
+    expect(db.runsByWorkflowDb("meeting:none")).toEqual([]);
+  });
+});
+
 describe("deleteProjectCascadeDb", () => {
   it("프로젝트의 run·이벤트·대화를 캐스케이드 삭제하고 다른 프로젝트는 보존한다", () => {
     db.insertProject({ id: "pc1", name: "a", path: "/tmp/pc-a", createdAt: "2026-06-19T00:00:00.000Z" });
